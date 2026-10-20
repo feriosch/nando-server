@@ -29,13 +29,13 @@ MONGO_URI=mongodb://localhost:27017 \
 ALLOWED_ORIGINS=http://localhost:5173 \
 go run ./cmd/nando-server
 
-curl localhost:8080/healthz
+curl localhost:8080/health
 ```
 
-| Env var           | Meaning                                                          |
-| ----------------- | ---------------------------------------------------------------- |
+| Env var           | Meaning |
+| ----------------- | --- |
 | `MONGO_URI`       | MongoDB connection string (required)                             |
-| `ALLOWED_ORIGINS` | Comma-separated web app origins allowed to call with credentials |
+| `ALLOWED_ORIGINS` | Comma-separated web app origins allowed to call with credentials, each exactly `scheme://host[:port]` (no trailing slash, no `*`) |
 | `PORT`            | Port to listen on (default `8080`; Cloud Run sets it)            |
 
 ## Test

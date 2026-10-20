@@ -15,19 +15,19 @@ func newHandler() http.Handler {
 	})
 }
 
-func TestHealthzReportsOK(t *testing.T) {
+func TestHealthReportsOK(t *testing.T) {
 	rec := httptest.NewRecorder()
-	newHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	newHandler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
 
 	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /healthz: status = %d, want %d", rec.Code, http.StatusOK)
+		t.Fatalf("GET /health: status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
 
 func TestAllowedOriginMayCallWithCredentials(t *testing.T) {
 	for _, origin := range []string{"https://web.example.com", "http://localhost:5173"} {
 		t.Run(origin, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+			req := httptest.NewRequest(http.MethodGet, "/health", nil)
 			req.Header.Set("Origin", origin)
 			rec := httptest.NewRecorder()
 			newHandler().ServeHTTP(rec, req)
@@ -43,7 +43,7 @@ func TestAllowedOriginMayCallWithCredentials(t *testing.T) {
 }
 
 func TestOtherOriginGetsNoCORSHeaders(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	req.Header.Set("Origin", "https://evil.example.net")
 	rec := httptest.NewRecorder()
 	newHandler().ServeHTTP(rec, req)
@@ -56,7 +56,7 @@ func TestOtherOriginGetsNoCORSHeaders(t *testing.T) {
 }
 
 func TestAllowedOriginPreflightIsAnswered(t *testing.T) {
-	req := httptest.NewRequest(http.MethodOptions, "/healthz", nil)
+	req := httptest.NewRequest(http.MethodOptions, "/health", nil)
 	req.Header.Set("Origin", "https://web.example.com")
 	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
 	req.Header.Set("Access-Control-Request-Headers", "Content-Type")
@@ -74,5 +74,20 @@ func TestAllowedOriginPreflightIsAnswered(t *testing.T) {
 	}
 	if got := rec.Header().Get("Access-Control-Allow-Headers"); !strings.Contains(got, "Content-Type") {
 		t.Errorf("Access-Control-Allow-Headers = %q, want it to include Content-Type", got)
+	}
+}
+
+func TestPreflightIsCachedPerRequestedMethodAndHeaders(t *testing.T) {
+	req := httptest.NewRequest(http.MethodOptions, "/health", nil)
+	req.Header.Set("Origin", "https://web.example.com")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	rec := httptest.NewRecorder()
+	newHandler().ServeHTTP(rec, req)
+
+	vary := strings.Join(rec.Header().Values("Vary"), ", ")
+	for _, h := range []string{"Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers"} {
+		if !strings.Contains(vary, h) {
+			t.Errorf("Vary = %q, want it to include %s", vary, h)
+		}
 	}
 }

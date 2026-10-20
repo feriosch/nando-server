@@ -4,8 +4,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
@@ -39,10 +41,24 @@ func loadConfig() (config, error) {
 	}
 	for origin := range strings.SplitSeq(os.Getenv("ALLOWED_ORIGINS"), ",") {
 		if origin = strings.TrimSpace(origin); origin != "" {
+			if err := checkOrigin(origin); err != nil {
+				return config{}, err
+			}
 			cfg.allowedOrigins = append(cfg.allowedOrigins, origin)
 		}
 	}
 	return cfg, nil
+}
+
+// checkOrigin rejects anything a browser would never send as an Origin, such as
+// a trailing slash or "*", which would otherwise silently turn CORS off.
+func checkOrigin(origin string) error {
+	u, err := url.Parse(origin)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
+		u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return fmt.Errorf("ALLOWED_ORIGINS: %q is not an origin like https://web.example.com", origin)
+	}
+	return nil
 }
 
 func main() {
@@ -67,10 +83,17 @@ func run() error {
 		return err
 	}
 	var dbs server.Databases
+	defer func() {
+		// Cloud Run allows 10s after SIGTERM: up to 8s draining requests, 2s here.
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		if err := dbs.Disconnect(ctx); err != nil {
+			log.Printf("disconnect MongoDB: %v", err)
+		}
+	}()
 	if err := c.Fill(&dbs); err != nil {
 		return err
 	}
-	defer dbs.Disconnect(context.Background())
 
 	// Core and each Module get only their own database; Modules also get Core's
 	// service. Routes arrive with #7 and #10.
@@ -82,16 +105,19 @@ func run() error {
 		Handler:           server.New(server.Config{AllowedOrigins: cfg.allowedOrigins}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	shutdownDone := make(chan error, 1)
 	go func() {
 		<-ctx.Done()
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		defer cancel()
-		srv.Shutdown(shutdownCtx)
+		shutdownDone <- srv.Shutdown(shutdownCtx)
 	}()
 
 	log.Printf("listening on :%s", cfg.port)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
-	return nil
+	// ListenAndServe returns as soon as Shutdown starts; wait for in-flight
+	// requests to finish before MongoDB is disconnected.
+	return <-shutdownDone
 }

@@ -2,6 +2,8 @@ package server
 
 import (
 	"context"
+	"errors"
+	"time"
 
 	"github.com/golobby/container/v3"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -26,8 +28,10 @@ func RegisterDatabases(ctx context.Context, c container.Container, uri string) e
 			return nil, err
 		}
 		if err := client.Ping(ctx, nil); err != nil {
-			client.Disconnect(ctx)
-			return nil, err
+			// ctx may have expired, so close with a context of our own.
+			closeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			return nil, errors.Join(err, client.Disconnect(closeCtx))
 		}
 		return client, nil
 	})
@@ -46,7 +50,10 @@ func RegisterDatabases(ctx context.Context, c container.Container, uri string) e
 	return nil
 }
 
-// Disconnect closes the connection.
+// Disconnect closes the connection, if one was filled in.
 func (d *Databases) Disconnect(ctx context.Context) error {
+	if d.client == nil {
+		return nil
+	}
 	return d.client.Disconnect(ctx)
 }
