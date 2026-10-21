@@ -41,12 +41,12 @@ curl localhost:8080/health
 ## Test
 
 ```sh
-go test ./...
+go test -count=1 ./...
 ```
 
-Tests that touch data run against a real MongoDB through `testmongo.URI(t)`: each one starts a fresh `mongo:8` container with testcontainers-go and terminates it when the test ends. Docker must be running; `docker compose` is not needed for tests.
+Tests that touch data run against a real MongoDB through `testmongo.URI(t)`: each one starts a fresh `mongo:8` container with testcontainers-go and terminates it when the test ends. Docker must be running; `docker compose` is not needed for tests. `-count=1` stops Go replaying a cached pass, since its test cache can't see the `mongo:8` image or the Docker host's kernel.
 
-Every pull request runs `go vet ./...` and `go test -count=1 ./...` on GitHub Actions (`.github/workflows/pr.yml`); the runner's Docker hosts the test containers.
+Every pull request runs `go vet ./...` and the same `go test` on GitHub Actions (`.github/workflows/pr.yml`); the runner's Docker hosts the test containers.
 
 ## Container image
 
