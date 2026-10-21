@@ -46,10 +46,16 @@ go test -count=1 ./...
 
 Tests that touch data run against a real MongoDB through `testmongo.URI(t)`: each one starts a fresh `mongo:8` container with testcontainers-go and terminates it when the test ends. Docker must be running; `docker compose` is not needed for tests. `-count=1` stops Go replaying a cached pass, since its test cache can't see the `mongo:8` image or the Docker host's kernel.
 
-Every pull request runs `go vet ./...` and the same `go test` on GitHub Actions (`.github/workflows/pr.yml`); the runner's Docker hosts the test containers.
+Every pull request runs `go vet ./...` and the same `go test` on GitHub Actions (`.github/workflows/pr.yml`); the runner's Docker hosts the test containers. It also builds the container image.
 
 ## Container image
 
 ```sh
 docker build -t nando-server .
 ```
+
+## Deploy
+
+Every push to `main` deploys to Cloud Run (`.github/workflows/deploy.yml`; also runnable by hand from the Actions tab). It signs in through Workload Identity Federation, pushes the image to Artifact Registry tagged with the commit, deploys it with its env vars and Secret Manager secrets, and ends by checking that the API's `/health` answers as nando-server. That workflow is the source of truth for the service's env vars and secrets.
+
+If the new revision doesn't start (for example, MongoDB is unreachable), the deploy fails and traffic stays on the previous revision.

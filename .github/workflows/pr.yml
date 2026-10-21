@@ -22,3 +22,11 @@ jobs:
       - run: go vet ./...
       # -count=1: see README's Test section.
       - run: go test -count=1 ./...
+
+  image:
+    name: build image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The image main deploys; catches a broken Dockerfile before merge.
+      - run: docker build .
