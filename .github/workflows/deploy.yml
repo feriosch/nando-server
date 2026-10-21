@@ -1,0 +1,62 @@
+# Deploys main to Cloud Run (ADR 0001). Project, region, registry and deploy
+# identity are repo variables from #5; auth is Workload Identity Federation, so
+# there are no JSON keys.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time, in merge order.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    name: build, push and deploy
+    runs-on: ubuntu-latest
+    env:
+      IMAGE: ${{ vars.GCP_AR_REPO }}/server:${{ github.sha }}
+      API_ORIGIN: https://api.nanders.app
+      WEB_ORIGIN: https://web.nanders.app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+      # The registry host is the first part of GCP_AR_REPO.
+      - run: gcloud auth configure-docker "${IMAGE%%/*}" --quiet
+      - run: docker build -t "$IMAGE" .
+      - run: docker push "$IMAGE"
+      # --set-* replace the service's whole env and secret lists, so this step
+      # is their source of truth.
+      - run: >-
+          gcloud run deploy nando-server
+          --project "${{ vars.GCP_PROJECT_ID }}"
+          --region "${{ vars.GCP_REGION }}"
+          --image "$IMAGE"
+          --set-secrets MONGO_URI=nandoproject-mongo:latest
+          --set-env-vars "ALLOWED_ORIGINS=$WEB_ORIGIN"
+      # Checks the CORS header, not just the status: Cloud Run's placeholder
+      # image answers 200 on any path, and the header shows ALLOWED_ORIGINS
+      # arrived. Retries while the domain mapping picks up the new revision.
+      - name: smoke check
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if curl -fsS -D - -o /dev/null -H "Origin: $WEB_ORIGIN" "$API_ORIGIN/health" |
+              grep -qi "^access-control-allow-origin: $WEB_ORIGIN"; then
+              echo "$API_ORIGIN/health OK"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "$API_ORIGIN/health did not answer as nando-server" >&2
+          exit 1
