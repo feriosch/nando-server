@@ -1,0 +1,21 @@
+# PR checks. Tests get MongoDB from testmongo, which starts mongo:8 through the
+# runner's Docker (testcontainers-go), so no service container is needed.
+name: PR checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: vet and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
