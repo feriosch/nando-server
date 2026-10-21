@@ -1,0 +1,24 @@
+# PR checks. Tests get MongoDB from testmongo (testcontainers-go on the runner's
+# Docker), so no service container is needed.
+name: PR checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: vet and test
+    # Not ubuntu-latest: its kernel (7.0.0) is one MongoDB 8 refuses to start
+    # on (6.19 to 7.0.13, SERVER-121912). Move up: #17.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      # -count=1: see README's Test section.
+      - run: go test -count=1 ./...
