@@ -11,13 +11,10 @@ permissions:
 jobs:
   check:
     name: vet and test
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, ubuntu-22.04]
-    runs-on: ${{ matrix.os }}
+    # Not ubuntu-latest: its kernel (7.0.0) is one MongoDB 8 refuses to start
+    # on (6.19 to 7.0.13, SERVER-121912). Move up once the runner kernel is 7.0.14+.
+    runs-on: ubuntu-22.04
     steps:
-      - run: uname -r
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
