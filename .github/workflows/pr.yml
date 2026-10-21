@@ -11,8 +11,13 @@ permissions:
 jobs:
   check:
     name: vet and test
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
     steps:
+      - run: uname -r
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
