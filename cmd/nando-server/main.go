@@ -1,4 +1,7 @@
 // Command nando-server runs Nando's HTTP API.
+//
+//	nando-server          serve the API
+//	nando-server enroll   print an Enrollment Code for registering a passkey
 package main
 
 import (
@@ -23,18 +26,27 @@ import (
 
 // config is read from the environment.
 type config struct {
-	mongoURI       string   // MONGO_URI, required
-	allowedOrigins []string // ALLOWED_ORIGINS, comma-separated web app origins
-	port           string   // PORT, set by Cloud Run; defaults to 8080
+	mongoURI string // MONGO_URI, required
+	// DOMAIN, required: the parent domain of web. and api., such as
+	// "nanders.app", which passkeys and the session cookie belong to.
+	domain string
+	// ALLOWED_ORIGINS, required: comma-separated web app origins, which may
+	// call the API with credentials and use passkeys.
+	allowedOrigins []string
+	port           string // PORT, set by Cloud Run; defaults to 8080
 }
 
 func loadConfig() (config, error) {
 	cfg := config{
 		mongoURI: os.Getenv("MONGO_URI"),
+		domain:   os.Getenv("DOMAIN"),
 		port:     os.Getenv("PORT"),
 	}
 	if cfg.mongoURI == "" {
 		return config{}, errors.New("MONGO_URI is required")
+	}
+	if cfg.domain == "" {
+		return config{}, errors.New("DOMAIN is required")
 	}
 	if cfg.port == "" {
 		cfg.port = "8080"
@@ -46,6 +58,9 @@ func loadConfig() (config, error) {
 			}
 			cfg.allowedOrigins = append(cfg.allowedOrigins, origin)
 		}
+	}
+	if len(cfg.allowedOrigins) == 0 {
+		return config{}, errors.New("ALLOWED_ORIGINS is required")
 	}
 	return cfg, nil
 }
@@ -96,13 +111,31 @@ func run() error {
 	}
 
 	// Core and each Module get only their own database; Modules also get Core's
-	// service. Routes arrive with #7 and #10.
-	nandoCore := core.NewCore(dbs.Core)
+	// service. Calories' routes arrive with #10.
+	nandoCore, err := core.New(connectCtx, dbs.Core, core.Config{
+		Domain:  cfg.domain,
+		Origins: cfg.allowedOrigins,
+	})
+	if err != nil {
+		return err
+	}
 	_ = calories.NewCaloriesModule(dbs.Calories, nandoCore.Service())
+
+	switch args := os.Args[1:]; {
+	case len(args) == 1 && args[0] == "enroll":
+		code, err := nandoCore.IssueEnrollmentCode(ctx)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Enrollment Code: %s\nValid for one passkey, for the next 15 minutes.\n", code)
+		return nil
+	case len(args) > 0:
+		return fmt.Errorf("unknown arguments %q; the only command is enroll", args)
+	}
 
 	srv := &http.Server{
 		Addr:              ":" + cfg.port,
-		Handler:           server.New(server.Config{AllowedOrigins: cfg.allowedOrigins}),
+		Handler:           server.New(server.Config{AllowedOrigins: cfg.allowedOrigins, Core: nandoCore}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	shutdownDone := make(chan error, 1)

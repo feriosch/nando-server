@@ -4,12 +4,18 @@ package server
 import (
 	"net/http"
 	"slices"
+	"strings"
+
+	"github.com/feriosch/nando-server/internal/core"
 )
 
 // Config is what the HTTP API needs to know about its environment.
 type Config struct {
 	// AllowedOrigins are the web app origins that may call the API with credentials.
 	AllowedOrigins []string
+	// Core signs the Owner in and guards every /api/ route. Nil serves only
+	// /health, for tests of the API's plumbing.
+	Core *core.Core
 }
 
 // New returns the handler serving the whole API.
@@ -19,7 +25,24 @@ func New(cfg Config) http.Handler {
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	return cors(cfg.AllowedOrigins, mux)
+	if cfg.Core == nil {
+		return cors(cfg.AllowedOrigins, mux)
+	}
+	cfg.Core.Routes(mux)
+	return cors(cfg.AllowedOrigins, requireSessionForAPI(cfg.Core, mux))
+}
+
+// requireSessionForAPI puts every /api/ path behind a session, whoever
+// registered it, so no route there can be served to a signed-out device.
+func requireSessionForAPI(c *core.Core, next http.Handler) http.Handler {
+	guarded := c.RequireSession(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			guarded.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // cors lets the web app call the API with the session cookie.

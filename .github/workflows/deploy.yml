@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       IMAGE: ${{ vars.GCP_AR_REPO }}/server:${{ github.sha }}
+      DOMAIN: nanders.app
       API_ORIGIN: https://api.nanders.app
       WEB_ORIGIN: https://web.nanders.app
     steps:
@@ -44,7 +45,7 @@ jobs:
           --region "${{ vars.GCP_REGION }}"
           --image "$IMAGE"
           --set-secrets MONGO_URI=nandoproject-mongo:latest
-          --set-env-vars "ALLOWED_ORIGINS=$WEB_ORIGIN"
+          --set-env-vars "DOMAIN=$DOMAIN,ALLOWED_ORIGINS=$WEB_ORIGIN"
       # Checks the CORS header, not just the status: Cloud Run's placeholder
       # image answers 200 on any path, and the header shows ALLOWED_ORIGINS
       # arrived. Retries while the domain mapping picks up the new revision.
