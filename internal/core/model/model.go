@@ -34,8 +34,30 @@ type CoreRepository interface {
 	ListSessions(ctx context.Context, now time.Time) ([]Session, error)
 	RenewSession(ctx context.Context, id string, renewedAt, expiresAt time.Time) error
 	DeleteSession(ctx context.Context, id string) error
+
+	// FindSettings returns the settings, or ErrNotFound if none were ever saved.
+	FindSettings(ctx context.Context) (Settings, error)
+	SaveSettings(ctx context.Context, settings Settings) error
+
+	// SaveWeighIn stores weighIn, replacing any for the same week.
+	SaveWeighIn(ctx context.Context, weighIn WeighIn) error
+	// FindWeighIn returns the Weigh-in for the week starting on Monday week.
+	FindWeighIn(ctx context.Context, week Day) (WeighIn, error)
+	// FindLatestWeighIn returns the newest week's Weigh-in.
+	FindLatestWeighIn(ctx context.Context) (WeighIn, error)
+	// ListWeighIns returns every Weigh-in, newest first.
+	ListWeighIns(ctx context.Context) ([]WeighIn, error)
+	DeleteWeighIn(ctx context.Context, week Day) error
 }
 
-// CoreService is what other Modules' services may ask of Core. Its methods
-// arrive with Core's first features (#8).
-type CoreService interface{}
+// CoreService is what other Modules' services may ask of Core. Modules read
+// Core's data only through it, never from Core's collections.
+type CoreService interface {
+	// OwnerTimeZone is the time zone all of Nando's dates and clock times are in.
+	OwnerTimeZone(ctx context.Context) (*time.Location, error)
+	// Today is the current Day in the Owner Time Zone.
+	Today(ctx context.Context) (Day, error)
+	// LatestWeighIn is the Weigh-in for the newest week that has one, or
+	// ErrNotFound if there are none.
+	LatestWeighIn(ctx context.Context) (WeighIn, error)
+}
