@@ -117,7 +117,7 @@ Core's own Settings Section.
 Body: all of the settings, as `GET` answers them.
 
 - `204`: saved.
-- `400`: the body isn't settings, or one is invalid: an unknown time zone, a height outside 1 to 300 cm or not a whole number, an unknown weekday, or a time that isn't on the hour or half hour. The message says which.
+- `400`: the body isn't settings, or one of them is invalid: an unknown time zone, a height that isn't a whole number from 1 to 300 cm, an unknown weekday, or a time that isn't on the hour or half hour. The message names the setting.
 
 ## Weigh-ins
 
@@ -170,4 +170,4 @@ Logs the Weigh-in for `week`, replacing any it already has.
 
 - `latest`: the newest week's Weigh-in, or `null` if there are none. Then `bmi` and `change` are `null` too.
 - `bmi`: `latest`'s body mass index to 1 decimal, or `null` until the height is set. It is always derived, never stored.
-- `change`: `latest`'s kg minus the kg of the week before it, or `null` if that week has no Weigh-in.
+- `change`: `latest`'s kg minus the kg of the Weigh-in before it, however many weeks earlier that was, or `null` if `latest` is the only one.

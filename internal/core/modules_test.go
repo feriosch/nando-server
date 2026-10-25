@@ -3,7 +3,6 @@ package core_test
 import (
 	"context"
 	"errors"
-	"net/http"
 	"testing"
 	"time"
 
@@ -19,16 +18,6 @@ func signedInPhone(t *testing.T, now time.Time) (*nando, *device) {
 	phone.mustEnroll()
 	n.clock.Set(now)
 	return n, phone
-}
-
-// saveTimeZone sets the Owner Time Zone, keeping the other settings.
-func (d *device) saveTimeZone(name string) {
-	d.nando.t.Helper()
-	s := d.getSettings()
-	s.TimeZone = name
-	if rec := d.do(http.MethodPut, "/api/settings", mustJSON(d.nando.t, s)); rec.Code != http.StatusNoContent {
-		d.nando.t.Fatalf("PUT /api/settings with time zone %s: status = %d, body %q", name, rec.Code, rec.Body)
-	}
 }
 
 func TestTodayIsTheDayInTheOwnerTimeZone(t *testing.T) {
@@ -66,5 +55,23 @@ func TestLatestWeighInIsTheNewestWeeks(t *testing.T) {
 	got, err := core.LatestWeighIn(ctx)
 	if want := (model.WeighIn{Week: "2026-10-19", Kg: 72.4}); err != nil || got != want {
 		t.Errorf("LatestWeighIn = %+v, %v; want %+v", got, err, want)
+	}
+}
+
+func TestBMIIsTheLatestWeighInsOnceTheHeightIsSet(t *testing.T) {
+	ctx := context.Background()
+	n, phone := signedInPhone(t, wednesday)
+	core := n.core.Service()
+	phone.mustPutWeighIn("2026-10-19", 72.4)
+
+	if _, err := core.BMI(ctx); !errors.Is(err, model.ErrNotFound) {
+		t.Errorf("BMI before the height is set = %v, want ErrNotFound", err)
+	}
+
+	phone.saveHeight(175)
+
+	// 72.4 kg / (1.75 m)² = 23.64…
+	if got, err := core.BMI(ctx); err != nil || got != 23.6 {
+		t.Errorf("BMI = %v, %v; want 23.6", got, err)
 	}
 }

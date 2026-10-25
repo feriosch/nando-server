@@ -1,7 +1,7 @@
 package service
 
 import (
-	"errors"
+	"context"
 	"math"
 	"net/http"
 
@@ -20,24 +20,44 @@ func bmi(kg float64, heightCm int) float64 {
 	return round1(kg / (m * m))
 }
 
+// BMI is the latest Weigh-in's body mass index to 1 decimal, or ErrNotFound
+// until there is a Weigh-in and the height is set.
+func (s *Service) BMI(ctx context.Context) (float64, error) {
+	latest, err := s.LatestWeighIn(ctx)
+	if err != nil {
+		return 0, err
+	}
+	settings, err := s.settings(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if settings.HeightCm == 0 {
+		return 0, model.ErrNotFound
+	}
+	return bmi(latest.Kg, settings.HeightCm), nil
+}
+
 // getBody answers the Body Home Card: the latest Weigh-in, its BMI (once the
-// height is set) and its change since the week before (if that week has one).
+// height is set) and its change since the Weigh-in before it, however many
+// weeks earlier that was.
 func (s *Service) getBody(w http.ResponseWriter, r *http.Request) {
 	var card struct {
 		Latest *weighInJSON `json:"latest"`
 		BMI    *float64     `json:"bmi"`
 		Change *float64     `json:"change"`
 	}
-	latest, err := s.repo.FindLatestWeighIn(r.Context())
-	if errors.Is(err, model.ErrNotFound) {
-		writeJSON(w, card)
-		return
-	}
+	weighIns, err := s.repo.ListWeighIns(r.Context(), 2)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
-	card.Latest = &weighInJSON{Week: latest.Week, Kg: latest.Kg}
+	if len(weighIns) == 0 {
+		writeJSON(w, card)
+		return
+	}
+	latest := weighIns[0]
+	latestJSON := toWeighInJSON(latest)
+	card.Latest = &latestJSON
 
 	settings, err := s.settings(r.Context())
 	if err != nil {
@@ -48,15 +68,9 @@ func (s *Service) getBody(w http.ResponseWriter, r *http.Request) {
 		b := bmi(latest.Kg, settings.HeightCm)
 		card.BMI = &b
 	}
-
-	previous, err := s.repo.FindWeighIn(r.Context(), latest.Week.AddDays(-7))
-	switch {
-	case err == nil:
-		change := round1(latest.Kg - previous.Kg)
+	if len(weighIns) == 2 {
+		change := round1(latest.Kg - weighIns[1].Kg)
 		card.Change = &change
-	case !errors.Is(err, model.ErrNotFound):
-		serverError(w, err)
-		return
 	}
 	writeJSON(w, card)
 }

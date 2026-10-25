@@ -16,16 +16,20 @@ type weighInJSON struct {
 	Kg   float64   `json:"kg"`
 }
 
+func toWeighInJSON(weighIn model.WeighIn) weighInJSON {
+	return weighInJSON{Week: weighIn.Week, Kg: weighIn.Kg}
+}
+
 // listWeighIns lists every Weigh-in, newest first.
 func (s *Service) listWeighIns(w http.ResponseWriter, r *http.Request) {
-	weighIns, err := s.repo.ListWeighIns(r.Context())
+	weighIns, err := s.repo.ListWeighIns(r.Context(), 0)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
 	list := make([]weighInJSON, len(weighIns))
 	for i, weighIn := range weighIns {
-		list[i] = weighInJSON{Week: weighIn.Week, Kg: weighIn.Kg}
+		list[i] = toWeighInJSON(weighIn)
 	}
 	writeJSON(w, list)
 }
@@ -33,7 +37,7 @@ func (s *Service) listWeighIns(w http.ResponseWriter, r *http.Request) {
 // putWeighIn logs the Weigh-in for the week starting on the Monday in the
 // path, replacing any earlier one for that week.
 func (s *Service) putWeighIn(w http.ResponseWriter, r *http.Request) {
-	week, ok := s.editableWeek(w, r)
+	week, ok := s.changeableWeek(w, r)
 	if !ok {
 		return
 	}
@@ -41,39 +45,39 @@ func (s *Service) putWeighIn(w http.ResponseWriter, r *http.Request) {
 		Kg *float64 `json:"kg"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Kg == nil {
-		http.Error(w, `the body isn't {"kg": number}`, http.StatusBadRequest)
+		http.Error(w, `body must be {"kg": number}`, http.StatusBadRequest)
 		return
 	}
-	kg, err := toTenths(*body.Kg)
+	kg, err := validKg(*body.Kg)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	weighIn := model.WeighIn{Week: week, Kg: kg}
-	if err := s.repo.SaveWeighIn(r.Context(), weighIn); err != nil {
+	if err := s.repo.SaveWeighIn(r.Context(), model.WeighIn{Week: week, Kg: kg}); err != nil {
 		serverError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// toTenths checks that kg is a weight to at most 1 decimal and returns it
-// rounded to exactly that, as 72.4 may arrive as 72.40000000000001.
-func toTenths(kg float64) (float64, error) {
-	tenths := math.Round(kg * 10)
-	if math.Abs(kg*10-tenths) > 1e-6 || tenths <= 0 || tenths > 5000 {
+// validKg returns kg rounded to exactly 1 decimal, as 72.4 may arrive as
+// 72.40000000000001, if it is a weight more than 0 and at most 500 kg to at
+// most 1 decimal.
+func validKg(kg float64) (float64, error) {
+	rounded := round1(kg)
+	if math.Abs(kg-rounded) > 1e-7 || rounded <= 0 || rounded > 500 {
 		return 0, errors.New("kg must be more than 0 and at most 500, to at most 1 decimal")
 	}
-	return tenths / 10, nil
+	return rounded, nil
 }
 
-// editableWeek returns the week in r's path, the Monday it starts on, if its
-// Weigh-in can be changed: only this week's and last week's can. Otherwise it
-// answers r and returns false.
-func (s *Service) editableWeek(w http.ResponseWriter, r *http.Request) (model.Day, bool) {
+// changeableWeek returns the week in r's path, the Monday it starts on, if its
+// Weigh-in can be changed: only this week's and last week's can (see Weigh-in
+// in GLOSSARY.md). Otherwise it answers r and returns false.
+func (s *Service) changeableWeek(w http.ResponseWriter, r *http.Request) (model.Day, bool) {
 	week, err := model.ParseDay(r.PathValue("week"))
 	if err != nil || week.Week() != week {
-		http.Error(w, "the week must be the Monday it starts on, as YYYY-MM-DD", http.StatusBadRequest)
+		http.Error(w, "week must be the Monday it starts on, as YYYY-MM-DD", http.StatusBadRequest)
 		return "", false
 	}
 	today, err := s.Today(r.Context())
@@ -91,7 +95,7 @@ func (s *Service) editableWeek(w http.ResponseWriter, r *http.Request) (model.Da
 // deleteWeighIn deletes the Weigh-in for the week starting on the Monday in
 // the path. Deleting one that doesn't exist also succeeds.
 func (s *Service) deleteWeighIn(w http.ResponseWriter, r *http.Request) {
-	week, ok := s.editableWeek(w, r)
+	week, ok := s.changeableWeek(w, r)
 	if !ok {
 		return
 	}
@@ -105,5 +109,12 @@ func (s *Service) deleteWeighIn(w http.ResponseWriter, r *http.Request) {
 // LatestWeighIn is the Weigh-in for the newest week that has one, or
 // ErrNotFound if there are none.
 func (s *Service) LatestWeighIn(ctx context.Context) (model.WeighIn, error) {
-	return s.repo.FindLatestWeighIn(ctx)
+	latest, err := s.repo.ListWeighIns(ctx, 1)
+	if err != nil {
+		return model.WeighIn{}, err
+	}
+	if len(latest) == 0 {
+		return model.WeighIn{}, model.ErrNotFound
+	}
+	return latest[0], nil
 }

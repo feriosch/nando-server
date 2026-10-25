@@ -16,8 +16,10 @@ func (r mongoRepository) SaveWeighIn(ctx context.Context, weighIn model.WeighIn)
 	return err
 }
 
-func (r mongoRepository) ListWeighIns(ctx context.Context) ([]model.WeighIn, error) {
-	cursor, err := r.db.Collection(weighIns).Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}))
+func (r mongoRepository) ListWeighIns(ctx context.Context, limit int) ([]model.WeighIn, error) {
+	// A limit of 0 is none, as ListWeighIns documents.
+	opts := options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}).SetLimit(int64(limit))
+	cursor, err := r.db.Collection(weighIns).Find(ctx, bson.D{}, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -28,16 +30,4 @@ func (r mongoRepository) ListWeighIns(ctx context.Context) ([]model.WeighIn, err
 func (r mongoRepository) DeleteWeighIn(ctx context.Context, week model.Day) error {
 	_, err := r.db.Collection(weighIns).DeleteOne(ctx, bson.D{{Key: "_id", Value: week}})
 	return err
-}
-
-func (r mongoRepository) FindLatestWeighIn(ctx context.Context) (model.WeighIn, error) {
-	var weighIn model.WeighIn
-	err := r.db.Collection(weighIns).FindOne(ctx, bson.D{}, options.FindOne().SetSort(bson.D{{Key: "_id", Value: -1}})).Decode(&weighIn)
-	return weighIn, notFound(err)
-}
-
-func (r mongoRepository) FindWeighIn(ctx context.Context, week model.Day) (model.WeighIn, error) {
-	var weighIn model.WeighIn
-	err := r.db.Collection(weighIns).FindOne(ctx, bson.D{{Key: "_id", Value: week}}).Decode(&weighIn)
-	return weighIn, notFound(err)
 }

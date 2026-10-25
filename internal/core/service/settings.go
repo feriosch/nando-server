@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"regexp"
 	"strings"
@@ -23,10 +24,11 @@ func (s *Service) settings(ctx context.Context) (model.Settings, error) {
 	return settings, err
 }
 
-// settingsJSON is the settings as the API reads and writes them.
+// settingsJSON is the settings as the API reads and writes them. HeightCm is
+// a float only so that a fractional height is rejected by name.
 type settingsJSON struct {
 	TimeZone        string       `json:"timeZone"`
-	HeightCm        *int         `json:"heightCm"`
+	HeightCm        *float64     `json:"heightCm"`
 	WeighInReminder reminderJSON `json:"weighInReminder"`
 }
 
@@ -37,9 +39,10 @@ type reminderJSON struct {
 }
 
 func toSettingsJSON(settings model.Settings) settingsJSON {
-	var height *int
+	var height *float64
 	if settings.HeightCm != 0 {
-		height = &settings.HeightCm
+		h := float64(settings.HeightCm)
+		height = &h
 	}
 	return settingsJSON{
 		TimeZone: settings.TimeZone,
@@ -80,7 +83,7 @@ func fromSettingsJSON(j settingsJSON) (model.Settings, error) {
 	if _, err := time.LoadLocation(j.TimeZone); err != nil || j.TimeZone == "" || j.TimeZone == "Local" {
 		return model.Settings{}, errors.New("timeZone must be an IANA time zone such as Asia/Tokyo")
 	}
-	if j.HeightCm != nil && (*j.HeightCm < 1 || *j.HeightCm > 300) {
+	if h := j.HeightCm; h != nil && (*h != math.Trunc(*h) || *h < 1 || *h > 300) {
 		return model.Settings{}, errors.New("heightCm must be a whole number of cm from 1 to 300, or null")
 	}
 	weekday, ok := weekdays[j.WeighInReminder.Weekday]
@@ -99,7 +102,7 @@ func fromSettingsJSON(j settingsJSON) (model.Settings, error) {
 		},
 	}
 	if j.HeightCm != nil {
-		settings.HeightCm = *j.HeightCm
+		settings.HeightCm = int(*j.HeightCm)
 	}
 	return settings, nil
 }
@@ -108,7 +111,7 @@ func fromSettingsJSON(j settingsJSON) (model.Settings, error) {
 func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) {
 	var j settingsJSON
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
-		http.Error(w, "the body isn't settings", http.StatusBadRequest)
+		http.Error(w, "body must be settings, as GET /api/settings answers them", http.StatusBadRequest)
 		return
 	}
 	settings, err := fromSettingsJSON(j)

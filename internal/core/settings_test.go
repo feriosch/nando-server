@@ -3,6 +3,7 @@ package core_test
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -30,6 +31,24 @@ func (d *device) getSettings() settingsJSON {
 		d.nando.t.Fatalf("GET /api/settings: %v in %q", err, rec.Body)
 	}
 	return s
+}
+
+// changeSettings saves the settings with change applied, keeping the rest.
+func (d *device) changeSettings(change func(*settingsJSON)) {
+	d.nando.t.Helper()
+	s := d.getSettings()
+	change(&s)
+	if rec := d.do(http.MethodPut, "/api/settings", mustJSON(d.nando.t, s)); rec.Code != http.StatusNoContent {
+		d.nando.t.Fatalf("PUT /api/settings %+v: status = %d, body %q", s, rec.Code, rec.Body)
+	}
+}
+
+func (d *device) saveTimeZone(name string) {
+	d.changeSettings(func(s *settingsJSON) { s.TimeZone = name })
+}
+
+func (d *device) saveHeight(cm int) {
+	d.changeSettings(func(s *settingsJSON) { s.HeightCm = &cm })
 }
 
 func TestSettingsStartAsDefaults(t *testing.T) {
@@ -95,5 +114,16 @@ func TestInvalidSettingsAreRejected(t *testing.T) {
 
 	if got := phone.getSettings(); got.TimeZone != "UTC" || got.HeightCm != nil || got.WeighInReminder.Enabled {
 		t.Errorf("settings after only invalid saves = %+v, want the defaults", got)
+	}
+}
+
+func TestFractionalHeightIsRejectedByName(t *testing.T) {
+	_, phone := signedInPhone(t, wednesday)
+	body := `{"timeZone": "UTC", "heightCm": 175.5, "weighInReminder": {"enabled": true, "weekday": "sunday", "time": "07:30"}}`
+
+	rec := phone.do(http.MethodPut, "/api/settings", []byte(body))
+
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "heightCm") {
+		t.Errorf("PUT /api/settings with height 175.5: status = %d, body %q; want %d naming heightCm", rec.Code, rec.Body, http.StatusBadRequest)
 	}
 }

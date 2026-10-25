@@ -26,16 +26,6 @@ func (d *device) getBody() bodyJSON {
 	return b
 }
 
-// saveHeight sets the Owner's height, keeping the other settings.
-func (d *device) saveHeight(cm int) {
-	d.nando.t.Helper()
-	s := d.getSettings()
-	s.HeightCm = &cm
-	if rec := d.do(http.MethodPut, "/api/settings", mustJSON(d.nando.t, s)); rec.Code != http.StatusNoContent {
-		d.nando.t.Fatalf("PUT /api/settings with height %d: status = %d, body %q", cm, rec.Code, rec.Body)
-	}
-}
-
 func TestBodyCardShowsTheLatestWeighInWithBMIAndChange(t *testing.T) {
 	_, phone := signedInPhone(t, wednesday)
 	phone.saveHeight(175)
@@ -70,7 +60,7 @@ func TestBodyCardLeavesOutWhatItCannotDerive(t *testing.T) {
 		t.Errorf("Body card before any Weigh-in = %+v, want all null", got)
 	}
 
-	// No height, and the week before has no Weigh-in.
+	// No height, and no earlier Weigh-in to compare with.
 	phone.mustPutWeighIn("2026-10-19", 72.4)
 
 	got := phone.getBody()
@@ -79,5 +69,19 @@ func TestBodyCardLeavesOutWhatItCannotDerive(t *testing.T) {
 	}
 	if got.BMI != nil || got.Change != nil {
 		t.Errorf("bmi = %v, change = %v; want both null", fmtPtr(got.BMI), fmtPtr(got.Change))
+	}
+}
+
+func TestBodyCardChangeSkipsWeeksWithoutAWeighIn(t *testing.T) {
+	n, phone := signedInPhone(t, wednesday.AddDate(0, 0, -14))
+	phone.mustPutWeighIn("2026-10-05", 73.0)
+	// No Weigh-in in the week of 2026-10-12.
+	n.clock.Set(wednesday)
+	phone.mustPutWeighIn("2026-10-19", 72.4)
+
+	got := phone.getBody()
+
+	if got.Change == nil || *got.Change != -0.6 {
+		t.Errorf("change = %v, want -0.6 (since the Weigh-in of 2026-10-05)", fmtPtr(got.Change))
 	}
 }

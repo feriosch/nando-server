@@ -41,12 +41,9 @@ type CoreRepository interface {
 
 	// SaveWeighIn stores weighIn, replacing any for the same week.
 	SaveWeighIn(ctx context.Context, weighIn WeighIn) error
-	// FindWeighIn returns the Weigh-in for the week starting on Monday week.
-	FindWeighIn(ctx context.Context, week Day) (WeighIn, error)
-	// FindLatestWeighIn returns the newest week's Weigh-in.
-	FindLatestWeighIn(ctx context.Context) (WeighIn, error)
-	// ListWeighIns returns every Weigh-in, newest first.
-	ListWeighIns(ctx context.Context) ([]WeighIn, error)
+	// ListWeighIns returns the newest limit Weigh-ins, newest first, or every
+	// one if limit is 0.
+	ListWeighIns(ctx context.Context, limit int) ([]WeighIn, error)
 	DeleteWeighIn(ctx context.Context, week Day) error
 }
 
@@ -60,4 +57,7 @@ type CoreService interface {
 	// LatestWeighIn is the Weigh-in for the newest week that has one, or
 	// ErrNotFound if there are none.
 	LatestWeighIn(ctx context.Context) (WeighIn, error)
+	// BMI is the latest Weigh-in's body mass index to 1 decimal, or
+	// ErrNotFound until there is a Weigh-in and the height is set.
+	BMI(ctx context.Context) (float64, error)
 }

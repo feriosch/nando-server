@@ -77,7 +77,7 @@ _Avoid_: Target, goal, budget, allowance
 Measurements of the Owner, kept in Core so that any Module can read them.
 
 **Weigh-in**:
-The Owner's weight for one week (Monday to Sunday in the Owner Time Zone), in kg; at most one per week, and a later one in the same week replaces the earlier.
+The Owner's weight for one week (Monday to Sunday in the Owner Time Zone), in kg; at most one per week, and a later one in the same week replaces the earlier. Only this week's and last week's Weigh-ins can be changed; older ones are read-only. This is not the Editable Window, which is counted in Days.
 _Avoid_: Weight log, measurement, entry
 
 ## Identity
