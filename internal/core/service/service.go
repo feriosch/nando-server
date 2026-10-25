@@ -69,6 +69,13 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
 	mux.HandleFunc("GET /api/passkeys", s.listPasskeys)
 	mux.HandleFunc("DELETE /api/passkeys/{id}", s.deletePasskey)
+
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("PUT /api/settings", s.putSettings)
+	mux.HandleFunc("GET /api/weigh-ins", s.listWeighIns)
+	mux.HandleFunc("PUT /api/weigh-ins/{week}", s.putWeighIn)
+	mux.HandleFunc("DELETE /api/weigh-ins/{week}", s.deleteWeighIn)
+	mux.HandleFunc("GET /api/body", s.getBody)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

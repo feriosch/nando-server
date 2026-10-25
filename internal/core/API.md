@@ -1,6 +1,7 @@
 # Core API
 
 Identity: passkeys, Enrollment Codes and sessions ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)).
+Settings and body measurements: the Owner Time Zone, height and Weigh-ins ([ADR 0003](../../docs/adr/0003-body-measurements-in-core.md)).
 
 The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors are a status code with a short plain-text message.
 
@@ -90,3 +91,83 @@ Every `/api/...` route, Core's and every Module's, needs a valid session cookie 
 `204`: that passkey can no longer sign in. Devices already signed in with it stay signed in until their sessions are deleted. Deleting the last passkey is allowed; `nando-server enroll` is the way back in.
 
 `400`: `id` isn't base64url.
+
+## Settings
+
+Core's own Settings Section.
+
+### `GET /api/settings`
+
+`200`: the settings. Until the Owner first saves them, they are `"UTC"`, no height, and the reminder off, set for Monday at 08:00.
+
+```json
+{
+  "timeZone": "UTC",
+  "heightCm": 175,
+  "weighInReminder": { "enabled": false, "weekday": "monday", "time": "08:00" }
+}
+```
+
+- `timeZone`: the Owner Time Zone, an IANA name such as `"Asia/Tokyo"`. Every Day, and every clock time such as the reminder's, is in this zone. Changing it never moves stored data: a Weigh-in stays in its week. Only which Day is today changes.
+- `heightCm`: a whole number of cm, or `null` until it is set.
+- `weighInReminder`: the weekly Notification reminding the Owner to weigh in. `weekday` is `"monday"` to `"sunday"`, and `time` is `"HH:MM"` on the hour or half hour (`"00:00"` to `"23:30"`).
+
+### `PUT /api/settings`
+
+Body: all of the settings, as `GET` answers them.
+
+- `204`: saved.
+- `400`: the body isn't settings, or one is invalid: an unknown time zone, a height outside 1 to 300 cm or not a whole number, an unknown weekday, or a time that isn't on the hour or half hour. The message says which.
+
+## Weigh-ins
+
+A Weigh-in is the Owner's weight for one week, Monday to Sunday in the Owner Time Zone, in kg to 1 decimal. Each week has at most one. A week is named by the Monday it starts on, as `YYYY-MM-DD`.
+
+Only this week's and last week's Weigh-ins can be logged, replaced or deleted. Older weeks are read-only.
+
+### `GET /api/weigh-ins`
+
+`200`: every Weigh-in, newest week first.
+
+```json
+[
+  { "week": "2026-10-19", "kg": 72.4 },
+  { "week": "2026-10-12", "kg": 72.8 }
+]
+```
+
+### `PUT /api/weigh-ins/{week}`
+
+Logs the Weigh-in for `week`, replacing any it already has.
+
+```json
+{ "kg": 72.4 }
+```
+
+- `204`: saved.
+- `400`: `week` isn't a Monday written `YYYY-MM-DD`, or `kg` is missing, not more than 0 and at most 500, or has more than 1 decimal.
+- `409`: `week` is neither this week nor last week.
+
+### `DELETE /api/weigh-ins/{week}`
+
+- `204`: that week has no Weigh-in now. This is also the answer if it had none.
+- `400`: `week` isn't a Monday written `YYYY-MM-DD`.
+- `409`: `week` is neither this week nor last week.
+
+## Body Home Card
+
+### `GET /api/body`
+
+`200`: what the Body Home Card shows.
+
+```json
+{
+  "latest": { "week": "2026-10-19", "kg": 72.4 },
+  "bmi": 23.6,
+  "change": -0.4
+}
+```
+
+- `latest`: the newest week's Weigh-in, or `null` if there are none. Then `bmi` and `change` are `null` too.
+- `bmi`: `latest`'s body mass index to 1 decimal, or `null` until the height is set. It is always derived, never stored.
+- `change`: `latest`'s kg minus the kg of the week before it, or `null` if that week has no Weigh-in.

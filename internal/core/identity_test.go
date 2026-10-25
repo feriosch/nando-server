@@ -22,11 +22,12 @@ const (
 	sessionCookie = "nando_session"
 )
 
-// clock is the time Core sees; tests move it forward by hand.
+// clock is the time Core sees; tests set it and move it forward by hand.
 type clock struct{ now time.Time }
 
 func (c *clock) Now() time.Time          { return c.now }
 func (c *clock) Advance(d time.Duration) { c.now = c.now.Add(d) }
+func (c *clock) Set(t time.Time)         { c.now = t }
 
 // nando is the whole HTTP API over a fresh MongoDB, as main wires it.
 type nando struct {
