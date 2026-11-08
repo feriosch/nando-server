@@ -15,8 +15,11 @@ import (
 // NewSessions returns the SessionsRepository over the sessions collection in
 // db, first creating any indexes it lacks.
 func NewSessions(ctx context.Context, db *mongo.Database) (model.SessionsRepository, error) {
-	collection, err := expiringCollection(ctx, db, "sessions",
-		mongo.IndexModel{Keys: bson.D{{Key: "tokenHash", Value: 1}}, Options: options.Index().SetUnique(true)})
+	collection := db.Collection("sessions")
+	_, err := collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		utils.ExpiresAtIndex,
+		{Keys: bson.D{{Key: "tokenHash", Value: 1}}, Options: options.Index().SetUnique(true)},
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -35,12 +38,12 @@ func (r sessions) Insert(ctx context.Context, session model.Session) error {
 
 func (r sessions) Find(ctx context.Context, tokenHash []byte, now time.Time) (model.Session, error) {
 	var session model.Session
-	err := r.collection.FindOne(ctx, bson.D{{Key: "tokenHash", Value: tokenHash}, unexpired(now)}).Decode(&session)
+	err := r.collection.FindOne(ctx, bson.D{{Key: "tokenHash", Value: tokenHash}, utils.Unexpired(now)}).Decode(&session)
 	return session, utils.NotFound(err)
 }
 
 func (r sessions) List(ctx context.Context, now time.Time) ([]model.Session, error) {
-	cursor, err := r.collection.Find(ctx, bson.D{unexpired(now)}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
+	cursor, err := r.collection.Find(ctx, bson.D{utils.Unexpired(now)}, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}

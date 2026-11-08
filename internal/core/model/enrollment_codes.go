@@ -18,6 +18,6 @@ type EnrollmentCodesRepository interface {
 	// Find returns the code with this hash that is unexpired at now.
 	Find(ctx context.Context, hash []byte, now time.Time) (EnrollmentCode, error)
 	// Use deletes the code with this hash if it is unexpired at now,
-	// returning ErrNotFound if there's no such code (it was already used).
+	// returning utils.ErrNotFound if there's no such code (it was already used).
 	Use(ctx context.Context, hash []byte, now time.Time) error
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/go-webauthn/webauthn/webauthn"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const (
@@ -131,20 +132,20 @@ func (s *IdentityService) beginRegistration(w http.ResponseWriter, r *http.Reque
 	// silently replacing it, which would leave the old one listed but unusable.
 	o, err := s.loadOwner(r.Context())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	exclusions := webauthn.Credentials(o.credentials).CredentialDescriptors()
 	creation, sessionData, err := s.webauthn.BeginRegistration(o, webauthn.WithExclusions(exclusions))
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	if err := s.beginCeremony(r.Context(), sessionData, codeHash); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
-	WriteJSON(w, http.StatusOK, creation)
+	utils.WriteJSON(w, http.StatusOK, creation)
 }
 
 // finishRegistration stores the new passkey from navigator.credentials.create,
@@ -172,12 +173,12 @@ func (s *IdentityService) finishRegistration(w http.ResponseWriter, r *http.Requ
 
 	stored, err := json.Marshal(credential)
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	err = s.passkeys.Insert(r.Context(), model.Passkey{ID: credential.ID, Credential: stored, CreatedAt: s.now()})
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	// The code is used up only once the passkey is stored, so a cancelled
@@ -185,14 +186,14 @@ func (s *IdentityService) finishRegistration(w http.ResponseWriter, r *http.Requ
 	// registration used it first, this passkey is taken back out.
 	if err := s.enrollmentCodes.Use(r.Context(), ceremony.EnrollmentCodeHash, s.now()); err != nil {
 		if deleteErr := s.passkeys.Delete(r.Context(), credential.ID); deleteErr != nil {
-			ServerError(w, errors.Join(err, deleteErr))
+			utils.ServerError(w, errors.Join(err, deleteErr))
 			return
 		}
 		enrollmentCodeError(w, err)
 		return
 	}
 	if err := s.sessions.startSession(w, r); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -203,14 +204,14 @@ func (s *IdentityService) finishRegistration(w http.ResponseWriter, r *http.Requ
 func (s *IdentityService) beginSignIn(w http.ResponseWriter, r *http.Request) {
 	assertion, sessionData, err := s.webauthn.BeginDiscoverableLogin()
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	if err := s.beginCeremony(r.Context(), sessionData, nil); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
-	WriteJSON(w, http.StatusOK, assertion)
+	utils.WriteJSON(w, http.StatusOK, assertion)
 }
 
 // finishSignIn checks the passkey's answer from navigator.credentials.get and
@@ -236,7 +237,7 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.sessions.startSession(w, r); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -283,11 +284,11 @@ func credentialOf(passkey model.Passkey) (webauthn.Credential, error) {
 }
 
 func enrollmentCodeError(w http.ResponseWriter, err error) {
-	if errors.Is(err, model.ErrNotFound) {
+	if errors.Is(err, utils.ErrNotFound) {
 		http.Error(w, "that Enrollment Code is unknown, used or expired", http.StatusUnauthorized)
 		return
 	}
-	ServerError(w, err)
+	utils.ServerError(w, err)
 }
 
 // beginCeremony keeps sessionData, go-webauthn's state, until the ceremony's finish request.
@@ -311,7 +312,7 @@ var errNoCeremony = errors.New("no ceremony")
 func (s *IdentityService) takeCeremony(ctx context.Context, challenge string) (model.Ceremony, webauthn.SessionData, error) {
 	var sessionData webauthn.SessionData
 	ceremony, err := s.ceremonies.Take(ctx, challenge, s.now())
-	if errors.Is(err, model.ErrNotFound) {
+	if errors.Is(err, utils.ErrNotFound) {
 		return ceremony, sessionData, errNoCeremony
 	}
 	if err != nil {
@@ -328,7 +329,7 @@ func ceremonyError(w http.ResponseWriter, err error) {
 		http.Error(w, "that challenge is unknown, used or expired; start again", http.StatusUnauthorized)
 		return
 	}
-	ServerError(w, err)
+	utils.ServerError(w, err)
 }
 
 // sha256Of hashes a secret (an Enrollment Code or a session token) for storing.

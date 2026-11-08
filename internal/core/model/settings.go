@@ -31,7 +31,7 @@ var DefaultSettings = Settings{
 
 // SettingsRepository reads and writes the settings collection.
 type SettingsRepository interface {
-	// Find returns the settings, or ErrNotFound if none were ever saved.
+	// Find returns the settings, or utils.ErrNotFound if none were ever saved.
 	Find(ctx context.Context) (Settings, error)
 	Save(ctx context.Context, settings Settings) error
 }

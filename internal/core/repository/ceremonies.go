@@ -14,8 +14,8 @@ import (
 // NewCeremonies returns the CeremoniesRepository over the ceremonies
 // collection in db, first creating any indexes it lacks.
 func NewCeremonies(ctx context.Context, db *mongo.Database) (model.CeremoniesRepository, error) {
-	collection, err := expiringCollection(ctx, db, "ceremonies")
-	if err != nil {
+	collection := db.Collection("ceremonies")
+	if _, err := collection.Indexes().CreateMany(ctx, []mongo.IndexModel{utils.ExpiresAtIndex}); err != nil {
 		return nil, err
 	}
 	return ceremonies{collection: collection}, nil
@@ -33,6 +33,6 @@ func (r ceremonies) Insert(ctx context.Context, ceremony model.Ceremony) error {
 
 func (r ceremonies) Take(ctx context.Context, challenge string, now time.Time) (model.Ceremony, error) {
 	var ceremony model.Ceremony
-	err := r.collection.FindOneAndDelete(ctx, bson.D{{Key: "_id", Value: challenge}, unexpired(now)}).Decode(&ceremony)
+	err := r.collection.FindOneAndDelete(ctx, bson.D{{Key: "_id", Value: challenge}, utils.Unexpired(now)}).Decode(&ceremony)
 	return ceremony, utils.NotFound(err)
 }

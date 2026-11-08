@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // PushSubscriptionsService handles requests about Push Subscriptions. The
@@ -38,7 +39,7 @@ func (s *PushSubscriptionsService) Routes(mux *http.ServeMux) {
 // getVAPIDPublicKey answers the key the web app passes to
 // pushManager.subscribe as its applicationServerKey.
 func (s *PushSubscriptionsService) getVAPIDPublicKey(w http.ResponseWriter, r *http.Request) {
-	WriteJSON(w, http.StatusOK, struct {
+	utils.WriteJSON(w, http.StatusOK, struct {
 		PublicKey string `json:"publicKey"`
 	}{s.vapidPublicKey})
 }
@@ -101,7 +102,7 @@ func (s *PushSubscriptionsService) postPushSubscription(w http.ResponseWriter, r
 		CreatedAt: s.now(),
 	}
 	if err := s.pushSubscriptions.Save(r.Context(), sub); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -116,7 +117,7 @@ func (s *PushSubscriptionsService) deletePushSubscription(w http.ResponseWriter,
 		return
 	}
 	if err := s.pushSubscriptions.Delete(r.Context(), endpoint); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

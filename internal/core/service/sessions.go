@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const (
@@ -96,16 +97,16 @@ func (s *SessionsService) RequireSession(next http.Handler) http.Handler {
 		now := s.now()
 		session, err := s.sessions.Find(r.Context(), sha256Of(cookie.Value), now)
 		if err != nil {
-			if errors.Is(err, model.ErrNotFound) {
+			if errors.Is(err, utils.ErrNotFound) {
 				http.Error(w, "sign in first", http.StatusUnauthorized)
 				return
 			}
-			ServerError(w, err)
+			utils.ServerError(w, err)
 			return
 		}
 		if now.Sub(session.RenewedAt) >= renewalInterval {
 			if err := s.sessions.Renew(r.Context(), session.ID, now, now.Add(sessionLifetime)); err != nil {
-				ServerError(w, err)
+				utils.ServerError(w, err)
 				return
 			}
 			s.setSessionCookie(w, cookie.Value)
@@ -127,7 +128,7 @@ func currentSession(r *http.Request) string {
 func (s *SessionsService) listSessions(w http.ResponseWriter, r *http.Request) {
 	sessions, err := s.sessions.List(r.Context(), s.now())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	type sessionJSON struct {
@@ -147,7 +148,7 @@ func (s *SessionsService) listSessions(w http.ResponseWriter, r *http.Request) {
 			Current:   session.ID == currentSession(r),
 		}
 	}
-	WriteJSON(w, http.StatusOK, list)
+	utils.WriteJSON(w, http.StatusOK, list)
 }
 
 // deleteSession signs a device out. Deleting the current session signs out
@@ -155,7 +156,7 @@ func (s *SessionsService) listSessions(w http.ResponseWriter, r *http.Request) {
 func (s *SessionsService) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.sessions.Delete(r.Context(), id); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	if id == currentSession(r) {

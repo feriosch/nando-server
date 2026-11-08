@@ -8,10 +8,12 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
 	// The Owner Time Zone mustn't depend on the image having a zoneinfo database.
 	_ "time/tzdata"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // SettingsService handles requests about the Owner's settings, and answers
@@ -35,7 +37,7 @@ func (s *SettingsService) Routes(mux *http.ServeMux) {
 // Settings returns the saved settings, or the defaults if none were saved.
 func (s *SettingsService) Settings(ctx context.Context) (model.Settings, error) {
 	settings, err := s.settings.Find(ctx)
-	if errors.Is(err, model.ErrNotFound) {
+	if errors.Is(err, utils.ErrNotFound) {
 		return model.DefaultSettings, nil
 	}
 	return settings, err
@@ -73,10 +75,10 @@ func toSettingsJSON(settings model.Settings) settingsJSON {
 func (s *SettingsService) getSettings(w http.ResponseWriter, r *http.Request) {
 	settings, err := s.Settings(r.Context())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
-	WriteJSON(w, http.StatusOK, toSettingsJSON(settings))
+	utils.WriteJSON(w, http.StatusOK, toSettingsJSON(settings))
 }
 
 // weekdays are the weekdays by their API names, such as "monday".
@@ -135,7 +137,7 @@ func (s *SettingsService) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.settings.Save(r.Context(), settings); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

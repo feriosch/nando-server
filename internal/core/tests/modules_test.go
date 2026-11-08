@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // signedInPhone returns Nando with an enrolled, signed-in iPhone, its clock
@@ -56,7 +57,7 @@ func TestLatestWeighInIsTheNewestWeeks(t *testing.T) {
 	n, phone := signedInPhone(t, wednesday)
 	core := n.core.Service()
 
-	if _, err := core.LatestWeighIn(ctx); !errors.Is(err, model.ErrNotFound) {
+	if _, err := core.LatestWeighIn(ctx); !errors.Is(err, utils.ErrNotFound) {
 		t.Errorf("LatestWeighIn before any = %v, want ErrNotFound", err)
 	}
 

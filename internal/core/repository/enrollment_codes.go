@@ -14,8 +14,8 @@ import (
 // NewEnrollmentCodes returns the EnrollmentCodesRepository over the
 // enrollment_codes collection in db, first creating any indexes it lacks.
 func NewEnrollmentCodes(ctx context.Context, db *mongo.Database) (model.EnrollmentCodesRepository, error) {
-	collection, err := expiringCollection(ctx, db, "enrollment_codes")
-	if err != nil {
+	collection := db.Collection("enrollment_codes")
+	if _, err := collection.Indexes().CreateMany(ctx, []mongo.IndexModel{utils.ExpiresAtIndex}); err != nil {
 		return nil, err
 	}
 	return enrollmentCodes{collection: collection}, nil
@@ -33,14 +33,10 @@ func (r enrollmentCodes) Insert(ctx context.Context, code model.EnrollmentCode) 
 
 func (r enrollmentCodes) Find(ctx context.Context, hash []byte, now time.Time) (model.EnrollmentCode, error) {
 	var code model.EnrollmentCode
-	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: hash}, unexpired(now)}).Decode(&code)
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: hash}, utils.Unexpired(now)}).Decode(&code)
 	return code, utils.NotFound(err)
 }
 
 func (r enrollmentCodes) Use(ctx context.Context, hash []byte, now time.Time) error {
-	res, err := r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: hash}, unexpired(now)})
-	if err == nil && res.DeletedCount == 0 {
-		return model.ErrNotFound
-	}
-	return err
+	return utils.Deleted(r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: hash}, utils.Unexpired(now)}))
 }

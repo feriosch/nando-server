@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // sentNotificationTTL is how long a sent Notification's ID is remembered: far
@@ -85,7 +86,7 @@ func (s *NotificationsService) tick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.sendDueNotifications(r.Context()); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

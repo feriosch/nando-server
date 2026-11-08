@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // PasskeysService handles requests about the Owner's passkeys. Registering
@@ -29,7 +30,7 @@ func (s *PasskeysService) Routes(mux *http.ServeMux) {
 func (s *PasskeysService) listPasskeys(w http.ResponseWriter, r *http.Request) {
 	passkeys, err := s.passkeys.List(r.Context())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	type passkeyJSON struct {
@@ -40,7 +41,7 @@ func (s *PasskeysService) listPasskeys(w http.ResponseWriter, r *http.Request) {
 	for i, passkey := range passkeys {
 		list[i] = passkeyJSON{ID: base64.RawURLEncoding.EncodeToString(passkey.ID), CreatedAt: passkey.CreatedAt}
 	}
-	WriteJSON(w, http.StatusOK, list)
+	utils.WriteJSON(w, http.StatusOK, list)
 }
 
 // deletePasskey stops a passkey signing in. Devices already signed in with it
@@ -52,7 +53,7 @@ func (s *PasskeysService) deletePasskey(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.passkeys.Delete(r.Context(), id); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

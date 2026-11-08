@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // BodyService answers the Body Home Card, which shows Weigh-ins with the
@@ -46,19 +47,19 @@ func (s *BodyService) getBody(w http.ResponseWriter, r *http.Request) {
 		Change *float64     `json:"change"`
 	}
 	latest, err := s.weighIns.FindLatest(r.Context())
-	if errors.Is(err, model.ErrNotFound) {
-		WriteJSON(w, http.StatusOK, card)
+	if errors.Is(err, utils.ErrNotFound) {
+		utils.WriteJSON(w, http.StatusOK, card)
 		return
 	}
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	card.Latest = &weighInJSON{Week: latest.Week, Kg: latest.Kg}
 
 	settings, err := s.settings.Settings(r.Context())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	if settings.HeightCm != 0 {
@@ -71,9 +72,9 @@ func (s *BodyService) getBody(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		change := round1(latest.Kg - previous.Kg)
 		card.Change = &change
-	case !errors.Is(err, model.ErrNotFound):
-		ServerError(w, err)
+	case !errors.Is(err, utils.ErrNotFound):
+		utils.ServerError(w, err)
 		return
 	}
-	WriteJSON(w, http.StatusOK, card)
+	utils.WriteJSON(w, http.StatusOK, card)
 }

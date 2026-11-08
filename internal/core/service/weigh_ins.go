@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // WeighInsService handles requests about Weigh-ins. It asks the
@@ -39,14 +40,14 @@ type weighInJSON struct {
 func (s *WeighInsService) listWeighIns(w http.ResponseWriter, r *http.Request) {
 	weighIns, err := s.weighIns.List(r.Context())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	list := make([]weighInJSON, len(weighIns))
 	for i, weighIn := range weighIns {
 		list[i] = weighInJSON{Week: weighIn.Week, Kg: weighIn.Kg}
 	}
-	WriteJSON(w, http.StatusOK, list)
+	utils.WriteJSON(w, http.StatusOK, list)
 }
 
 // putWeighIn logs the Weigh-in for the week starting on the Monday in the
@@ -70,7 +71,7 @@ func (s *WeighInsService) putWeighIn(w http.ResponseWriter, r *http.Request) {
 	}
 	weighIn := model.WeighIn{Week: week, Kg: kg}
 	if err := s.weighIns.Save(r.Context(), weighIn); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -97,7 +98,7 @@ func (s *WeighInsService) editableWeek(w http.ResponseWriter, r *http.Request) (
 	}
 	today, err := s.settings.Today(r.Context())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return "", false
 	}
 	if thisWeek := today.Week(); week != thisWeek && week != thisWeek.AddDays(-7) {
@@ -115,7 +116,7 @@ func (s *WeighInsService) deleteWeighIn(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if err := s.weighIns.Delete(r.Context(), week); err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

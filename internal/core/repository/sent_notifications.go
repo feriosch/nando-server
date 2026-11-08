@@ -8,13 +8,14 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // NewSentNotifications returns the SentNotificationsRepository over the
 // sent_notifications collection in db, first creating any indexes it lacks.
 func NewSentNotifications(ctx context.Context, db *mongo.Database) (model.SentNotificationsRepository, error) {
-	collection, err := expiringCollection(ctx, db, "sent_notifications")
-	if err != nil {
+	collection := db.Collection("sent_notifications")
+	if _, err := collection.Indexes().CreateMany(ctx, []mongo.IndexModel{utils.ExpiresAtIndex}); err != nil {
 		return nil, err
 	}
 	return sentNotifications{collection: collection}, nil
