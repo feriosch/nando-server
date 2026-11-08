@@ -5,6 +5,7 @@
 set -eu
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
+# Core and every Module (internal/server/databases.go): add a new Module here.
 for db in core calories; do
 	mongodump --uri "$MONGO_URI" --db "$db" --gzip --out "$out"
 done

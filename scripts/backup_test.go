@@ -1,6 +1,6 @@
 // Tests for the weekly backup (.github/workflows/backup.yml): backup.sh is run
 // the way the workflow runs it, inside the mongo:8 image, and its archive is
-// restored with the README's mongorestore command into a fresh MongoDB.
+// restored into a fresh MongoDB with the README's restore commands.
 package scripts_test
 
 import (
@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -17,10 +18,16 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
+
+	"github.com/feriosch/nando-server/internal/testmongo"
 )
 
-// insideURI is how a process inside a MongoDB container reaches its mongod.
-const insideURI = "mongodb://localhost:27017"
+// uriInContainer is how mongodump and mongorestore, run inside a MongoDB
+// container, reach that container's own server.
+const uriInContainer = "mongodb://localhost:27017"
+
+// restoreMarker precedes the README's restore block.
+const restoreMarker = "<!-- restore: scripts/backup_test.go runs the block below -->"
 
 // mongoServer is a fresh mongo:8 container (which also ships mongodump and
 // mongorestore) and a client connected to it from the test.
@@ -31,13 +38,8 @@ type mongoServer struct {
 
 func startMongo(t *testing.T, opts ...testcontainers.ContainerCustomizer) *mongoServer {
 	t.Helper()
-	ctx := context.Background()
-	container, err := mongodb.Run(ctx, "mongo:8", opts...)
-	testcontainers.CleanupContainer(t, container)
-	if err != nil {
-		t.Fatalf("start MongoDB container (is Docker running?): %v", err)
-	}
-	uri, err := container.ConnectionString(ctx)
+	container := testmongo.Start(t, opts...)
+	uri, err := container.ConnectionString(context.Background())
 	if err != nil {
 		t.Fatalf("MongoDB container connection string: %v", err)
 	}
@@ -85,15 +87,20 @@ func (m *mongoServer) find(t *testing.T, db, collection string) []bson.M {
 	return docs
 }
 
-// backup runs scripts/backup.sh against m, as the workflow does, and returns
-// the path of the archive it wrote, copied out to the test's temp dir.
-func backup(t *testing.T, m *mongoServer) string {
+// backupAndRestore backs source up and restores the backup into a fresh
+// MongoDB, which it returns. backup.sh connects to source with uri.
+func backupAndRestore(t *testing.T, source *mongoServer, uri string) *mongoServer {
 	t.Helper()
-	return backupAs(t, m, insideURI)
+	archive := backup(t, source, uri)
+	target := startMongo(t)
+	restore(t, target, archive)
+	return target
 }
 
-// backupAs is backup connecting with uri, from inside m's container.
-func backupAs(t *testing.T, m *mongoServer, uri string) string {
+// backup runs scripts/backup.sh inside m's container, as the workflow runs it,
+// connecting with uri, and returns the path of the archive it wrote, copied
+// out to the test's temp dir.
+func backup(t *testing.T, m *mongoServer, uri string) string {
 	t.Helper()
 	ctx := context.Background()
 	if err := m.container.CopyFileToContainer(ctx, "backup.sh", "/work/scripts/backup.sh", 0o755); err != nil {
@@ -117,15 +124,36 @@ func backupAs(t *testing.T, m *mongoServer, uri string) string {
 	return path
 }
 
-// restore restores archive into m with the README's restore commands.
+// restore restores archive into m with the README's restore block, run in
+// the folder holding the archive with MONGO_URI set, as the README says.
 func restore(t *testing.T, m *mongoServer, archive string) {
 	t.Helper()
-	if err := m.container.CopyFileToContainer(context.Background(), archive, "/tmp/nando.tar", 0o644); err != nil {
+	if err := m.container.CopyFileToContainer(context.Background(), archive, "/restore/nando.tar", 0o644); err != nil {
 		t.Fatalf("copy archive in: %v", err)
 	}
-	m.run(t, []string{"MONGO_URI=" + insideURI}, "sh", "-c", `cd /tmp &&
-		mkdir nando && tar -xf nando.tar -C nando &&
-		mongorestore --uri "$MONGO_URI" --gzip --drop nando`)
+	m.run(t, []string{"MONGO_URI=" + uriInContainer}, "sh", "-ec", "cd /restore\n"+readmeRestore(t))
+}
+
+// readmeRestore returns the shell commands of the README's restore block.
+func readmeRestore(t *testing.T) string {
+	t.Helper()
+	readme, err := os.ReadFile("../README.md")
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+	_, after, found := strings.Cut(string(readme), restoreMarker)
+	if !found {
+		t.Fatalf("README has no %q", restoreMarker)
+	}
+	_, block, found := strings.Cut(after, "```sh\n")
+	if !found {
+		t.Fatal("README has no ```sh block after the restore marker")
+	}
+	commands, _, found := strings.Cut(block, "```")
+	if !found {
+		t.Fatal("README's restore block is not closed")
+	}
+	return commands
 }
 
 func TestBackupRestoresCoreAndCalories(t *testing.T) {
@@ -133,9 +161,7 @@ func TestBackupRestoresCoreAndCalories(t *testing.T) {
 	source.insert(t, "core", "settings", bson.D{{Key: "_id", Value: "owner"}, {Key: "timeZone", Value: "Asia/Tokyo"}})
 	source.insert(t, "calories", "meals", bson.D{{Key: "_id", Value: "onigiri"}, {Key: "name", Value: "Onigiri"}, {Key: "kcal", Value: int32(180)}})
 
-	archive := backup(t, source)
-	target := startMongo(t)
-	restore(t, target, archive)
+	target := backupAndRestore(t, source, uriInContainer)
 
 	assertDocs(t, target.find(t, "core", "settings"), []bson.M{{"_id": "owner", "timeZone": "Asia/Tokyo"}})
 	assertDocs(t, target.find(t, "calories", "meals"), []bson.M{{"_id": "onigiri", "name": "Onigiri", "kcal": int32(180)}})
@@ -144,11 +170,10 @@ func TestBackupRestoresCoreAndCalories(t *testing.T) {
 func TestBackupLeavesOutOtherDatabases(t *testing.T) {
 	source := startMongo(t)
 	source.insert(t, "core", "settings", bson.D{{Key: "_id", Value: "owner"}})
+	source.insert(t, "calories", "meals", bson.D{{Key: "_id", Value: "onigiri"}})
 	source.insert(t, "benkyo", "decks", bson.D{{Key: "_id", Value: "kanji"}})
 
-	archive := backup(t, source)
-	target := startMongo(t)
-	restore(t, target, archive)
+	target := backupAndRestore(t, source, uriInContainer)
 
 	names, err := target.client.ListDatabaseNames(context.Background(), bson.D{})
 	if err != nil {
@@ -178,9 +203,7 @@ func TestBackupNeedsOnlyNandosDatabaseUser(t *testing.T) {
 		t.Fatalf("create user: %v", err)
 	}
 
-	archive := backupAs(t, source, "mongodb://nando:nando@localhost:27017/?authSource=admin")
-	target := startMongo(t)
-	restore(t, target, archive)
+	target := backupAndRestore(t, source, "mongodb://nando:nando@localhost:27017/?authSource=admin")
 
 	assertDocs(t, target.find(t, "core", "settings"), []bson.M{{"_id": "owner"}})
 	assertDocs(t, target.find(t, "calories", "meals"), []bson.M{{"_id": "onigiri"}})

@@ -8,7 +8,7 @@ Go API for Nando. Domain language: [`GLOSSARY.md`](GLOSSARY.md). Decisions: [`do
 - `internal/server`: the HTTP API (routes, CORS) and `server.RegisterDatabases`, which opens the MongoDB connection and binds it as singletons in a [golobby container](https://github.com/golobby/container): the `*mongo.Client` and one named `*mongo.Database` each for Core and every Module (`core`, `calories`). `main` fills a `server.Databases` from the container and hands each area its own database.
 - `internal/core`: Core, wired in `core.go`. Its HTTP API is documented in [`internal/core/API.md`](internal/core/API.md).
 - `internal/calories`: the Calories Module, wired in `calories.go`. Its HTTP API is documented in [`internal/calories/API.md`](internal/calories/API.md).
-- `internal/testmongo`: test helper that starts a real MongoDB container.
+- `internal/testmongo`: test helper that starts a real MongoDB container (`URI`, or `Start` for a test that needs the container itself).
 - `internal/testpasskey`: test helper, a software passkey, so tests can sign a device in.
 - `internal/testpush`: test helper, a browser's push service, so tests can see the Notifications Nando delivers.
 - `scripts/backup.sh`: the weekly backup's dump (see [Backups](#backups)). `scripts/backup_test.go` runs it inside `mongo:8` and restores what it wrote with the commands below.
@@ -94,30 +94,38 @@ If the new revision doesn't start (for example, MongoDB is unreachable), the dep
 
 ## Backups
 
-Every Sunday at 03:17 Tokyo time, `.github/workflows/backup.yml` (also runnable by hand from the Actions tab) dumps the `core` and `calories` databases with `scripts/backup.sh` and uploads them to the private bucket `gs://nanders-backups` as `nando-<UTC date and time>.tar`: one gzipped BSON file per collection. It signs in through Workload Identity Federation as the backup service account (`GCP_BACKUP_SA`), which can read the `nandoproject-mongo` secret and create objects in the bucket, but not read, overwrite or delete them. The bucket's lifecycle rule deletes backups after 56 days, so the last 8 are kept.
+Every Sunday at 03:17 Tokyo time, `.github/workflows/backup.yml` (also runnable by hand from the Actions tab) dumps the `core` and `calories` databases with `scripts/backup.sh` and uploads them as `nando-<UTC date and time>.tar` (one gzipped BSON file per collection) to the private bucket named by the repo variable `GCP_BACKUP_BUCKET` (`gs://nanders-backups`). It signs in through Workload Identity Federation as the backup service account (`GCP_BACKUP_SA`). That account can read the `nandoproject-mongo` secret and create objects in the bucket, but can't read, overwrite or delete them.
 
-The backup service account needs access to the Mongo secret. Grant it once:
+The bucket's lifecycle rule deletes each backup when it's 56 days old, which leaves the last 8 weekly ones. It goes by age, not count: if backups stop, the old ones still expire, and after 8 weeks there are none. So watch for failed runs. GitHub emails a failed scheduled run to whoever last changed the workflow's `cron` line, and in a public repository it turns scheduled workflows off after 60 days without activity (re-enable Backup in the Actions tab).
+
+`backup.sh` lists the databases it dumps. A new Module's database must be added there.
+
+The backup account was given the secret once (#13); to set it up again:
 
 ```sh
 gcloud secrets add-iam-policy-binding nandoproject-mongo --project <project> \
   --member "serviceAccount:<GCP_BACKUP_SA>" --role roles/secretmanager.secretAccessor
 ```
 
-GitHub turns off scheduled workflows in a public repository after 60 days without activity; if it does, re-enable Backup in the Actions tab.
-
 ### Restore
 
-Signed in to `gcloud` as yourself (the backup account can't read the bucket), pick a backup and unpack it:
+Signed in to `gcloud` as yourself (the backup account can't read the bucket), pick a backup and download it as `nando.tar`:
 
 ```sh
 gcloud storage ls gs://nanders-backups/
-gcloud storage cp gs://nanders-backups/nando-<when>.tar .
-mkdir nando && tar -xf nando-<when>.tar -C nando
+gcloud storage cp gs://nanders-backups/nando-<when>.tar nando.tar
 ```
 
-Then restore it with `mongorestore` ([MongoDB Database Tools](https://www.mongodb.com/docs/database-tools/installation/), or run it in `docker run --rm -it -v "$PWD:/work" -w /work mongo:8 bash`). `--drop` replaces each backed-up collection with its contents in the backup; collections that aren't in the backup are left alone. To check a backup first, restore it into the local MongoDB (`MONGO_URI=mongodb://localhost:27017`).
+Point `MONGO_URI` at the database to restore into: production's, or `mongodb://localhost:27017` to look at a backup in the local MongoDB first.
 
 ```sh
-MONGO_URI="$(gcloud secrets versions access latest --secret nandoproject-mongo --project <project>)" \
+export MONGO_URI="$(gcloud secrets versions access latest --secret nandoproject-mongo --project <project>)"
+```
+
+Then, in the folder holding `nando.tar`, with `mongorestore` installed ([MongoDB Database Tools](https://www.mongodb.com/docs/database-tools/installation/)), unpack and restore it. `--drop` replaces each backed-up collection with its contents in the backup; collections that aren't in the backup are left alone.
+
+<!-- restore: scripts/backup_test.go runs the block below -->
+```sh
+mkdir nando && tar -xf nando.tar -C nando
 mongorestore --uri "$MONGO_URI" --gzip --drop nando
 ```

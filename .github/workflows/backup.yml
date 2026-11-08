@@ -1,8 +1,10 @@
 # Weekly backup of core and calories to the private backup bucket (#13).
+# Project, WIF provider, backup account and bucket are repo variables from #5.
 # Signs in as the backup service account through Workload Identity Federation:
 # it may read the Mongo secret and create objects in the bucket, but not read,
-# overwrite or delete them. The bucket's lifecycle rule deletes backups after
-# 56 days, so the last 8 are kept. Restore: README's Backups section.
+# overwrite or delete them. The bucket's lifecycle rule deletes each backup at
+# 56 days old, leaving the last 8 weekly ones while backups keep running.
+# Restore: README's Backups section.
 name: Backup
 
 on:
@@ -12,6 +14,7 @@ on:
     - cron: "17 18 * * 6"
   workflow_dispatch:
 
+# One backup at a time; a manual run during the scheduled one waits for it.
 concurrency:
   group: backup
   cancel-in-progress: false
@@ -23,6 +26,8 @@ permissions:
 jobs:
   backup:
     name: mongodump and upload
+    # ubuntu-latest is fine here, unlike in pr.yml (#17): the kernel only
+    # stops mongod from starting, and this job runs just mongodump.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
