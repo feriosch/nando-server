@@ -1,4 +1,6 @@
-package tests
+// Package testpush gives tests a browser's push service, so they can see the
+// Notifications Nando delivers.
+package testpush
 
 import (
 	"crypto/aes"
@@ -18,11 +20,11 @@ import (
 	"testing"
 )
 
-// pushService is a browser's push service (Apple's, Google's, ...) holding one
+// Service is a browser's push service (Apple's, Google's, ...) holding one
 // Push Subscription: an endpoint plus the keys only the browser knows. It
 // decrypts each push message the way the browser would (RFC 8291) and records
 // it, answering with status (201 Created unless a test changes it).
-type pushService struct {
+type Service struct {
 	t       *testing.T
 	server  *httptest.Server
 	private *ecdh.PrivateKey
@@ -31,12 +33,12 @@ type pushService struct {
 	mu       sync.Mutex
 	status   int
 	requests int
-	messages []pushMessage
+	messages []Message
 	headers  []http.Header
 }
 
-// pushMessage is the Notification the web app's service worker shows.
-type pushMessage struct {
+// Message is the Notification the web app's service worker shows.
+type Message struct {
 	Title string
 	Body  string
 	URL   string
@@ -45,7 +47,7 @@ type pushMessage struct {
 // shownBy reads a push message's JSON the way nando-web's service worker does
 // (src/core/sw/notifications.ts): a field that is missing or null falls back
 // to its default.
-func shownBy(t *testing.T, payload []byte) pushMessage {
+func shownBy(t *testing.T, payload []byte) Message {
 	var sent struct{ Title, Body, URL *string }
 	if err := json.Unmarshal(payload, &sent); err != nil {
 		t.Errorf("push message isn't JSON: %v", err)
@@ -56,25 +58,27 @@ func shownBy(t *testing.T, payload []byte) pushMessage {
 		}
 		return *s
 	}
-	return pushMessage{Title: or(sent.Title, "Nando"), Body: or(sent.Body, ""), URL: or(sent.URL, "/")}
+	return Message{Title: or(sent.Title, "Nando"), Body: or(sent.Body, ""), URL: or(sent.URL, "/")}
 }
 
-func newPushService(t *testing.T) *pushService {
+// New starts a push service holding one Push Subscription, stopped when the
+// test ends.
+func New(t *testing.T) *Service {
 	t.Helper()
 	private, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &pushService{t: t, private: private, auth: make([]byte, 16), status: http.StatusCreated}
+	p := &Service{t: t, private: private, auth: make([]byte, 16), status: http.StatusCreated}
 	_, _ = rand.Read(p.auth)
 	p.server = httptest.NewServer(http.HandlerFunc(p.receive))
 	t.Cleanup(p.server.Close)
 	return p
 }
 
-// subscriptionJSON is the Push Subscription as PushSubscription.toJSON()
+// SubscriptionJSON is the Push Subscription as PushSubscription.toJSON()
 // returns it in the browser.
-func (p *pushService) subscriptionJSON() map[string]any {
+func (p *Service) SubscriptionJSON() map[string]any {
 	enc := base64.RawURLEncoding
 	return map[string]any{
 		"endpoint":       p.server.URL + "/push/" + enc.EncodeToString(p.auth),
@@ -86,24 +90,24 @@ func (p *pushService) subscriptionJSON() map[string]any {
 	}
 }
 
-func (p *pushService) endpoint() string { return p.subscriptionJSON()["endpoint"].(string) }
+func (p *Service) Endpoint() string { return p.SubscriptionJSON()["endpoint"].(string) }
 
-// answer makes the push service reply to every later push message with status.
-func (p *pushService) answer(status int) {
+// Answer makes the push service reply to every later push message with status.
+func (p *Service) Answer(status int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.status = status
 }
 
-// received returns the push messages delivered so far.
-func (p *pushService) received() []pushMessage {
+// Received returns the push messages delivered so far.
+func (p *Service) Received() []Message {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]pushMessage(nil), p.messages...)
+	return append([]Message(nil), p.messages...)
 }
 
-// vapidKeys returns the VAPID public key ("k=") of each delivered push message.
-func (p *pushService) vapidKeys() []string {
+// VAPIDKeys returns the VAPID public key ("k=") of each delivered push message.
+func (p *Service) VAPIDKeys() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	var keys []string
@@ -118,14 +122,14 @@ func (p *pushService) vapidKeys() []string {
 	return keys
 }
 
-// requestCount is how many push messages were sent here, delivered or not.
-func (p *pushService) requestCount() int {
+// RequestCount is how many push messages were sent here, delivered or not.
+func (p *Service) RequestCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.requests
 }
 
-func (p *pushService) receive(w http.ResponseWriter, r *http.Request) {
+func (p *Service) receive(w http.ResponseWriter, r *http.Request) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.requests++
@@ -144,7 +148,7 @@ func (p *pushService) receive(w http.ResponseWriter, r *http.Request) {
 }
 
 // decrypt opens an aes128gcm push message as RFC 8291 describes.
-func (p *pushService) decrypt(body []byte) []byte {
+func (p *Service) decrypt(body []byte) []byte {
 	t := p.t
 	if len(body) < 21 {
 		t.Fatalf("push message is too short: %d bytes", len(body))
