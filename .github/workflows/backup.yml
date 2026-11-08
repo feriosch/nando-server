@@ -1,0 +1,64 @@
+# Weekly backup of core and calories to the private backup bucket (#13).
+# Project, WIF provider, backup account and bucket are repo variables from #5.
+# Signs in as the backup service account through Workload Identity Federation:
+# it may read the Mongo secret and create objects in the bucket, but not read,
+# overwrite or delete them. The bucket's lifecycle rule deletes each backup at
+# 56 days old, leaving the last 8 weekly ones while backups keep running.
+# Restore: README's Backups section.
+name: Backup
+
+on:
+  schedule:
+    # Sundays 03:17 in Asia/Tokyo (cron is UTC). Off the hour, since GitHub
+    # delays or drops scheduled runs at :00.
+    - cron: "17 18 * * 6"
+  workflow_dispatch:
+
+# One backup at a time; a manual run during the scheduled one waits for it.
+concurrency:
+  group: backup
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  backup:
+    name: mongodump and upload
+    # ubuntu-latest is fine here, unlike in pr.yml (#17): the kernel only
+    # stops mongod from starting, and this job runs just mongodump.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_BACKUP_SA }}
+          token_format: access_token
+      - uses: google-github-actions/setup-gcloud@v2
+      # Runs in the mongo:8 image, which ships mongodump; the tests run
+      # backup.sh the same way.
+      - name: dump
+        run: |
+          MONGO_URI="$(gcloud secrets versions access latest --secret nandoproject-mongo --project "${{ vars.GCP_PROJECT_ID }}")"
+          echo "::add-mask::$MONGO_URI"
+          export MONGO_URI
+          docker run --rm -e MONGO_URI -v "$PWD:/work" -w /work mongo:8 scripts/backup.sh nando.tar
+      # A plain JSON API upload needs only storage.objects.create, which is all
+      # the backup account has. ifGenerationMatch=0 refuses to overwrite.
+      - name: upload
+        env:
+          TOKEN: ${{ steps.auth.outputs.access_token }}
+          BUCKET: ${{ vars.GCP_BACKUP_BUCKET }}
+        run: |
+          BUCKET="${BUCKET#gs://}"
+          name="nando-$(date -u +%Y-%m-%dT%H%MZ).tar"
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/x-tar" \
+            --data-binary @nando.tar \
+            "https://storage.googleapis.com/upload/storage/v1/b/$BUCKET/o?uploadType=media&ifGenerationMatch=0&name=$name" \
+            -o /dev/null
+          echo "Uploaded gs://$BUCKET/$name ($(du -h nando.tar | cut -f1))"
