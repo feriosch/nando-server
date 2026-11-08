@@ -21,6 +21,8 @@ func New(ctx context.Context, db *mongo.Database) (model.CoreRepository, error) 
 		enrollmentCodes: enrollmentCodeIndexes,
 		ceremonies:      ceremonyIndexes,
 		sessions:        sessionIndexes,
+
+		sentNotifications: sentNotificationIndexes,
 	}
 	for collection, models := range indexes {
 		if _, err := db.Collection(collection).Indexes().CreateMany(ctx, models); err != nil {

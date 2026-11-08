@@ -34,6 +34,15 @@ type config struct {
 	// call the API with credentials and use passkeys.
 	allowedOrigins []string
 	port           string // PORT, set by Cloud Run; defaults to 8080
+
+	// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and PUSH_CONTACT, required to
+	// serve: the key pair (base64url) and the mailto: or https: contact that
+	// sign push messages.
+	vapid core.VAPID
+	// TICK_AUDIENCE and SCHEDULER_SERVICE_ACCOUNT, required to serve:
+	// /internal/tick accepts only Google-signed OIDC tokens for this audience
+	// (as the Cloud Scheduler job sets it) issued to this service account.
+	tickAudience, schedulerServiceAccount string
 }
 
 func loadConfig() (config, error) {
@@ -41,6 +50,14 @@ func loadConfig() (config, error) {
 		mongoURI: os.Getenv("MONGO_URI"),
 		domain:   os.Getenv("DOMAIN"),
 		port:     os.Getenv("PORT"),
+
+		vapid: core.VAPID{
+			PublicKey:  os.Getenv("VAPID_PUBLIC_KEY"),
+			PrivateKey: os.Getenv("VAPID_PRIVATE_KEY"),
+			Contact:    os.Getenv("PUSH_CONTACT"),
+		},
+		tickAudience:            os.Getenv("TICK_AUDIENCE"),
+		schedulerServiceAccount: os.Getenv("SCHEDULER_SERVICE_ACCOUNT"),
 	}
 	if cfg.mongoURI == "" {
 		return config{}, errors.New("MONGO_URI is required")
@@ -63,6 +80,23 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("ALLOWED_ORIGINS is required")
 	}
 	return cfg, nil
+}
+
+// checkNotifications reports a missing Notifications setting. Only serving
+// needs them, not `nando-server enroll`.
+func (cfg config) checkNotifications() error {
+	for _, v := range []struct{ name, value string }{
+		{"VAPID_PUBLIC_KEY", cfg.vapid.PublicKey},
+		{"VAPID_PRIVATE_KEY", cfg.vapid.PrivateKey},
+		{"PUSH_CONTACT", cfg.vapid.Contact},
+		{"TICK_AUDIENCE", cfg.tickAudience},
+		{"SCHEDULER_SERVICE_ACCOUNT", cfg.schedulerServiceAccount},
+	} {
+		if v.value == "" {
+			return fmt.Errorf("%s is required", v.name)
+		}
+	}
+	return nil
 }
 
 // checkOrigin rejects anything a browser would never send as an Origin, such as
@@ -115,6 +149,9 @@ func run() error {
 	nandoCore, err := core.New(connectCtx, dbs.Core, core.Config{
 		Domain:  cfg.domain,
 		Origins: cfg.allowedOrigins,
+
+		VerifySchedulerToken: core.VerifyGoogleSchedulerToken(cfg.tickAudience, cfg.schedulerServiceAccount),
+		VAPID:                cfg.vapid,
 	})
 	if err != nil {
 		return err
@@ -131,6 +168,9 @@ func run() error {
 		return nil
 	case len(args) > 0:
 		return fmt.Errorf("unknown arguments %q; the only command is enroll", args)
+	}
+	if err := cfg.checkNotifications(); err != nil {
+		return err
 	}
 
 	srv := &http.Server{

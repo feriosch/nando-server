@@ -3,7 +3,9 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -22,6 +24,10 @@ type Config struct {
 	Origins []string
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// VerifySchedulerToken checks the bearer token of a call to /internal/tick.
+	VerifySchedulerToken func(ctx context.Context, token string) error
+	// VAPID signs every push message.
+	VAPID VAPID
 }
 
 // Service handles Core's requests.
@@ -30,6 +36,10 @@ type Service struct {
 	webauthn *webauthn.WebAuthn
 	domain   string
 	now      func() time.Time
+
+	verifySchedulerToken func(ctx context.Context, token string) error
+	vapid                VAPID
+	providers            []model.NotificationProvider
 }
 
 // New returns a Service reaching data through repo.
@@ -54,7 +64,20 @@ func New(repo model.CoreRepository, cfg Config) (*Service, error) {
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{repo: repo, webauthn: relyingParty, domain: cfg.Domain, now: now}, nil
+	if cfg.VerifySchedulerToken == nil {
+		return nil, errors.New("VerifySchedulerToken is required")
+	}
+	s := &Service{
+		repo:     repo,
+		webauthn: relyingParty,
+		domain:   cfg.Domain,
+		now:      now,
+
+		verifySchedulerToken: cfg.VerifySchedulerToken,
+		vapid:                cfg.VAPID,
+	}
+	s.providers = []model.NotificationProvider{weighInReminder{settings: s.settings}}
+	return s, nil
 }
 
 // Routes adds Core's routes to mux: signing in under /auth/, and everything
@@ -76,6 +99,11 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/weigh-ins/{week}", s.putWeighIn)
 	mux.HandleFunc("DELETE /api/weigh-ins/{week}", s.deleteWeighIn)
 	mux.HandleFunc("GET /api/body", s.getBody)
+
+	mux.HandleFunc("GET /api/push-subscriptions/vapid-public-key", s.getVAPIDPublicKey)
+	mux.HandleFunc("POST /api/push-subscriptions", s.postPushSubscription)
+	mux.HandleFunc("DELETE /api/push-subscriptions", s.deletePushSubscription)
+	mux.HandleFunc("POST /internal/tick", s.tick)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

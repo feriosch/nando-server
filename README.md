@@ -28,6 +28,10 @@ docker compose up -d   # MongoDB on localhost:27017
 MONGO_URI=mongodb://localhost:27017 \
 DOMAIN=localhost \
 ALLOWED_ORIGINS=http://localhost:5173 \
+VAPID_PUBLIC_KEY=<public> VAPID_PRIVATE_KEY=<private> \
+PUSH_CONTACT=mailto:you@example.com \
+TICK_AUDIENCE=http://localhost:8080 \
+SCHEDULER_SERVICE_ACCOUNT=none \
 go run ./cmd/nando-server
 
 curl localhost:8080/health
@@ -39,10 +43,14 @@ curl localhost:8080/health
 | `DOMAIN`          | Parent domain of `web.` and `api.`, such as `nanders.app` (required): the passkeys' relying-party ID and the session cookie's domain. Changing it means enrolling again. |
 | `ALLOWED_ORIGINS` | Comma-separated web app origins (required), each exactly `scheme://host[:port]` (no trailing slash, no `*`). They may call the API with credentials and use passkeys. |
 | `PORT`            | Port to listen on (default `8080`; Cloud Run sets it)            |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | The key pair that signs push messages (required to serve), base64url. Generate one with `webpush.GenerateVAPIDKeys`. Changing it invalidates every Push Subscription. In production the private key comes from Secret Manager. |
+| `PUSH_CONTACT`    | A `mailto:` or `https:` URL where a push service can reach Nando's operator (required to serve; Apple rejects push messages without one). |
+| `TICK_AUDIENCE`   | The audience the Cloud Scheduler job's OIDC token is for (required to serve), exactly as the job sets it: `https://api.nanders.app` in production. |
+| `SCHEDULER_SERVICE_ACCOUNT` | The email of the service account Cloud Scheduler signs its OIDC token as (required to serve). `/internal/tick` accepts no other caller. |
 
 ## Enroll a passkey
 
-`nando-server enroll` prints an Enrollment Code that registers one passkey within 15 minutes ([ADR 0002](docs/adr/0002-passkey-only-identity.md)). It's also the recovery path. It needs the same `MONGO_URI`, `DOMAIN` and `ALLOWED_ORIGINS` as the server, so for production:
+`nando-server enroll` prints an Enrollment Code that registers one passkey within 15 minutes ([ADR 0002](docs/adr/0002-passkey-only-identity.md)). It's also the recovery path. It needs the same `MONGO_URI`, `DOMAIN` and `ALLOWED_ORIGINS` as the server (not the Notification ones), so for production:
 
 ```sh
 MONGO_URI="$(gcloud secrets versions access latest --secret nandoproject-mongo --project <project>)" \

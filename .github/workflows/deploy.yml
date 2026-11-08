@@ -44,8 +44,8 @@ jobs:
           --project "${{ vars.GCP_PROJECT_ID }}"
           --region "${{ vars.GCP_REGION }}"
           --image "$IMAGE"
-          --set-secrets MONGO_URI=nandoproject-mongo:latest
-          --set-env-vars "DOMAIN=$DOMAIN,ALLOWED_ORIGINS=$WEB_ORIGIN"
+          --set-secrets "MONGO_URI=nandoproject-mongo:latest,VAPID_PRIVATE_KEY=nandoproject-vapid-private-key:latest"
+          --set-env-vars "DOMAIN=$DOMAIN,ALLOWED_ORIGINS=$WEB_ORIGIN,VAPID_PUBLIC_KEY=${{ vars.VAPID_PUBLIC_KEY }},PUSH_CONTACT=$WEB_ORIGIN,TICK_AUDIENCE=${{ vars.TICK_AUDIENCE }},SCHEDULER_SERVICE_ACCOUNT=${{ vars.GCP_SCHEDULER_SA }}"
       # Checks the CORS header, not just the status: Cloud Run's placeholder
       # image answers 200 on any path, and the header shows ALLOWED_ORIGINS
       # arrived. Retries while the domain mapping picks up the new revision.

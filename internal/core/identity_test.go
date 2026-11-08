@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/SherClockHolmes/webpush-go"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
@@ -46,12 +47,22 @@ func newNando(t *testing.T) *nando {
 	}
 	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
 
+	vapidPrivate, vapidPublic, err := webpush.GenerateVAPIDKeys()
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Real time to start with: go-webauthn checks its ceremony timeouts against it.
 	clk := &clock{now: time.Now()}
 	c, err := core.New(ctx, client.Database("core"), core.Config{
-		Domain:  "example.com",
-		Origins: []string{webOrigin},
-		Now:     clk.Now,
+		Domain:               "example.com",
+		Origins:              []string{webOrigin},
+		Now:                  clk.Now,
+		VerifySchedulerToken: verifySchedulerToken,
+		VAPID: core.VAPID{
+			PublicKey:  vapidPublic,
+			PrivateKey: vapidPrivate,
+			Contact:    "mailto:owner@example.com",
+		},
 	})
 	if err != nil {
 		t.Fatalf("core.New: %v", err)

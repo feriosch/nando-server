@@ -48,6 +48,16 @@ type CoreRepository interface {
 	// ListWeighIns returns every Weigh-in, newest first.
 	ListWeighIns(ctx context.Context) ([]WeighIn, error)
 	DeleteWeighIn(ctx context.Context, week Day) error
+
+	// SavePushSubscription stores sub, replacing any with the same endpoint.
+	SavePushSubscription(ctx context.Context, sub PushSubscription) error
+	ListPushSubscriptions(ctx context.Context) ([]PushSubscription, error)
+	DeletePushSubscription(ctx context.Context, endpoint string) error
+
+	// ClaimNotification records that the Notification with this ID is being
+	// sent at now, keeping the record until expiresAt. It returns false if the
+	// ID was already claimed, so each one is sent only once.
+	ClaimNotification(ctx context.Context, id string, now, expiresAt time.Time) (bool, error)
 }
 
 // CoreService is what other Modules' services may ask of Core. Modules read
