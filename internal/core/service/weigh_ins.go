@@ -8,7 +8,27 @@ import (
 	"net/http"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
+
+// WeighInsService handles requests about Weigh-ins. It asks the
+// SettingsService for Today, to know which weeks can still be changed.
+type WeighInsService struct {
+	weighIns model.WeighInsRepository
+	settings *SettingsService
+}
+
+// NewWeighIns returns the WeighInsService.
+func NewWeighIns(weighIns model.WeighInsRepository, settings *SettingsService) *WeighInsService {
+	return &WeighInsService{weighIns: weighIns, settings: settings}
+}
+
+// Routes adds the Weigh-in routes to mux, under /api/weigh-ins.
+func (s *WeighInsService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/weigh-ins", s.listWeighIns)
+	mux.HandleFunc("PUT /api/weigh-ins/{week}", s.putWeighIn)
+	mux.HandleFunc("DELETE /api/weigh-ins/{week}", s.deleteWeighIn)
+}
 
 // weighInJSON is a Weigh-in as the API lists it.
 type weighInJSON struct {
@@ -17,22 +37,22 @@ type weighInJSON struct {
 }
 
 // listWeighIns lists every Weigh-in, newest first.
-func (s *Service) listWeighIns(w http.ResponseWriter, r *http.Request) {
-	weighIns, err := s.repo.ListWeighIns(r.Context())
+func (s *WeighInsService) listWeighIns(w http.ResponseWriter, r *http.Request) {
+	weighIns, err := s.weighIns.List(r.Context())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	list := make([]weighInJSON, len(weighIns))
 	for i, weighIn := range weighIns {
 		list[i] = weighInJSON{Week: weighIn.Week, Kg: weighIn.Kg}
 	}
-	WriteJSON(w, http.StatusOK, list)
+	utils.WriteJSON(w, http.StatusOK, list)
 }
 
 // putWeighIn logs the Weigh-in for the week starting on the Monday in the
 // path, replacing any earlier one for that week.
-func (s *Service) putWeighIn(w http.ResponseWriter, r *http.Request) {
+func (s *WeighInsService) putWeighIn(w http.ResponseWriter, r *http.Request) {
 	week, ok := s.editableWeek(w, r)
 	if !ok {
 		return
@@ -50,8 +70,8 @@ func (s *Service) putWeighIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	weighIn := model.WeighIn{Week: week, Kg: kg}
-	if err := s.repo.SaveWeighIn(r.Context(), weighIn); err != nil {
-		ServerError(w, err)
+	if err := s.weighIns.Save(r.Context(), weighIn); err != nil {
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -70,15 +90,15 @@ func toTenths(kg float64) (float64, error) {
 // editableWeek returns the week in r's path, the Monday it starts on, if its
 // Weigh-in can be changed: only this week's and last week's can. Otherwise it
 // answers r and returns false.
-func (s *Service) editableWeek(w http.ResponseWriter, r *http.Request) (model.Day, bool) {
+func (s *WeighInsService) editableWeek(w http.ResponseWriter, r *http.Request) (model.Day, bool) {
 	week, err := model.ParseDay(r.PathValue("week"))
 	if err != nil || week.Week() != week {
 		http.Error(w, "the week must be the Monday it starts on, as YYYY-MM-DD", http.StatusBadRequest)
 		return "", false
 	}
-	today, err := s.Today(r.Context())
+	today, err := s.settings.Today(r.Context())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return "", false
 	}
 	if thisWeek := today.Week(); week != thisWeek && week != thisWeek.AddDays(-7) {
@@ -90,13 +110,13 @@ func (s *Service) editableWeek(w http.ResponseWriter, r *http.Request) (model.Da
 
 // deleteWeighIn deletes the Weigh-in for the week starting on the Monday in
 // the path. Deleting one that doesn't exist also succeeds.
-func (s *Service) deleteWeighIn(w http.ResponseWriter, r *http.Request) {
+func (s *WeighInsService) deleteWeighIn(w http.ResponseWriter, r *http.Request) {
 	week, ok := s.editableWeek(w, r)
 	if !ok {
 		return
 	}
-	if err := s.repo.DeleteWeighIn(r.Context(), week); err != nil {
-		ServerError(w, err)
+	if err := s.weighIns.Delete(r.Context(), week); err != nil {
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -104,6 +124,6 @@ func (s *Service) deleteWeighIn(w http.ResponseWriter, r *http.Request) {
 
 // LatestWeighIn is the Weigh-in for the newest week that has one, or
 // ErrNotFound if there are none.
-func (s *Service) LatestWeighIn(ctx context.Context) (model.WeighIn, error) {
-	return s.repo.FindLatestWeighIn(ctx)
+func (s *WeighInsService) LatestWeighIn(ctx context.Context) (model.WeighIn, error) {
+	return s.weighIns.FindLatest(ctx)
 }

@@ -1,7 +1,7 @@
 // Package internal_test checks the import rules in the README's Layout: a
 // Module may import what Core exports, but Core never imports a Module, a
 // Module never imports another Module, and no Module imports Core's
-// repository.
+// repositories or services.
 package internal_test
 
 import (
@@ -55,7 +55,7 @@ func TestCoreAndModulesImportOnlyWhatTheyMay(t *testing.T) {
 				t.Errorf("%s imports %s: Core never imports a Module", path, imported)
 			case isModule(from) && isModule(to) && to != from:
 				t.Errorf("%s imports %s: a Module never imports another Module", path, imported)
-			case isModule(from) && strings.HasPrefix(rest, "core/repository"):
+			case isModule(from) && (strings.HasPrefix(rest, "core/repository") || strings.HasPrefix(rest, "core/service")):
 				t.Errorf("%s imports %s: a Module reaches Core's data only through model.CoreService", path, imported)
 			}
 		}

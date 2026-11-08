@@ -35,14 +35,3 @@ type NotificationProvider interface {
 	// each ID only once.
 	DueNotifications(ctx context.Context, slot time.Time) ([]Notification, error)
 }
-
-// PushSubscription is the permission and delivery address of one installed
-// copy of Nando on one device.
-type PushSubscription struct {
-	// Endpoint is the push service URL that identifies it.
-	Endpoint string `bson:"_id"`
-	// P256dh and Auth are the browser's keys, base64url as the browser gives them.
-	P256dh    string    `bson:"p256dh"`
-	Auth      string    `bson:"auth"`
-	CreatedAt time.Time `bson:"createdAt"`
-}

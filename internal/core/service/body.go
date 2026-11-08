@@ -6,7 +6,25 @@ import (
 	"net/http"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
+
+// BodyService answers the Body Home Card, which shows Weigh-ins with the
+// Owner's height from their settings.
+type BodyService struct {
+	weighIns model.WeighInsRepository
+	settings *SettingsService
+}
+
+// NewBody returns the BodyService.
+func NewBody(weighIns model.WeighInsRepository, settings *SettingsService) *BodyService {
+	return &BodyService{weighIns: weighIns, settings: settings}
+}
+
+// Routes adds the Body Home Card's route to mux, /api/body.
+func (s *BodyService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/body", s.getBody)
+}
 
 // round1 rounds x to 1 decimal.
 func round1(x float64) float64 {
@@ -22,26 +40,26 @@ func bmi(kg float64, heightCm int) float64 {
 
 // getBody answers the Body Home Card: the latest Weigh-in, its BMI (once the
 // height is set) and its change since the week before (if that week has one).
-func (s *Service) getBody(w http.ResponseWriter, r *http.Request) {
+func (s *BodyService) getBody(w http.ResponseWriter, r *http.Request) {
 	var card struct {
 		Latest *weighInJSON `json:"latest"`
 		BMI    *float64     `json:"bmi"`
 		Change *float64     `json:"change"`
 	}
-	latest, err := s.repo.FindLatestWeighIn(r.Context())
-	if errors.Is(err, model.ErrNotFound) {
-		WriteJSON(w, http.StatusOK, card)
+	latest, err := s.weighIns.FindLatest(r.Context())
+	if errors.Is(err, utils.ErrNotFound) {
+		utils.WriteJSON(w, http.StatusOK, card)
 		return
 	}
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	card.Latest = &weighInJSON{Week: latest.Week, Kg: latest.Kg}
 
-	settings, err := s.settings(r.Context())
+	settings, err := s.settings.Settings(r.Context())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	if settings.HeightCm != 0 {
@@ -49,14 +67,14 @@ func (s *Service) getBody(w http.ResponseWriter, r *http.Request) {
 		card.BMI = &b
 	}
 
-	previous, err := s.repo.FindWeighIn(r.Context(), latest.Week.AddDays(-7))
+	previous, err := s.weighIns.Find(r.Context(), latest.Week.AddDays(-7))
 	switch {
 	case err == nil:
 		change := round1(latest.Kg - previous.Kg)
 		card.Change = &change
-	case !errors.Is(err, model.ErrNotFound):
-		ServerError(w, err)
+	case !errors.Is(err, utils.ErrNotFound):
+		utils.ServerError(w, err)
 		return
 	}
-	WriteJSON(w, http.StatusOK, card)
+	utils.WriteJSON(w, http.StatusOK, card)
 }

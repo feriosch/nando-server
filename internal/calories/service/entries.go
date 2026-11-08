@@ -9,7 +9,7 @@ import (
 	"github.com/feriosch/nando-server/internal/calories/model"
 	"github.com/feriosch/nando-server/internal/calories/utils"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
-	coreservice "github.com/feriosch/nando-server/internal/core/service"
+	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // EntriesService handles requests about Entries. It reads Meals too, to log
@@ -89,7 +89,7 @@ func (v entryValues) toEntry() (model.Entry, error) {
 func (s *EntriesService) checkEditable(w http.ResponseWriter, r *http.Request, day coremodel.Day) bool {
 	today, err := s.core.Today(r.Context())
 	if err != nil {
-		coreservice.ServerError(w, err)
+		coreutils.ServerError(w, err)
 		return false
 	}
 	if !utils.InEditableWindow(day, today) {
@@ -117,14 +117,14 @@ func (s *EntriesService) listEntries(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := s.entries.ListOnDay(r.Context(), day)
 	if err != nil {
-		coreservice.ServerError(w, err)
+		coreutils.ServerError(w, err)
 		return
 	}
 	list := make([]entryJSON, len(entries))
 	for i, e := range entries {
 		list[i] = toEntryJSON(e)
 	}
-	coreservice.WriteJSON(w, http.StatusOK, list)
+	coreutils.WriteJSON(w, http.StatusOK, list)
 }
 
 // postEntry logs an Entry on the Day in the path: from a Meal, copying its
@@ -168,7 +168,7 @@ func (s *EntriesService) postEntry(w http.ResponseWriter, r *http.Request) {
 			})
 
 			if err != nil {
-				coreservice.ServerError(w, err)
+				coreutils.ServerError(w, err)
 				return
 			}
 		}
@@ -176,10 +176,10 @@ func (s *EntriesService) postEntry(w http.ResponseWriter, r *http.Request) {
 	entry.Day, entry.LoggedAt = day, s.now()
 	id, err := s.entries.Insert(r.Context(), entry)
 	if err != nil {
-		coreservice.ServerError(w, err)
+		coreutils.ServerError(w, err)
 		return
 	}
-	coreservice.WriteCreated(w, id)
+	coreutils.WriteCreated(w, id)
 }
 
 // entryFromMeal returns an Entry of servings of the Meal with mealID, with
@@ -191,11 +191,11 @@ func (s *EntriesService) entryFromMeal(w http.ResponseWriter, r *http.Request, m
 		return model.Entry{}, false
 	}
 	meal, err := s.meals.Find(r.Context(), mealID)
-	if errors.Is(err, coremodel.ErrNotFound) {
+	if errors.Is(err, coreutils.ErrNotFound) {
 		http.Error(w, "there's no such Meal", http.StatusBadRequest)
 		return model.Entry{}, false
 	} else if err != nil {
-		coreservice.ServerError(w, err)
+		coreutils.ServerError(w, err)
 		return model.Entry{}, false
 	}
 	if meal.ArchivedAt != nil {
@@ -210,7 +210,7 @@ func (s *EntriesService) entryFromMeal(w http.ResponseWriter, r *http.Request, m
 // there's no such Entry, or 409 outside the window.
 func (s *EntriesService) editableEntry(w http.ResponseWriter, r *http.Request, ifMissing int) (model.Entry, bool) {
 	entry, err := s.entries.Find(r.Context(), r.PathValue("id"))
-	if errors.Is(err, coremodel.ErrNotFound) {
+	if errors.Is(err, coreutils.ErrNotFound) {
 		if ifMissing == http.StatusNoContent {
 			w.WriteHeader(ifMissing)
 		} else {
@@ -218,7 +218,7 @@ func (s *EntriesService) editableEntry(w http.ResponseWriter, r *http.Request, i
 		}
 		return model.Entry{}, false
 	} else if err != nil {
-		coreservice.ServerError(w, err)
+		coreutils.ServerError(w, err)
 		return model.Entry{}, false
 	}
 	return entry, s.checkEditable(w, r, entry.Day)
@@ -242,7 +242,7 @@ func (s *EntriesService) putEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	entry.Name, entry.KcalPerServing, entry.Servings = edited.Name, edited.KcalPerServing, edited.Servings
 	if err := s.entries.Update(r.Context(), entry); err != nil {
-		coreservice.ServerError(w, err)
+		coreutils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -255,7 +255,7 @@ func (s *EntriesService) deleteEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.entries.Delete(r.Context(), entry.ID); err != nil {
-		coreservice.ServerError(w, err)
+		coreutils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

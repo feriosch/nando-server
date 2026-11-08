@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const (
@@ -18,12 +19,32 @@ const (
 	renewalInterval = 24 * time.Hour
 )
 
+// SessionsService handles requests about sessions, and guards every /api/
+// route with RequireSession. Signing in ends by starting a session here.
+type SessionsService struct {
+	sessions model.SessionsRepository
+	domain   string
+	now      func() time.Time
+}
+
+// NewSessions returns the SessionsService, setting its cookie for domain and
+// with now as its clock.
+func NewSessions(sessions model.SessionsRepository, domain string, now func() time.Time) *SessionsService {
+	return &SessionsService{sessions: sessions, domain: domain, now: now}
+}
+
+// Routes adds the session routes to mux, under /api/sessions.
+func (s *SessionsService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/sessions", s.listSessions)
+	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
+}
+
 // startSession signs the device that sent r in: it stores a new session and
 // sets its cookie.
-func (s *Service) startSession(w http.ResponseWriter, r *http.Request) error {
+func (s *SessionsService) startSession(w http.ResponseWriter, r *http.Request) error {
 	token := rand.Text()
 	now := s.now()
-	err := s.repo.InsertSession(r.Context(), model.Session{
+	err := s.sessions.Insert(r.Context(), model.Session{
 		ID:        rand.Text(),
 		TokenHash: sha256Of(token),
 		UserAgent: r.UserAgent(),
@@ -39,18 +60,18 @@ func (s *Service) startSession(w http.ResponseWriter, r *http.Request) error {
 }
 
 // setSessionCookie has the browser keep token for the next 90 days.
-func (s *Service) setSessionCookie(w http.ResponseWriter, token string) {
+func (s *SessionsService) setSessionCookie(w http.ResponseWriter, token string) {
 	http.SetCookie(w, s.sessionCookie(token, int(sessionLifetime/time.Second)))
 }
 
 // clearSessionCookie has the browser delete its session cookie.
-func (s *Service) clearSessionCookie(w http.ResponseWriter) {
+func (s *SessionsService) clearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, s.sessionCookie("", -1)) // sent as Max-Age=0
 }
 
 // sessionCookie scopes the cookie to the parent domain, so it covers both web.
 // and api., and keeps it from scripts and other sites.
-func (s *Service) sessionCookie(value string, maxAge int) *http.Cookie {
+func (s *SessionsService) sessionCookie(value string, maxAge int) *http.Cookie {
 	return &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    value,
@@ -66,7 +87,7 @@ func (s *Service) sessionCookie(value string, maxAge int) *http.Cookie {
 // RequireSession lets a request through to next only if it carries a valid
 // session; otherwise it answers 401. A session in use is renewed for another
 // 90 days, at most once a day.
-func (s *Service) RequireSession(next http.Handler) http.Handler {
+func (s *SessionsService) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie(sessionCookieName)
 		if err != nil {
@@ -74,18 +95,18 @@ func (s *Service) RequireSession(next http.Handler) http.Handler {
 			return
 		}
 		now := s.now()
-		session, err := s.repo.FindSession(r.Context(), sha256Of(cookie.Value), now)
+		session, err := s.sessions.Find(r.Context(), sha256Of(cookie.Value), now)
 		if err != nil {
-			if errors.Is(err, model.ErrNotFound) {
+			if errors.Is(err, utils.ErrNotFound) {
 				http.Error(w, "sign in first", http.StatusUnauthorized)
 				return
 			}
-			ServerError(w, err)
+			utils.ServerError(w, err)
 			return
 		}
 		if now.Sub(session.RenewedAt) >= renewalInterval {
-			if err := s.repo.RenewSession(r.Context(), session.ID, now, now.Add(sessionLifetime)); err != nil {
-				ServerError(w, err)
+			if err := s.sessions.Renew(r.Context(), session.ID, now, now.Add(sessionLifetime)); err != nil {
+				utils.ServerError(w, err)
 				return
 			}
 			s.setSessionCookie(w, cookie.Value)
@@ -104,10 +125,10 @@ func currentSession(r *http.Request) string {
 }
 
 // listSessions lists every signed-in device, marking the one asking.
-func (s *Service) listSessions(w http.ResponseWriter, r *http.Request) {
-	sessions, err := s.repo.ListSessions(r.Context(), s.now())
+func (s *SessionsService) listSessions(w http.ResponseWriter, r *http.Request) {
+	sessions, err := s.sessions.List(r.Context(), s.now())
 	if err != nil {
-		ServerError(w, err)
+		utils.ServerError(w, err)
 		return
 	}
 	type sessionJSON struct {
@@ -127,15 +148,15 @@ func (s *Service) listSessions(w http.ResponseWriter, r *http.Request) {
 			Current:   session.ID == currentSession(r),
 		}
 	}
-	WriteJSON(w, http.StatusOK, list)
+	utils.WriteJSON(w, http.StatusOK, list)
 }
 
 // deleteSession signs a device out. Deleting the current session signs out
 // the device asking, and has its browser delete the cookie too.
-func (s *Service) deleteSession(w http.ResponseWriter, r *http.Request) {
+func (s *SessionsService) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if err := s.repo.DeleteSession(r.Context(), id); err != nil {
-		ServerError(w, err)
+	if err := s.sessions.Delete(r.Context(), id); err != nil {
+		utils.ServerError(w, err)
 		return
 	}
 	if id == currentSession(r) {

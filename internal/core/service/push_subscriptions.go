@@ -8,17 +8,40 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
+
+// PushSubscriptionsService handles requests about Push Subscriptions. The
+// NotificationsService sends to them.
+type PushSubscriptionsService struct {
+	pushSubscriptions model.PushSubscriptionsRepository
+	vapidPublicKey    string
+	now               func() time.Time
+}
+
+// NewPushSubscriptions returns the PushSubscriptionsService, giving the web
+// app vapidPublicKey to subscribe with, and with now as its clock.
+func NewPushSubscriptions(pushSubscriptions model.PushSubscriptionsRepository, vapidPublicKey string, now func() time.Time) *PushSubscriptionsService {
+	return &PushSubscriptionsService{pushSubscriptions: pushSubscriptions, vapidPublicKey: vapidPublicKey, now: now}
+}
+
+// Routes adds the Push Subscription routes to mux, under
+// /api/push-subscriptions.
+func (s *PushSubscriptionsService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/push-subscriptions/vapid-public-key", s.getVAPIDPublicKey)
+	mux.HandleFunc("POST /api/push-subscriptions", s.postPushSubscription)
+	mux.HandleFunc("DELETE /api/push-subscriptions", s.deletePushSubscription)
+}
 
 // getVAPIDPublicKey answers the key the web app passes to
 // pushManager.subscribe as its applicationServerKey.
-func (s *Service) getVAPIDPublicKey(w http.ResponseWriter, r *http.Request) {
-	WriteJSON(w, http.StatusOK, struct {
+func (s *PushSubscriptionsService) getVAPIDPublicKey(w http.ResponseWriter, r *http.Request) {
+	utils.WriteJSON(w, http.StatusOK, struct {
 		PublicKey string `json:"publicKey"`
-	}{s.vapid.PublicKey})
-
+	}{s.vapidPublicKey})
 }
 
 // pushSubscriptionJSON is a Push Subscription as PushSubscription.toJSON()
@@ -62,7 +85,7 @@ func decodeKey(key string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(strings.TrimRight(key, "="))
 }
 
-func (s *Service) postPushSubscription(w http.ResponseWriter, r *http.Request) {
+func (s *PushSubscriptionsService) postPushSubscription(w http.ResponseWriter, r *http.Request) {
 	var j pushSubscriptionJSON
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
 		http.Error(w, "the body isn't a PushSubscription", http.StatusBadRequest)
@@ -78,8 +101,8 @@ func (s *Service) postPushSubscription(w http.ResponseWriter, r *http.Request) {
 		Auth:      j.Keys.Auth,
 		CreatedAt: s.now(),
 	}
-	if err := s.repo.SavePushSubscription(r.Context(), sub); err != nil {
-		ServerError(w, err)
+	if err := s.pushSubscriptions.Save(r.Context(), sub); err != nil {
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -87,14 +110,14 @@ func (s *Service) postPushSubscription(w http.ResponseWriter, r *http.Request) {
 
 // deletePushSubscription unregisters the Push Subscription whose endpoint is
 // the query's endpoint.
-func (s *Service) deletePushSubscription(w http.ResponseWriter, r *http.Request) {
+func (s *PushSubscriptionsService) deletePushSubscription(w http.ResponseWriter, r *http.Request) {
 	endpoint := r.URL.Query().Get("endpoint")
 	if endpoint == "" {
 		http.Error(w, "endpoint is required", http.StatusBadRequest)
 		return
 	}
-	if err := s.repo.DeletePushSubscription(r.Context(), endpoint); err != nil {
-		ServerError(w, err)
+	if err := s.pushSubscriptions.Delete(r.Context(), endpoint); err != nil {
+		utils.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

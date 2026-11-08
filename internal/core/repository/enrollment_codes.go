@@ -11,25 +11,32 @@ import (
 	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
-const enrollmentCodes = "enrollment_codes"
+// NewEnrollmentCodes returns the EnrollmentCodesRepository over the
+// enrollment_codes collection in db, first creating any indexes it lacks.
+func NewEnrollmentCodes(ctx context.Context, db *mongo.Database) (model.EnrollmentCodesRepository, error) {
+	collection := db.Collection("enrollment_codes")
+	if _, err := collection.Indexes().CreateMany(ctx, []mongo.IndexModel{utils.ExpiresAtIndex}); err != nil {
+		return nil, err
+	}
+	return enrollmentCodes{collection: collection}, nil
+}
 
-var enrollmentCodeIndexes = []mongo.IndexModel{expiresAtIndex}
+// enrollmentCodes is the enrollment_codes collection.
+type enrollmentCodes struct {
+	collection *mongo.Collection
+}
 
-func (r mongoRepository) InsertEnrollmentCode(ctx context.Context, code model.EnrollmentCode) error {
-	_, err := r.db.Collection(enrollmentCodes).InsertOne(ctx, code)
+func (r enrollmentCodes) Insert(ctx context.Context, code model.EnrollmentCode) error {
+	_, err := r.collection.InsertOne(ctx, code)
 	return err
 }
 
-func (r mongoRepository) FindEnrollmentCode(ctx context.Context, hash []byte, now time.Time) (model.EnrollmentCode, error) {
+func (r enrollmentCodes) Find(ctx context.Context, hash []byte, now time.Time) (model.EnrollmentCode, error) {
 	var code model.EnrollmentCode
-	err := r.db.Collection(enrollmentCodes).FindOne(ctx, bson.D{{Key: "_id", Value: hash}, unexpired(now)}).Decode(&code)
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: hash}, utils.Unexpired(now)}).Decode(&code)
 	return code, utils.NotFound(err)
 }
 
-func (r mongoRepository) UseEnrollmentCode(ctx context.Context, hash []byte, now time.Time) error {
-	res, err := r.db.Collection(enrollmentCodes).DeleteOne(ctx, bson.D{{Key: "_id", Value: hash}, unexpired(now)})
-	if err == nil && res.DeletedCount == 0 {
-		return model.ErrNotFound
-	}
-	return err
+func (r enrollmentCodes) Use(ctx context.Context, hash []byte, now time.Time) error {
+	return utils.Deleted(r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: hash}, utils.Unexpired(now)}))
 }

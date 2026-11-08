@@ -43,9 +43,10 @@ type pushMessageJSON struct {
 	URL   string `json:"url,omitempty"`
 }
 
-// deliver sends n to sub as a push message through sub's push service. It
-// returns errPushSubscriptionGone if the push service no longer knows sub.
-func (s *Service) deliver(ctx context.Context, sub model.PushSubscription, n model.Notification) error {
+// deliver sends n to sub as a push message through sub's push service,
+// signed with vapid. It returns errPushSubscriptionGone if the push service no
+// longer knows sub.
+func deliver(ctx context.Context, vapid VAPID, sub model.PushSubscription, n model.Notification) error {
 	message, err := json.Marshal(pushMessageJSON{Title: n.Title, Body: n.Body, URL: n.URL})
 	if err != nil {
 		return err
@@ -54,9 +55,9 @@ func (s *Service) deliver(ctx context.Context, sub model.PushSubscription, n mod
 		Endpoint: sub.Endpoint,
 		Keys:     webpush.Keys{P256dh: sub.P256dh, Auth: sub.Auth},
 	}, &webpush.Options{
-		Subscriber:      s.vapid.Contact,
-		VAPIDPublicKey:  s.vapid.PublicKey,
-		VAPIDPrivateKey: s.vapid.PrivateKey,
+		Subscriber:      vapid.Contact,
+		VAPIDPublicKey:  vapid.PublicKey,
+		VAPIDPrivateKey: vapid.PrivateKey,
 		TTL:             int(pushMessageTTL.Seconds()),
 		Urgency:         webpush.UrgencyNormal,
 	})

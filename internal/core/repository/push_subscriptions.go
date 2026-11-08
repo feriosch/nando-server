@@ -4,20 +4,30 @@ import (
 	"context"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/core/model"
 )
 
-const pushSubscriptions = "push_subscriptions"
+// NewPushSubscriptions returns the PushSubscriptionsRepository over the
+// push_subscriptions collection in db.
+func NewPushSubscriptions(db *mongo.Database) model.PushSubscriptionsRepository {
+	return pushSubscriptions{collection: db.Collection("push_subscriptions")}
+}
 
-func (r mongoRepository) SavePushSubscription(ctx context.Context, sub model.PushSubscription) error {
-	_, err := r.db.Collection(pushSubscriptions).ReplaceOne(ctx, bson.D{{Key: "_id", Value: sub.Endpoint}}, sub, options.Replace().SetUpsert(true))
+// pushSubscriptions is the push_subscriptions collection.
+type pushSubscriptions struct {
+	collection *mongo.Collection
+}
+
+func (r pushSubscriptions) Save(ctx context.Context, sub model.PushSubscription) error {
+	_, err := r.collection.ReplaceOne(ctx, bson.D{{Key: "_id", Value: sub.Endpoint}}, sub, options.Replace().SetUpsert(true))
 	return err
 }
 
-func (r mongoRepository) ListPushSubscriptions(ctx context.Context) ([]model.PushSubscription, error) {
-	cursor, err := r.db.Collection(pushSubscriptions).Find(ctx, bson.D{})
+func (r pushSubscriptions) List(ctx context.Context) ([]model.PushSubscription, error) {
+	cursor, err := r.collection.Find(ctx, bson.D{})
 	if err != nil {
 		return nil, err
 	}
@@ -25,7 +35,7 @@ func (r mongoRepository) ListPushSubscriptions(ctx context.Context) ([]model.Pus
 	return list, cursor.All(ctx, &list)
 }
 
-func (r mongoRepository) DeletePushSubscription(ctx context.Context, endpoint string) error {
-	_, err := r.db.Collection(pushSubscriptions).DeleteOne(ctx, bson.D{{Key: "_id", Value: endpoint}})
+func (r pushSubscriptions) Delete(ctx context.Context, endpoint string) error {
+	_, err := r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: endpoint}})
 	return err
 }

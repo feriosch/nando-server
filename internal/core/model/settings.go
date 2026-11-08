@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
 // Settings are the Owner's preferences that Core keeps: one document.
 type Settings struct {
@@ -24,4 +27,11 @@ type WeighInReminder struct {
 var DefaultSettings = Settings{
 	TimeZone:        "UTC",
 	WeighInReminder: WeighInReminder{Enabled: false, Weekday: time.Monday, Time: "08:00"},
+}
+
+// SettingsRepository reads and writes the settings collection.
+type SettingsRepository interface {
+	// Find returns the settings, or utils.ErrNotFound if none were ever saved.
+	Find(ctx context.Context) (Settings, error)
+	Save(ctx context.Context, settings Settings) error
 }
