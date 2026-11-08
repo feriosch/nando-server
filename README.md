@@ -11,6 +11,7 @@ Go API for Nando. Domain language: [`GLOSSARY.md`](GLOSSARY.md). Decisions: [`do
 - `internal/testmongo`: test helper that starts a real MongoDB container.
 - `internal/testpasskey`: test helper, a software passkey, so tests can sign a device in.
 - `internal/testpush`: test helper, a browser's push service, so tests can see the Notifications Nando delivers.
+- `scripts/backup.sh`: the weekly backup's dump (see [Backups](#backups)). `scripts/backup_test.go` runs it inside `mongo:8` and restores what it wrote with the commands below.
 
 Core and every Module are split into the same three layers:
 
@@ -90,3 +91,33 @@ docker build -t nando-server .
 Every push to `main` deploys to Cloud Run (`.github/workflows/deploy.yml`; also runnable by hand from the Actions tab). It signs in through Workload Identity Federation, pushes the image to Artifact Registry tagged with the commit, deploys it with its env vars and Secret Manager secrets, and ends by checking that the API's `/health` answers as nando-server. That workflow is the source of truth for the service's env vars and secrets.
 
 If the new revision doesn't start (for example, MongoDB is unreachable), the deploy fails and traffic stays on the previous revision.
+
+## Backups
+
+Every Sunday at 03:17 Tokyo time, `.github/workflows/backup.yml` (also runnable by hand from the Actions tab) dumps the `core` and `calories` databases with `scripts/backup.sh` and uploads them to the private bucket `gs://nanders-backups` as `nando-<UTC date and time>.tar`: one gzipped BSON file per collection. It signs in through Workload Identity Federation as the backup service account (`GCP_BACKUP_SA`), which can read the `nandoproject-mongo` secret and create objects in the bucket, but not read, overwrite or delete them. The bucket's lifecycle rule deletes backups after 56 days, so the last 8 are kept.
+
+The backup service account needs access to the Mongo secret. Grant it once:
+
+```sh
+gcloud secrets add-iam-policy-binding nandoproject-mongo --project <project> \
+  --member "serviceAccount:<GCP_BACKUP_SA>" --role roles/secretmanager.secretAccessor
+```
+
+GitHub turns off scheduled workflows in a public repository after 60 days without activity; if it does, re-enable Backup in the Actions tab.
+
+### Restore
+
+Signed in to `gcloud` as yourself (the backup account can't read the bucket), pick a backup and unpack it:
+
+```sh
+gcloud storage ls gs://nanders-backups/
+gcloud storage cp gs://nanders-backups/nando-<when>.tar .
+mkdir nando && tar -xf nando-<when>.tar -C nando
+```
+
+Then restore it with `mongorestore` ([MongoDB Database Tools](https://www.mongodb.com/docs/database-tools/installation/), or run it in `docker run --rm -it -v "$PWD:/work" -w /work mongo:8 bash`). `--drop` replaces each backed-up collection with its contents in the backup; collections that aren't in the backup are left alone. To check a backup first, restore it into the local MongoDB (`MONGO_URI=mongodb://localhost:27017`).
+
+```sh
+MONGO_URI="$(gcloud secrets versions access latest --secret nandoproject-mongo --project <project>)" \
+mongorestore --uri "$MONGO_URI" --gzip --drop nando
+```
