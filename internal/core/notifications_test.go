@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -296,5 +297,56 @@ func TestABrokenProviderDoesNotStopTheOthers(t *testing.T) {
 	// Failing the tick has Cloud Scheduler retry it, which is safe.
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("tick with a broken provider: status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestWeighInReminderIsSentInATimeZoneOffsetByAQuarterHour(t *testing.T) {
+	kathmandu, _ := time.LoadLocation("Asia/Kathmandu") // UTC+5:45
+	mondayMorning := time.Date(2026, 10, 26, 8, 0, 0, 0, kathmandu)
+	n, phone := signedInPhone(t, mondayMorning)
+	push := newPushService(t)
+	phone.subscribe(push)
+	phone.saveTimeZone("Asia/Kathmandu")
+	phone.saveWeighInReminder(reminderJSON{Enabled: true, Weekday: "monday", Time: "08:00"})
+
+	n.mustTick()
+
+	if got := push.received(); !slices.Equal(got, []pushMessage{weighInReminder}) {
+		t.Errorf("at 08:00 in Kathmandu received %+v, want %+v", got, weighInReminder)
+	}
+}
+
+func TestANotificationWithoutATitleOrLinkShowsTheDefaults(t *testing.T) {
+	n, phone := signedInPhone(t, wednesday)
+	push := newPushService(t)
+	phone.subscribe(push)
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{
+		{ID: "calories:nothing-logged:2026-10-21", Body: "Nothing logged today"},
+	}})
+
+	n.mustTick()
+
+	want := []pushMessage{{Title: "Nando", Body: "Nothing logged today", URL: "/"}}
+	if got := push.received(); !slices.Equal(got, want) {
+		t.Errorf("the service worker shows %+v, want %+v", got, want)
+	}
+}
+
+func TestANotificationCoreCannotRecordDoesNotStopTheOthers(t *testing.T) {
+	n, phone := signedInPhone(t, wednesday)
+	push := newPushService(t)
+	phone.subscribe(push)
+	// An ID too big for a MongoDB document (16 MB), so recording it as sent fails.
+	unrecordable := model.Notification{ID: strings.Repeat("x", 17<<20), Title: "Calories"}
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{unrecordable}})
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
+
+	rec := n.tick(schedulerToken)
+
+	if got := push.received(); !slices.Equal(got, []pushMessage{{Title: "Calories", Body: "Nothing logged today", URL: "/calories"}}) {
+		t.Errorf("received %+v, want only the evening summary", got)
+	}
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("tick: status = %d, want %d so the scheduler retries", rec.Code, http.StatusInternalServerError)
 	}
 }

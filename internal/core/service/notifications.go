@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	// tickInterval is how often Cloud Scheduler calls /internal/tick.
-	tickInterval = 30 * time.Minute
 	// sentFor is how long a sent Notification's ID is remembered: far longer
 	// than any tick is retried, and longer than a provider could still be
 	// returning it.
@@ -135,10 +133,14 @@ func (s *Service) tick(w http.ResponseWriter, r *http.Request) {
 }
 
 // sendDueNotifications sends every provider's due Notifications to every Push
-// Subscription. A provider that fails doesn't stop the others; its error is
-// returned once they are done, so the scheduler retries the tick.
+// Subscription. A provider that fails, or a Notification that can't be
+// recorded as sent, doesn't stop the others; the error is returned once they
+// are done, so the scheduler retries the tick.
 func (s *Service) sendDueNotifications(ctx context.Context) error {
-	slot := s.now().Truncate(tickInterval)
+	slot, err := s.currentSlot(ctx)
+	if err != nil {
+		return err
+	}
 	s.providersMu.Lock()
 	providers := append([]model.NotificationProvider(nil), s.providers...)
 	s.providersMu.Unlock()
@@ -159,7 +161,8 @@ func (s *Service) sendDueNotifications(ctx context.Context) error {
 			// take is lost rather than possibly sent twice.
 			claimed, err := s.repo.ClaimNotification(ctx, n.ID, s.now(), s.now().Add(sentFor))
 			if err != nil {
-				return err
+				errs = append(errs, fmt.Errorf("record Notification %.80s as sent: %w", n.ID, err))
+				continue
 			}
 			if !claimed {
 				continue
@@ -182,11 +185,25 @@ func (s *Service) sendDueNotifications(ctx context.Context) error {
 // Subscription: the Owner revoked it or uninstalled that copy of Nando.
 var errPushSubscriptionGone = errors.New("the push service no longer knows this Push Subscription")
 
-// pushMessageJSON is the Notification as the web app's service worker reads it.
+// currentSlot is the start of the half hour it is now in the Owner Time
+// Zone, such as 08:00 or 08:30 there. It is worked out on the Owner's clock,
+// not UTC's, so it lands on :00 or :30 even where the UTC offset is, say, +5:45.
+func (s *Service) currentSlot(ctx context.Context) (time.Time, error) {
+	loc, err := s.OwnerTimeZone(ctx)
+	if err != nil {
+		return time.Time{}, err
+	}
+	now := s.now().In(loc)
+	return time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute()/30*30, 0, 0, loc), nil
+}
+
+// pushMessageJSON is the Notification as the web app's service worker reads
+// it. An empty field is left out, so the service worker shows its default
+// ("Nando" for the title, Home for the url).
 type pushMessageJSON struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
+	Body  string `json:"body,omitempty"`
+	URL   string `json:"url,omitempty"`
 }
 
 // push sends n to sub through sub's push service.

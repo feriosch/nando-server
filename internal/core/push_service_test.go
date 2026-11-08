@@ -35,11 +35,28 @@ type pushService struct {
 	headers  []http.Header
 }
 
-// pushMessage is the Notification as the web app's service worker reads it.
+// pushMessage is the Notification the web app's service worker shows.
 type pushMessage struct {
-	Title string `json:"title"`
-	Body  string `json:"body"`
-	URL   string `json:"url"`
+	Title string
+	Body  string
+	URL   string
+}
+
+// shownBy reads a push message's JSON the way nando-web's service worker does
+// (src/core/sw/notifications.ts): a field that is missing or null falls back
+// to its default.
+func shownBy(t *testing.T, payload []byte) pushMessage {
+	var sent struct{ Title, Body, URL *string }
+	if err := json.Unmarshal(payload, &sent); err != nil {
+		t.Errorf("push message isn't JSON: %v", err)
+	}
+	or := func(s *string, fallback string) string {
+		if s == nil {
+			return fallback
+		}
+		return *s
+	}
+	return pushMessage{Title: or(sent.Title, "Nando"), Body: or(sent.Body, ""), URL: or(sent.URL, "/")}
 }
 
 func newPushService(t *testing.T) *pushService {
@@ -120,11 +137,7 @@ func (p *pushService) receive(w http.ResponseWriter, r *http.Request) {
 		p.t.Errorf("push message Content-Encoding = %q, want aes128gcm", r.Header.Get("Content-Encoding"))
 	}
 	if p.status == http.StatusCreated {
-		var m pushMessage
-		if err := json.Unmarshal(p.decrypt(body), &m); err != nil {
-			p.t.Errorf("push message isn't JSON: %v", err)
-		}
-		p.messages = append(p.messages, m)
+		p.messages = append(p.messages, shownBy(p.t, p.decrypt(body)))
 		p.headers = append(p.headers, r.Header.Clone())
 	}
 	w.WriteHeader(p.status)
