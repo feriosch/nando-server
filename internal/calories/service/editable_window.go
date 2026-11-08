@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	coreservice "github.com/feriosch/nando-server/internal/core/service"
 )
 
 // editableDays is how many Days before today the Editable Window reaches.
@@ -15,7 +16,7 @@ const editableDays = 7
 func (s *Service) checkEditable(w http.ResponseWriter, r *http.Request, day coremodel.Day) bool {
 	today, err := s.core.Today(r.Context())
 	if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return false
 	}
 	if day > today || day < today.AddDays(-editableDays) {

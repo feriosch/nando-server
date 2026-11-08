@@ -19,6 +19,8 @@ Core and every Module are split into the same three layers:
 
 The one difference: Core's service (as `model.CoreService`) is also handed to every Module's service. When a Module needs Core's data (such as Weigh-ins), its service asks Core's service and then uses that data itself or passes it to its own repository. A Module never receives Core's repository, nor another Module's service, repository or database. Reaching another database from a repository (for example via `db.Client()`) is possible with the driver, so this rule is kept by convention.
 
+Imports follow the same direction. A Module may import what Core exports, such as Core's `model` types and the response helpers `service.WriteJSON` and `service.ServerError`, so every part of the API answers alike. Core never imports a Module, and a Module never imports another Module. Core's data still reaches a Module only through `model.CoreService`, never by calling Core's service or repository directly.
+
 ## Run locally
 
 Requires Go 1.25+ and Docker.

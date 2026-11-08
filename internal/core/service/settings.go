@@ -55,10 +55,10 @@ func toSettingsJSON(settings model.Settings) settingsJSON {
 func (s *Service) getSettings(w http.ResponseWriter, r *http.Request) {
 	settings, err := s.settings(r.Context())
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
-	writeJSON(w, toSettingsJSON(settings))
+	WriteJSON(w, http.StatusOK, toSettingsJSON(settings))
 }
 
 // weekdays are the weekdays by their API names, such as "monday".
@@ -117,7 +117,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.repo.SaveSettings(r.Context(), settings); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

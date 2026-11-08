@@ -38,7 +38,7 @@ func (s *Service) tick(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.sendDueNotifications(r.Context()); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

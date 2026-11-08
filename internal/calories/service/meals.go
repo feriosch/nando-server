@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
+	coreservice "github.com/feriosch/nando-server/internal/core/service"
 )
 
 // mealJSON is a Meal as the API reads and writes it. Optional strings are
@@ -64,7 +65,7 @@ func toMealJSON(m model.Meal) mealJSON {
 func (s *Service) listMeals(w http.ResponseWriter, r *http.Request) {
 	meals, err := s.repo.ListMeals(r.Context(), r.URL.Query().Get("archived") == "true")
 	if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	writeMeals(w, meals)
@@ -76,7 +77,7 @@ func writeMeals(w http.ResponseWriter, meals []model.Meal) {
 	for i, m := range meals {
 		list[i] = toMealJSON(m)
 	}
-	writeJSON(w, http.StatusOK, list)
+	coreservice.WriteJSON(w, http.StatusOK, list)
 }
 
 // mealBody is a Meal as the API is sent it: what the Owner can set of one.
@@ -153,7 +154,7 @@ func (s *Service) postMeal(w http.ResponseWriter, r *http.Request) {
 	meal.CreatedAt = s.now()
 	id, err := s.repo.InsertMeal(r.Context(), meal)
 	if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	writeCreated(w, id)
@@ -171,7 +172,7 @@ func (s *Service) putMeal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "there's no such Meal", http.StatusNotFound)
 		return
 	} else if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -195,7 +196,7 @@ func (s *Service) setArchivedAt(w http.ResponseWriter, r *http.Request, archived
 		http.Error(w, "there's no such Meal", http.StatusNotFound)
 		return
 	} else if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -210,17 +211,17 @@ const quickListDays = 30
 func (s *Service) quickMeals(w http.ResponseWriter, r *http.Request) {
 	today, err := s.core.Today(r.Context())
 	if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	meals, err := s.repo.ListMeals(r.Context(), false)
 	if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	counts, err := s.repo.CountEntriesByMeal(r.Context(), today.AddDays(1-quickListDays), today)
 	if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	// meals are by name, which a stable sort keeps among equals.

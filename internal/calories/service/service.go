@@ -4,13 +4,12 @@
 package service
 
 import (
-	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	coreservice "github.com/feriosch/nando-server/internal/core/service"
 )
 
 // Service handles the Calories Module's requests.
@@ -44,22 +43,9 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/calories/entries/{id}", s.deleteEntry)
 }
 
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("write response: %v", err)
-	}
-}
-
 // writeCreated answers 201 with the new Meal's or Entry's ID.
 func writeCreated(w http.ResponseWriter, id string) {
-	writeJSON(w, http.StatusCreated, struct {
+	coreservice.WriteJSON(w, http.StatusCreated, struct {
 		ID string `json:"id"`
 	}{id})
-}
-
-func serverError(w http.ResponseWriter, err error) {
-	log.Print(err)
-	http.Error(w, "something went wrong", http.StatusInternalServerError)
 }

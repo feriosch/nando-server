@@ -20,14 +20,14 @@ type weighInJSON struct {
 func (s *Service) listWeighIns(w http.ResponseWriter, r *http.Request) {
 	weighIns, err := s.repo.ListWeighIns(r.Context())
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	list := make([]weighInJSON, len(weighIns))
 	for i, weighIn := range weighIns {
 		list[i] = weighInJSON{Week: weighIn.Week, Kg: weighIn.Kg}
 	}
-	writeJSON(w, list)
+	WriteJSON(w, http.StatusOK, list)
 }
 
 // putWeighIn logs the Weigh-in for the week starting on the Monday in the
@@ -51,7 +51,7 @@ func (s *Service) putWeighIn(w http.ResponseWriter, r *http.Request) {
 	}
 	weighIn := model.WeighIn{Week: week, Kg: kg}
 	if err := s.repo.SaveWeighIn(r.Context(), weighIn); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -78,7 +78,7 @@ func (s *Service) editableWeek(w http.ResponseWriter, r *http.Request) (model.Da
 	}
 	today, err := s.Today(r.Context())
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return "", false
 	}
 	if thisWeek := today.Week(); week != thisWeek && week != thisWeek.AddDays(-7) {
@@ -96,7 +96,7 @@ func (s *Service) deleteWeighIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.repo.DeleteWeighIn(r.Context(), week); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

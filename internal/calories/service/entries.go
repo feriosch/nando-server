@@ -7,6 +7,7 @@ import (
 
 	"github.com/feriosch/nando-server/internal/calories/model"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	coreservice "github.com/feriosch/nando-server/internal/core/service"
 )
 
 // entryJSON is an Entry as the API lists it.
@@ -76,14 +77,14 @@ func (s *Service) listEntries(w http.ResponseWriter, r *http.Request) {
 	}
 	entries, err := s.repo.ListEntries(r.Context(), day)
 	if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	list := make([]entryJSON, len(entries))
 	for i, e := range entries {
 		list[i] = toEntryJSON(e)
 	}
-	writeJSON(w, http.StatusOK, list)
+	coreservice.WriteJSON(w, http.StatusOK, list)
 }
 
 // postEntry logs an Entry on the Day in the path: from a Meal, copying its
@@ -126,7 +127,7 @@ func (s *Service) postEntry(w http.ResponseWriter, r *http.Request) {
 				CreatedAt: s.now(),
 			})
 			if err != nil {
-				serverError(w, err)
+				coreservice.ServerError(w, err)
 				return
 			}
 		}
@@ -134,7 +135,7 @@ func (s *Service) postEntry(w http.ResponseWriter, r *http.Request) {
 	entry.Day, entry.LoggedAt = day, s.now()
 	id, err := s.repo.InsertEntry(r.Context(), entry)
 	if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	writeCreated(w, id)
@@ -153,7 +154,7 @@ func (s *Service) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID s
 		http.Error(w, "there's no such Meal", http.StatusBadRequest)
 		return model.Entry{}, false
 	} else if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return model.Entry{}, false
 	}
 	if meal.ArchivedAt != nil {
@@ -176,7 +177,7 @@ func (s *Service) editableEntry(w http.ResponseWriter, r *http.Request, ifMissin
 		}
 		return model.Entry{}, false
 	} else if err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return model.Entry{}, false
 	}
 	return entry, s.checkEditable(w, r, entry.Day)
@@ -200,7 +201,7 @@ func (s *Service) putEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	entry.Name, entry.KcalPerServing, entry.Servings = edited.Name, edited.KcalPerServing, edited.Servings
 	if err := s.repo.UpdateEntry(r.Context(), entry); err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -213,7 +214,7 @@ func (s *Service) deleteEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.repo.DeleteEntry(r.Context(), entry.ID); err != nil {
-		serverError(w, err)
+		coreservice.ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
