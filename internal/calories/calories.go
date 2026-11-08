@@ -28,6 +28,8 @@ type Module struct {
 	dailyLimits *service.DailyLimitsService
 	days        *service.DaysService
 	settings    *service.SettingsService
+	// notifications is the Module's Notification provider.
+	notifications *service.NotificationsService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -50,12 +52,14 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	meals := repository.NewMeals(db)
 	dailyLimits := repository.NewDailyLimits(db)
 	entriesService := service.NewEntries(entries, meals, core, now)
+	settings := service.NewSettings(repository.NewSettings(db))
 	return &Module{
-		meals:       service.NewMeals(meals, entries, core, now),
-		entries:     entriesService,
-		dailyLimits: service.NewDailyLimits(dailyLimits, core),
-		days:        service.NewDays(entries, dailyLimits, entriesService, core),
-		settings:    service.NewSettings(repository.NewSettings(db)),
+		meals:         service.NewMeals(meals, entries, core, now),
+		entries:       entriesService,
+		dailyLimits:   service.NewDailyLimits(dailyLimits, core),
+		days:          service.NewDays(entries, dailyLimits, entriesService, core),
+		settings:      settings,
+		notifications: service.NewNotifications(settings, entries),
 	}, nil
 }
 
@@ -66,4 +70,10 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	m.dailyLimits.Routes(mux)
 	m.days.Routes(mux)
 	m.settings.Routes(mux)
+}
+
+// NotificationProvider is the Module's Notification provider, for Core to ask
+// at every tick.
+func (m *Module) NotificationProvider() coremodel.NotificationProvider {
+	return m.notifications
 }
