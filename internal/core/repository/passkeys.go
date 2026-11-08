@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const passkeys = "passkeys"
@@ -19,7 +20,7 @@ func (r mongoRepository) InsertPasskey(ctx context.Context, passkey model.Passke
 func (r mongoRepository) FindPasskey(ctx context.Context, id []byte) (model.Passkey, error) {
 	var passkey model.Passkey
 	err := r.db.Collection(passkeys).FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&passkey)
-	return passkey, notFound(err)
+	return passkey, utils.NotFound(err)
 }
 
 func (r mongoRepository) ListPasskeys(ctx context.Context) ([]model.Passkey, error) {

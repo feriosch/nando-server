@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const settings = "settings"
@@ -17,7 +18,7 @@ const settingsID = "settings"
 func (r mongoRepository) FindSettings(ctx context.Context) (model.Settings, error) {
 	var s model.Settings
 	err := r.db.Collection(settings).FindOne(ctx, bson.D{{Key: "_id", Value: settingsID}}).Decode(&s)
-	return s, notFound(err)
+	return s, utils.NotFound(err)
 }
 
 func (r mongoRepository) SaveSettings(ctx context.Context, s model.Settings) error {

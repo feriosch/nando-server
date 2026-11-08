@@ -9,6 +9,7 @@ import (
 
 	"github.com/feriosch/nando-server/internal/calories/model"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // NewEntries returns the EntriesRepository over the entries collection in
@@ -48,7 +49,7 @@ func (r entries) ListOnDay(ctx context.Context, day coremodel.Day) ([]model.Entr
 func (r entries) Find(ctx context.Context, id string) (model.Entry, error) {
 	var entry model.Entry
 	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&entry)
-	return entry, notFound(err)
+	return entry, utils.NotFound(err)
 }
 
 func (r entries) Update(ctx context.Context, entry model.Entry) error {
@@ -57,7 +58,7 @@ func (r entries) Update(ctx context.Context, entry model.Entry) error {
 		{Key: "kcalPerServing", Value: entry.KcalPerServing},
 		{Key: "servings", Value: entry.Servings},
 	}}})
-	return matched(result, err)
+	return utils.Matched(result, err)
 }
 
 func (r entries) Delete(ctx context.Context, id string) error {

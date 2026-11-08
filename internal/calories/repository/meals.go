@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // NewMeals returns the MealsRepository over the meals collection in db.
@@ -44,7 +45,7 @@ func (r meals) List(ctx context.Context, archived bool) ([]model.Meal, error) {
 func (r meals) Find(ctx context.Context, id string) (model.Meal, error) {
 	var meal model.Meal
 	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&meal)
-	return meal, notFound(err)
+	return meal, utils.NotFound(err)
 }
 
 func (r meals) Update(ctx context.Context, meal model.Meal) error {
@@ -57,10 +58,10 @@ func (r meals) Update(ctx context.Context, meal model.Meal) error {
 		{Key: "tags", Value: meal.Tags},
 		{Key: "pinned", Value: meal.Pinned},
 	}}})
-	return matched(result, err)
+	return utils.Matched(result, err)
 }
 
 func (r meals) SetArchivedAt(ctx context.Context, id string, archivedAt *time.Time) error {
 	result, err := r.collection.UpdateByID(ctx, id, bson.D{{Key: "$set", Value: bson.D{{Key: "archivedAt", Value: archivedAt}}}})
-	return matched(result, err)
+	return utils.Matched(result, err)
 }

@@ -4,7 +4,6 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -47,12 +46,4 @@ var expiresAtIndex = mongo.IndexModel{
 // unexpired matches documents whose expiresAt is after now.
 func unexpired(now time.Time) bson.E {
 	return bson.E{Key: "expiresAt", Value: bson.D{{Key: "$gt", Value: now}}}
-}
-
-// notFound turns the driver's "no documents" into model.ErrNotFound.
-func notFound(err error) error {
-	if errors.Is(err, mongo.ErrNoDocuments) {
-		return model.ErrNotFound
-	}
-	return err
 }

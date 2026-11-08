@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const sessions = "sessions"
@@ -26,7 +27,7 @@ func (r mongoRepository) InsertSession(ctx context.Context, session model.Sessio
 func (r mongoRepository) FindSession(ctx context.Context, tokenHash []byte, now time.Time) (model.Session, error) {
 	var session model.Session
 	err := r.db.Collection(sessions).FindOne(ctx, bson.D{{Key: "tokenHash", Value: tokenHash}, unexpired(now)}).Decode(&session)
-	return session, notFound(err)
+	return session, utils.NotFound(err)
 }
 
 func (r mongoRepository) ListSessions(ctx context.Context, now time.Time) ([]model.Session, error) {

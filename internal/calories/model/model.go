@@ -3,7 +3,8 @@
 // interfaces, never on the repository implementations.
 package model
 
-import "errors"
+import coremodel "github.com/feriosch/nando-server/internal/core/model"
 
-// ErrNotFound means the Meal or Entry asked for doesn't exist.
-var ErrNotFound = errors.New("not found")
+// ErrNotFound means the Meal or Entry asked for doesn't exist. It is Core's,
+// so Core's repository helpers report it too.
+var ErrNotFound = coremodel.ErrNotFound
