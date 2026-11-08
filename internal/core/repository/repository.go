@@ -1,5 +1,6 @@
 // Package repository is Core's data access: the only part of Core that touches
-// the database, and only Core's own database.
+// the database, and only Core's own database. Each file holds one collection's
+// repository; this one holds what several of them share.
 package repository
 
 import (
@@ -9,31 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
-
-	"github.com/feriosch/nando-server/internal/core/model"
 )
-
-// New returns the CoreRepository over Core's database, first creating any
-// indexes it lacks.
-func New(ctx context.Context, db *mongo.Database) (model.CoreRepository, error) {
-	indexes := map[string][]mongo.IndexModel{
-		enrollmentCodes: enrollmentCodeIndexes,
-		ceremonies:      ceremonyIndexes,
-		sessions:        sessionIndexes,
-
-		sentNotifications: sentNotificationIndexes,
-	}
-	for collection, models := range indexes {
-		if _, err := db.Collection(collection).Indexes().CreateMany(ctx, models); err != nil {
-			return nil, err
-		}
-	}
-	return mongoRepository{db: db}, nil
-}
-
-type mongoRepository struct {
-	db *mongo.Database
-}
 
 // expiresAtIndex has MongoDB delete each document within about a minute after
 // its expiresAt. Queries match only unexpired documents, so none can be used
@@ -46,4 +23,12 @@ var expiresAtIndex = mongo.IndexModel{
 // unexpired matches documents whose expiresAt is after now.
 func unexpired(now time.Time) bson.E {
 	return bson.E{Key: "expiresAt", Value: bson.D{{Key: "$gt", Value: now}}}
+}
+
+// expiringCollection returns the named collection in db, first creating its
+// expiresAtIndex and any other indexes it lacks.
+func expiringCollection(ctx context.Context, db *mongo.Database, name string, indexes ...mongo.IndexModel) (*mongo.Collection, error) {
+	collection := db.Collection(name)
+	_, err := collection.Indexes().CreateMany(ctx, append([]mongo.IndexModel{expiresAtIndex}, indexes...))
+	return collection, err
 }

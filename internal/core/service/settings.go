@@ -14,9 +14,27 @@ import (
 	"github.com/feriosch/nando-server/internal/core/model"
 )
 
-// settings returns the saved settings, or the defaults if none were saved.
-func (s *Service) settings(ctx context.Context) (model.Settings, error) {
-	settings, err := s.repo.FindSettings(ctx)
+// SettingsService handles requests about the Owner's settings, and answers
+// what other services and Modules need of them: the Owner Time Zone and Today.
+type SettingsService struct {
+	settings model.SettingsRepository
+	now      func() time.Time
+}
+
+// NewSettings returns the SettingsService, with now as its clock.
+func NewSettings(settings model.SettingsRepository, now func() time.Time) *SettingsService {
+	return &SettingsService{settings: settings, now: now}
+}
+
+// Routes adds the settings routes to mux, under /api/settings.
+func (s *SettingsService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("PUT /api/settings", s.putSettings)
+}
+
+// Settings returns the saved settings, or the defaults if none were saved.
+func (s *SettingsService) Settings(ctx context.Context) (model.Settings, error) {
+	settings, err := s.settings.Find(ctx)
 	if errors.Is(err, model.ErrNotFound) {
 		return model.DefaultSettings, nil
 	}
@@ -52,8 +70,8 @@ func toSettingsJSON(settings model.Settings) settingsJSON {
 	}
 }
 
-func (s *Service) getSettings(w http.ResponseWriter, r *http.Request) {
-	settings, err := s.settings(r.Context())
+func (s *SettingsService) getSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := s.Settings(r.Context())
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -105,7 +123,7 @@ func fromSettingsJSON(j settingsJSON) (model.Settings, error) {
 }
 
 // putSettings replaces all of the settings.
-func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) {
+func (s *SettingsService) putSettings(w http.ResponseWriter, r *http.Request) {
 	var j settingsJSON
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
 		http.Error(w, "the body isn't settings", http.StatusBadRequest)
@@ -116,7 +134,7 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := s.repo.SaveSettings(r.Context(), settings); err != nil {
+	if err := s.settings.Save(r.Context(), settings); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -124,8 +142,8 @@ func (s *Service) putSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 // OwnerTimeZone is the time zone all of Nando's dates and clock times are in.
-func (s *Service) OwnerTimeZone(ctx context.Context) (*time.Location, error) {
-	settings, err := s.settings(ctx)
+func (s *SettingsService) OwnerTimeZone(ctx context.Context) (*time.Location, error) {
+	settings, err := s.Settings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +151,7 @@ func (s *Service) OwnerTimeZone(ctx context.Context) (*time.Location, error) {
 }
 
 // Today is the current Day in the Owner Time Zone.
-func (s *Service) Today(ctx context.Context) (model.Day, error) {
+func (s *SettingsService) Today(ctx context.Context) (model.Day, error) {
 	loc, err := s.OwnerTimeZone(ctx)
 	if err != nil {
 		return "", err

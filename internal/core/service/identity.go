@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,15 +25,72 @@ const (
 	enrollmentCodeAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 )
 
+// IdentityService signs the Owner in under /auth/: registering a passkey
+// with an Enrollment Code, and signing in with a passkey. Both end by having
+// the SessionsService start a session.
+type IdentityService struct {
+	enrollmentCodes model.EnrollmentCodesRepository
+	ceremonies      model.CeremoniesRepository
+	passkeys        model.PasskeysRepository
+	sessions        *SessionsService
+	webauthn        *webauthn.WebAuthn
+	now             func() time.Time
+}
+
+// NewIdentity returns the IdentityService for passkeys of domain, used from
+// origins, with now as its clock.
+func NewIdentity(
+	enrollmentCodes model.EnrollmentCodesRepository,
+	ceremonies model.CeremoniesRepository,
+	passkeys model.PasskeysRepository,
+	sessions *SessionsService,
+	domain string,
+	origins []string,
+	now func() time.Time,
+) (*IdentityService, error) {
+	relyingParty, err := webauthn.New(&webauthn.Config{
+		RPID:          domain,
+		RPDisplayName: "Nando",
+		RPOrigins:     origins,
+		AuthenticatorSelection: protocol.AuthenticatorSelection{
+			ResidentKey:      protocol.ResidentKeyRequirementRequired,
+			UserVerification: protocol.VerificationRequired,
+		},
+		Timeouts: webauthn.TimeoutsConfig{
+			Login:        webauthn.TimeoutConfig{Enforce: true, Timeout: ceremonyTimeout},
+			Registration: webauthn.TimeoutConfig{Enforce: true, Timeout: ceremonyTimeout},
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &IdentityService{
+		enrollmentCodes: enrollmentCodes,
+		ceremonies:      ceremonies,
+		passkeys:        passkeys,
+		sessions:        sessions,
+		webauthn:        relyingParty,
+		now:             now,
+	}, nil
+}
+
+// Routes adds the signing-in routes to mux, under /auth/.
+func (s *IdentityService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /auth/register/begin", s.beginRegistration)
+	mux.HandleFunc("POST /auth/register/finish", s.finishRegistration)
+	mux.HandleFunc("POST /auth/signin/begin", s.beginSignIn)
+	mux.HandleFunc("POST /auth/signin/finish", s.finishSignIn)
+}
+
 // IssueEnrollmentCode stores and returns a new Enrollment Code.
-func (s *Service) IssueEnrollmentCode(ctx context.Context) (string, error) {
+func (s *IdentityService) IssueEnrollmentCode(ctx context.Context) (string, error) {
 	b := make([]byte, 10)
 	_, _ = rand.Read(b)
 	for i := range b {
 		b[i] = enrollmentCodeAlphabet[int(b[i])%len(enrollmentCodeAlphabet)]
 	}
 	code := string(b[:5]) + "-" + string(b[5:])
-	err := s.repo.InsertEnrollmentCode(ctx, model.EnrollmentCode{
+	err := s.enrollmentCodes.Insert(ctx, model.EnrollmentCode{
 		Hash:      sha256Of(code),
 		ExpiresAt: s.now().Add(enrollmentCodeLifetime),
 	})
@@ -57,7 +113,7 @@ func (o owner) WebAuthnCredentials() []webauthn.Credential { return o.credential
 
 // beginRegistration answers {"code": "..."} with the options for
 // navigator.credentials.create, if the code is a valid Enrollment Code.
-func (s *Service) beginRegistration(w http.ResponseWriter, r *http.Request) {
+func (s *IdentityService) beginRegistration(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code string `json:"code"`
 	}
@@ -66,7 +122,7 @@ func (s *Service) beginRegistration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	codeHash := sha256Of(req.Code)
-	if _, err := s.repo.FindEnrollmentCode(r.Context(), codeHash, s.now()); err != nil {
+	if _, err := s.enrollmentCodes.Find(r.Context(), codeHash, s.now()); err != nil {
 		enrollmentCodeError(w, err)
 		return
 	}
@@ -93,7 +149,7 @@ func (s *Service) beginRegistration(w http.ResponseWriter, r *http.Request) {
 
 // finishRegistration stores the new passkey from navigator.credentials.create,
 // uses up the Enrollment Code and signs this device in.
-func (s *Service) finishRegistration(w http.ResponseWriter, r *http.Request) {
+func (s *IdentityService) finishRegistration(w http.ResponseWriter, r *http.Request) {
 	parsed, err := protocol.ParseCredentialCreationResponseBody(r.Body)
 	if err != nil {
 		http.Error(w, "body must be a PublicKeyCredential", http.StatusBadRequest)
@@ -119,7 +175,7 @@ func (s *Service) finishRegistration(w http.ResponseWriter, r *http.Request) {
 		ServerError(w, err)
 		return
 	}
-	err = s.repo.InsertPasskey(r.Context(), model.Passkey{ID: credential.ID, Credential: stored, CreatedAt: s.now()})
+	err = s.passkeys.Insert(r.Context(), model.Passkey{ID: credential.ID, Credential: stored, CreatedAt: s.now()})
 	if err != nil {
 		ServerError(w, err)
 		return
@@ -127,15 +183,15 @@ func (s *Service) finishRegistration(w http.ResponseWriter, r *http.Request) {
 	// The code is used up only once the passkey is stored, so a cancelled
 	// Face ID prompt or a failed insert doesn't waste it. If another
 	// registration used it first, this passkey is taken back out.
-	if err := s.repo.UseEnrollmentCode(r.Context(), ceremony.EnrollmentCodeHash, s.now()); err != nil {
-		if deleteErr := s.repo.DeletePasskey(r.Context(), credential.ID); deleteErr != nil {
+	if err := s.enrollmentCodes.Use(r.Context(), ceremony.EnrollmentCodeHash, s.now()); err != nil {
+		if deleteErr := s.passkeys.Delete(r.Context(), credential.ID); deleteErr != nil {
 			ServerError(w, errors.Join(err, deleteErr))
 			return
 		}
 		enrollmentCodeError(w, err)
 		return
 	}
-	if err := s.startSession(w, r); err != nil {
+	if err := s.sessions.startSession(w, r); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -144,7 +200,7 @@ func (s *Service) finishRegistration(w http.ResponseWriter, r *http.Request) {
 
 // beginSignIn answers with the options for navigator.credentials.get, letting
 // the Owner pick any of their passkeys.
-func (s *Service) beginSignIn(w http.ResponseWriter, r *http.Request) {
+func (s *IdentityService) beginSignIn(w http.ResponseWriter, r *http.Request) {
 	assertion, sessionData, err := s.webauthn.BeginDiscoverableLogin()
 	if err != nil {
 		ServerError(w, err)
@@ -159,7 +215,7 @@ func (s *Service) beginSignIn(w http.ResponseWriter, r *http.Request) {
 
 // finishSignIn checks the passkey's answer from navigator.credentials.get and
 // signs this device in.
-func (s *Service) finishSignIn(w http.ResponseWriter, r *http.Request) {
+func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 	parsed, err := protocol.ParseCredentialRequestResponseBody(r.Body)
 	if err != nil {
 		http.Error(w, "body must be a PublicKeyCredential", http.StatusBadRequest)
@@ -179,7 +235,7 @@ func (s *Service) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "that passkey is unknown or could not be verified", http.StatusUnauthorized)
 		return
 	}
-	if err := s.startSession(w, r); err != nil {
+	if err := s.sessions.startSession(w, r); err != nil {
 		ServerError(w, err)
 		return
 	}
@@ -187,9 +243,9 @@ func (s *Service) finishSignIn(w http.ResponseWriter, r *http.Request) {
 }
 
 // findOwner finds the Owner by the passkey they signed in with.
-func (s *Service) findOwner(ctx context.Context) webauthn.DiscoverableUserHandler {
+func (s *IdentityService) findOwner(ctx context.Context) webauthn.DiscoverableUserHandler {
 	return func(rawID, userHandle []byte) (webauthn.User, error) {
-		passkey, err := s.repo.FindPasskey(ctx, rawID)
+		passkey, err := s.passkeys.Find(ctx, rawID)
 		if err != nil {
 			return nil, err
 		}
@@ -202,8 +258,8 @@ func (s *Service) findOwner(ctx context.Context) webauthn.DiscoverableUserHandle
 }
 
 // loadOwner returns the Owner with all their passkeys.
-func (s *Service) loadOwner(ctx context.Context) (owner, error) {
-	passkeys, err := s.repo.ListPasskeys(ctx)
+func (s *IdentityService) loadOwner(ctx context.Context) (owner, error) {
+	passkeys, err := s.passkeys.List(ctx)
 	if err != nil {
 		return owner{}, err
 	}
@@ -226,39 +282,6 @@ func credentialOf(passkey model.Passkey) (webauthn.Credential, error) {
 	return credential, nil
 }
 
-// listPasskeys lists the Owner's passkeys.
-func (s *Service) listPasskeys(w http.ResponseWriter, r *http.Request) {
-	passkeys, err := s.repo.ListPasskeys(r.Context())
-	if err != nil {
-		ServerError(w, err)
-		return
-	}
-	type passkeyJSON struct {
-		ID        string    `json:"id"`
-		CreatedAt time.Time `json:"createdAt"`
-	}
-	list := make([]passkeyJSON, len(passkeys))
-	for i, passkey := range passkeys {
-		list[i] = passkeyJSON{ID: base64.RawURLEncoding.EncodeToString(passkey.ID), CreatedAt: passkey.CreatedAt}
-	}
-	WriteJSON(w, http.StatusOK, list)
-}
-
-// deletePasskey stops a passkey signing in. Devices already signed in with it
-// stay signed in until their sessions are deleted.
-func (s *Service) deletePasskey(w http.ResponseWriter, r *http.Request) {
-	id, err := base64.RawURLEncoding.DecodeString(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "that is not a passkey id", http.StatusBadRequest)
-		return
-	}
-	if err := s.repo.DeletePasskey(r.Context(), id); err != nil {
-		ServerError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 func enrollmentCodeError(w http.ResponseWriter, err error) {
 	if errors.Is(err, model.ErrNotFound) {
 		http.Error(w, "that Enrollment Code is unknown, used or expired", http.StatusUnauthorized)
@@ -268,12 +291,12 @@ func enrollmentCodeError(w http.ResponseWriter, err error) {
 }
 
 // beginCeremony keeps sessionData, go-webauthn's state, until the ceremony's finish request.
-func (s *Service) beginCeremony(ctx context.Context, sessionData *webauthn.SessionData, enrollmentCodeHash []byte) error {
+func (s *IdentityService) beginCeremony(ctx context.Context, sessionData *webauthn.SessionData, enrollmentCodeHash []byte) error {
 	stored, err := json.Marshal(sessionData)
 	if err != nil {
 		return err
 	}
-	return s.repo.InsertCeremony(ctx, model.Ceremony{
+	return s.ceremonies.Insert(ctx, model.Ceremony{
 		Challenge:          sessionData.Challenge,
 		SessionData:        stored,
 		EnrollmentCodeHash: enrollmentCodeHash,
@@ -285,9 +308,9 @@ func (s *Service) beginCeremony(ctx context.Context, sessionData *webauthn.Sessi
 var errNoCeremony = errors.New("no ceremony")
 
 // takeCeremony ends the ceremony with this challenge, so it can finish only once.
-func (s *Service) takeCeremony(ctx context.Context, challenge string) (model.Ceremony, webauthn.SessionData, error) {
+func (s *IdentityService) takeCeremony(ctx context.Context, challenge string) (model.Ceremony, webauthn.SessionData, error) {
 	var sessionData webauthn.SessionData
-	ceremony, err := s.repo.TakeCeremony(ctx, challenge, s.now())
+	ceremony, err := s.ceremonies.Take(ctx, challenge, s.now())
 	if errors.Is(err, model.ErrNotFound) {
 		return ceremony, sessionData, errNoCeremony
 	}
