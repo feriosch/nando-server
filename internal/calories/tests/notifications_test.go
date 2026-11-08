@@ -121,3 +121,23 @@ func TestTheNothingLoggedReminderIsNotSentWhileSwitchedOff(t *testing.T) {
 		t.Errorf("received %+v, want nothing", got)
 	}
 }
+
+func TestTheEveningSummaryTellsTheOwnerTodaysConsumedCaloriesAgainstTheDailyLimit(t *testing.T) {
+	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.setDailyLimit(2000)
+	phone.saveCaloriesSettings(off("14:00"), on("21:30"))
+	push := testpush.New(t)
+	phone.subscribe(push)
+	phone.mustLogEntry("2026-10-22", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 2})
+	phone.mustLogEntry("2026-10-22", map[string]any{"name": "Ramen", "kcalPerServing": 1000, "servings": 1})
+
+	n.tickAt(tokyoTime(21, 0))
+	n.tickAt(tokyoTime(21, 30))
+	n.tickAt(tokyoTime(22, 0))
+
+	want := []testpush.Message{{Title: "Calories", Body: "Today: 1460 / 2000 kcal", URL: "/calories"}}
+	if got := push.Received(); !slices.Equal(got, want) {
+		t.Errorf("received %+v, want %+v", got, want)
+	}
+}

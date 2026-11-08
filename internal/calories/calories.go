@@ -59,7 +59,7 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 		dailyLimits:   service.NewDailyLimits(dailyLimits, core),
 		days:          service.NewDays(entries, dailyLimits, entriesService, core),
 		settings:      settings,
-		notifications: service.NewNotifications(settings, entries),
+		notifications: service.NewNotifications(settings, entries, dailyLimits),
 	}, nil
 }
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
@@ -9,17 +10,19 @@ import (
 )
 
 // NotificationsService is the Module's Notification provider, which Core asks
-// at every tick: the reminder that nothing is logged yet today, at the time
-// in the Calories settings.
+// at every tick: the reminder that nothing is logged yet today and the
+// evening summary of how today went, each at the time in the Calories
+// settings.
 type NotificationsService struct {
-	settings *SettingsService
-	entries  model.EntriesRepository
+	settings    *SettingsService
+	entries     model.EntriesRepository
+	dailyLimits model.DailyLimitsRepository
 }
 
 // NewNotifications returns the NotificationsService, which reads the Calories
 // settings through settings.
-func NewNotifications(settings *SettingsService, entries model.EntriesRepository) *NotificationsService {
-	return &NotificationsService{settings: settings, entries: entries}
+func NewNotifications(settings *SettingsService, entries model.EntriesRepository, dailyLimits model.DailyLimitsRepository) *NotificationsService {
+	return &NotificationsService{settings: settings, entries: entries, dailyLimits: dailyLimits}
 }
 
 // DueNotifications returns the Calories Notifications due at slot, which is
@@ -29,19 +32,42 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 	if err != nil {
 		return nil, err
 	}
-	reminder := settings.NoEntriesReminder
-	if !reminder.Enabled || slot.Format("15:04") != reminder.Time {
+	reminderDue := isDue(settings.NoEntriesReminder, slot)
+	summaryDue := isDue(settings.EveningSummary, slot)
+	if !reminderDue && !summaryDue {
 		return nil, nil
 	}
 	day := coremodel.DayOf(slot, slot.Location())
 	entries, err := s.entries.ListOnDay(ctx, day)
-	if err != nil || len(entries) > 0 {
+	if err != nil {
 		return nil, err
 	}
-	return []coremodel.Notification{{
-		ID:    coremodel.NotificationID("calories", "no-entries-reminder", day),
-		Title: "Calories",
-		Body:  "Nothing logged yet today",
-		URL:   "/calories",
-	}}, nil
+	var due []coremodel.Notification
+	if reminderDue && len(entries) == 0 {
+		due = append(due, coremodel.Notification{
+			ID:    coremodel.NotificationID("calories", "no-entries-reminder", day),
+			Title: "Calories",
+			Body:  "Nothing logged yet today",
+			URL:   "/calories",
+		})
+	}
+	if summaryDue {
+		limits, err := s.dailyLimits.List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		calories := limits.Calories(day, model.ConsumedCalories(entries))
+		due = append(due, coremodel.Notification{
+			ID:    coremodel.NotificationID("calories", "evening-summary", day),
+			Title: "Calories",
+			Body:  fmt.Sprintf("Today: %d / %d kcal", *calories.ConsumedCalories, *calories.DailyLimit),
+			URL:   "/calories",
+		})
+	}
+	return due, nil
+}
+
+// isDue reports whether the Notification with this setting is due at slot.
+func isDue(setting model.NotificationSetting, slot time.Time) bool {
+	return setting.Enabled && slot.Format("15:04") == setting.Time
 }
