@@ -240,7 +240,7 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 	// exist. Synced passkeys always report 0, which never sets this, so it
 	// guards hardware security keys.
 	if credential.Authenticator.CloneWarning {
-		http.Error(w, "that passkey's sign count went backwards; it may have been copied", http.StatusUnauthorized)
+		http.Error(w, "that passkey's sign count didn't go up; it may have been copied", http.StatusUnauthorized)
 		return
 	}
 	stored, err := json.Marshal(credential)
