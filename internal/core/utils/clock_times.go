@@ -1,6 +1,9 @@
 package utils
 
-import "regexp"
+import (
+	"regexp"
+	"time"
+)
 
 // halfHour matches a clock time "HH:MM" on the hour or half hour.
 var halfHour = regexp.MustCompile(`^([01][0-9]|2[0-3]):(00|30)$`)
@@ -10,4 +13,10 @@ var halfHour = regexp.MustCompile(`^([01][0-9]|2[0-3]):(00|30)$`)
 // Core's tick runs every half hour.
 func IsHalfHour(s string) bool {
 	return halfHour.MatchString(s)
+}
+
+// IsAt reports whether t, in its own location, is at the clock time "HH:MM",
+// such as a tick's slot at the time a Notification is set for.
+func IsAt(t time.Time, clockTime string) bool {
+	return t.Format("15:04") == clockTime
 }

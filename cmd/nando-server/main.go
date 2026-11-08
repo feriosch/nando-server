@@ -160,6 +160,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	nandoCore.AddNotificationProvider(caloriesModule.NotificationProvider())
 
 	switch args := os.Args[1:]; {
 	case len(args) == 1 && args[0] == "enroll":

@@ -63,18 +63,28 @@ type dayJSON struct {
 // dayView returns day's Entries with its Consumed Calories against its Daily
 // Limit.
 func (s *DaysService) dayView(ctx context.Context, day coremodel.Day) (dayJSON, error) {
-	entries, err := s.entries.ListOnDay(ctx, day)
-	if err != nil {
-		return dayJSON{}, err
-	}
-	limits, err := s.dailyLimits.List(ctx)
+	calories, entries, err := s.dayCalories(ctx, day)
 	if err != nil {
 		return dayJSON{}, err
 	}
 	return dayJSON{
-		caloriesJSON: toCaloriesJSON(limits.Calories(day, model.ConsumedCalories(entries))),
+		caloriesJSON: toCaloriesJSON(calories),
 		Entries:      utils.ToEntryJSONs(entries),
 	}, nil
+}
+
+// dayCalories returns day's Consumed Calories against the Daily Limit it had,
+// and the Entries they come from.
+func (s *DaysService) dayCalories(ctx context.Context, day coremodel.Day) (model.DayCalories, []model.Entry, error) {
+	entries, err := s.entries.ListOnDay(ctx, day)
+	if err != nil {
+		return model.DayCalories{}, nil, err
+	}
+	limits, err := s.dailyLimits.List(ctx)
+	if err != nil {
+		return model.DayCalories{}, nil, err
+	}
+	return limits.Calories(day, model.ConsumedCalories(entries)), entries, nil
 }
 
 // getDay answers the Day view: the Day's Entries, its Consumed Calories, its

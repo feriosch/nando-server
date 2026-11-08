@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // weighInReminder is Core's own Notification provider: the weekly reminder to
@@ -21,7 +22,7 @@ func (p weighInReminder) DueNotifications(ctx context.Context, slot time.Time) (
 		return nil, err
 	}
 	reminder := settings.WeighInReminder
-	if !reminder.Enabled || slot.Weekday() != reminder.Weekday || slot.Format("15:04") != reminder.Time {
+	if !reminder.Enabled || slot.Weekday() != reminder.Weekday || !utils.IsAt(slot, reminder.Time) {
 		return nil, nil
 	}
 	week := model.DayOf(slot, slot.Location()).Week()

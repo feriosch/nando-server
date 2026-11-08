@@ -1,6 +1,11 @@
 package model
 
-import "context"
+import (
+	"context"
+	"time"
+
+	"github.com/feriosch/nando-server/internal/core/utils"
+)
 
 // Settings are what the Calories Settings Section saves besides the Daily
 // Limit: one document.
@@ -18,6 +23,12 @@ type NotificationSetting struct {
 	// Time is the clock time in the Owner Time Zone, "HH:MM" on the hour or
 	// half hour.
 	Time string `bson:"time"`
+}
+
+// DueAt reports whether the Notification is switched on and set for slot, the
+// half hour of a tick in the Owner Time Zone.
+func (s NotificationSetting) DueAt(slot time.Time) bool {
+	return s.Enabled && utils.IsAt(slot, s.Time)
 }
 
 // DefaultSettings are the settings until the Owner first saves theirs.
