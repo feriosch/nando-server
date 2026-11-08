@@ -138,6 +138,7 @@ func TestTheEveningSummaryTellsTheOwnerTodaysConsumedCaloriesAgainstTheDailyLimi
 
 	n.tickAt(tokyoTime(21, 0))
 	n.tickAt(tokyoTime(21, 30))
+	n.tickAt(tokyoTime(21, 31)) // Cloud Scheduler retries a tick it thinks failed
 	n.tickAt(tokyoTime(22, 0))
 
 	want := []testpush.Notification{{Title: "Calories", Body: "Today: 1460 / 2000 kcal", URL: "/calories"}}
@@ -190,5 +191,20 @@ func TestTheEveningSummaryIsNotSentWhileSwitchedOff(t *testing.T) {
 
 	if got := push.Received(); len(got) != 0 {
 		t.Errorf("received %+v, want nothing", got)
+	}
+}
+
+func TestOnlyTheEveningSummaryIsSentWhenTheNoEntriesReminderIsSetForTheSameTime(t *testing.T) {
+	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.saveCaloriesSettings(on("21:00"), on("21:00"))
+	push := testpush.New(t)
+	phone.subscribe(push)
+
+	n.tickAt(tokyoTime(21, 0))
+
+	want := []testpush.Notification{{Title: "Calories", Body: "Nothing logged today", URL: "/calories"}}
+	if got := push.Received(); !slices.Equal(got, want) {
+		t.Errorf("received %+v, want only the evening summary %+v", got, want)
 	}
 }

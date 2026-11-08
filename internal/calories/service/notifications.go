@@ -49,7 +49,9 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 		return nil, err
 	}
 	var due []coremodel.Notification
-	if reminderDue && calories.ConsumedCalories == nil {
+	// The evening summary of an Unlogged Day already says nothing was logged,
+	// so the reminder isn't sent alongside it.
+	if reminderDue && !summaryDue && calories.ConsumedCalories == nil {
 		due = append(due, notification("no-entries-reminder", day, "Nothing logged yet today"))
 	}
 	if summaryDue {
