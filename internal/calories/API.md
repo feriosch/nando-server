@@ -1,6 +1,6 @@
 # Calories API
 
-The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, and the Calories Home Card and Settings Section. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
+The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, the Calories Home Card and Settings Section, and the Calories Notifications. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
 
 A Day is a date in the Owner Time Zone, written `YYYY-MM-DD`.
 
@@ -247,6 +247,13 @@ The Calories Settings Section: when its Notifications are sent. The Daily Limit 
 - `noEntriesReminder`: the Notification reminding the Owner that today has no Entries yet.
 - `eveningSummary`: the Notification telling the Owner how today went.
 - `time`: `"HH:MM"` in the Owner Time Zone, on the hour or half hour (`"00:00"` to `"23:30"`).
+
+## Notifications
+
+Core's tick asks the Calories Module for its Notifications every half hour (see [Core's API](../core/API.md)). Each is sent at most once a Day, only while switched on, at its `time` in the settings, titled `Calories`, and opens `/calories` when tapped:
+
+- **Nothing logged yet**: `Nothing logged yet today`, only if today has no Entries at that time.
+- **Evening summary**: today's Consumed Calories against the Daily Limit today has: `Today: 1460 / 2000 kcal`, or `Today: 1460 kcal` if no Daily Limit was ever set. On an Unlogged Day it is `Nothing logged today`, never 0 kcal.
 
 ### `PUT /api/calories/settings`
 

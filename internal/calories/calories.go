@@ -3,7 +3,8 @@
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests and
 // validation (MealsService, EntriesService, DailyLimitsService,
-// SettingsService, and DaysService for how each Day went), and repository
+// SettingsService, DaysService for how each Day went, and
+// NotificationsService, the Module's Notification provider), and repository
 // holds all database code. The services see only the repository and
 // CoreService interfaces, never a database.
 package calories
