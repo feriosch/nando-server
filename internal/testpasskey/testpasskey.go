@@ -48,6 +48,14 @@ const (
 
 var b64 = base64.RawURLEncoding
 
+// Copy returns a second copy of this passkey, as cloning a hardware security
+// key would make: it signs in as the same passkey but counts its uses
+// separately.
+func (p *Passkey) Copy() *Passkey {
+	c := *p
+	return &c
+}
+
 // SetSignCount makes the passkey report n as its sign count from now on, as a
 // hardware security key counts its uses. Left alone it reports 0, as synced
 // passkeys such as iCloud Keychain do.

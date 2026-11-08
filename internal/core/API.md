@@ -49,7 +49,7 @@ Body: the `PublicKeyCredential` from `navigator.credentials.get`, as `credential
 
 - `204`: the device is signed in.
 - `400`: the body isn't a `PublicKeyCredential`, or its challenge was for a registration.
-- `401`: the challenge is unknown, used or expired; the passkey is unknown (for example, deleted) or couldn't be verified; or its sign count didn't go up since its last sign-in, which suggests it was copied. Synced passkeys always report a sign count of 0, which is never rejected; this mainly protects hardware security keys.
+- `401`: the challenge is unknown, used or expired; the passkey is unknown (for example, deleted) or couldn't be verified; its sign count didn't go up since its last sign-in, which suggests it was copied; or another sign-in with the same passkey finished first. Synced passkeys always report a sign count of 0, which is never rejected; this mainly protects hardware security keys. Every refused passkey gets the same message, so a copied one isn't told why; the server logs the reason.
 
 ## Everything under `/api/`
 

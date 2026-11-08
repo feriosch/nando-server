@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -247,7 +248,8 @@ func TestSignInWithALowerSignCountIsRejected(t *testing.T) {
 	laptop.mustSignIn()
 
 	// A copy of the key that is behind the original: a sign of cloning.
-	clone := n.newDevice("Unknown").syncedFrom(laptop)
+	clone := n.newDevice("Unknown")
+	clone.passkey = laptop.passkey.Copy()
 	clone.passkey.SetSignCount(3)
 
 	if rec := clone.signIn(); rec.Code != http.StatusUnauthorized {
@@ -255,6 +257,57 @@ func TestSignInWithALowerSignCountIsRejected(t *testing.T) {
 	}
 	if rec := clone.do(http.MethodGet, "/api/sessions", nil); rec.Code != http.StatusUnauthorized {
 		t.Errorf("GET /api/sessions after the rejected sign-in: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	// The rejected copy changed nothing: the original carries on from 5.
+	laptop.passkey.SetSignCount(6)
+	if rec := laptop.signIn(); rec.Code != http.StatusNoContent {
+		t.Errorf("sign in with the original at sign count 6: status = %d, body %q", rec.Code, rec.Body)
+	}
+}
+
+func TestSimultaneousSignInsNeverLowerTheSignCount(t *testing.T) {
+	n := newNando(t)
+	laptop := n.newDevice("Laptop")
+	laptop.mustEnroll()
+
+	// Each round, two copies of the key finish signing in at once, one count
+	// apart. Whichever order the server takes them in, the higher count must
+	// end up stored. Timing decides whether a broken server shows it, so the
+	// race is run several times.
+	for round := uint32(1); round <= 20; round++ {
+		base := 10 * round
+		laptop.passkey.SetSignCount(base)
+		laptop.mustSignIn()
+		behind, ahead := n.newDevice("Behind"), n.newDevice("Ahead")
+		behind.passkey, ahead.passkey = laptop.passkey.Copy(), laptop.passkey.Copy()
+		behind.passkey.SetSignCount(base + 1)
+		ahead.passkey.SetSignCount(base + 2)
+		behindBody := behind.passkey.Get(t, behind.do(http.MethodPost, "/auth/signin/begin", nil).Body.Bytes())
+		aheadBody := ahead.passkey.Get(t, ahead.do(http.MethodPost, "/auth/signin/begin", nil).Body.Bytes())
+
+		var wg sync.WaitGroup
+		var behindCode, aheadCode int
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			behindCode = behind.do(http.MethodPost, "/auth/signin/finish", behindBody).Code
+		}()
+		go func() {
+			defer wg.Done()
+			aheadCode = ahead.do(http.MethodPost, "/auth/signin/finish", aheadBody).Code
+		}()
+		wg.Wait()
+
+		if behindCode != http.StatusNoContent || aheadCode != http.StatusNoContent {
+			continue // one was refused, so nothing can have been stored out of order
+		}
+		replay := n.newDevice("Replay")
+		replay.passkey = laptop.passkey.Copy()
+		replay.passkey.SetSignCount(base + 2)
+		if rec := replay.signIn(); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("round %d: both sign-ins at %d and %d succeeded, then sign count %d again: status = %d, want %d (the stored count went down)",
+				round, base+1, base+2, base+2, rec.Code, http.StatusUnauthorized)
+		}
 	}
 }
 
