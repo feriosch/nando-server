@@ -60,6 +60,22 @@ func (v entryValues) toEntry() (model.Entry, error) {
 	return model.Entry{Name: name, KcalPerServing: kcal, Servings: v.Servings}, nil
 }
 
+// checkEditable reports whether day is in the Editable Window, today being the
+// current Day in the Owner Time Zone. If it isn't, it answers 409 (or 500 if
+// today can't be known) and returns false.
+func (s *Service) checkEditable(w http.ResponseWriter, r *http.Request, day coremodel.Day) bool {
+	today, err := s.core.Today(r.Context())
+	if err != nil {
+		coreservice.ServerError(w, err)
+		return false
+	}
+	if !utils.InEditableWindow(day, today) {
+		http.Error(w, "only today and the 7 Days before it can be changed", http.StatusConflict)
+		return false
+	}
+	return true
+}
+
 // pathDay returns the Day in r's path, or answers 400 and returns false.
 func pathDay(w http.ResponseWriter, r *http.Request) (coremodel.Day, bool) {
 	day, err := coremodel.ParseDay(r.PathValue("day"))
