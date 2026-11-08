@@ -157,3 +157,19 @@ func TestTheEveningSummaryWithoutADailyLimitTellsOnlyTodaysConsumedCalories(t *t
 		t.Errorf("received %+v, want %+v", got, want)
 	}
 }
+
+func TestTheEveningSummaryOfAnUnloggedDaySaysNothingWasLogged(t *testing.T) {
+	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.setDailyLimit(2000)
+	phone.saveCaloriesSettings(off("14:00"), on("21:00"))
+	push := testpush.New(t)
+	phone.subscribe(push)
+
+	n.tickAt(tokyoTime(21, 0))
+
+	want := []testpush.Message{{Title: "Calories", Body: "Nothing logged today", URL: "/calories"}}
+	if got := push.Received(); !slices.Equal(got, want) {
+		t.Errorf("received %+v, want %+v (an Unlogged Day isn't 0 kcal)", got, want)
+	}
+}

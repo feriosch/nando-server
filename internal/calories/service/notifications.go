@@ -66,8 +66,12 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 	return due, nil
 }
 
-// summary is the evening summary's text for the Day.
+// summary is the evening summary's text for the Day. An Unlogged Day is not
+// 0 kcal, so it says nothing was logged.
 func summary(d model.DayCalories) string {
+	if d.ConsumedCalories == nil {
+		return "Nothing logged today"
+	}
 	if d.DailyLimit == nil {
 		return fmt.Sprintf("Today: %d kcal", *d.ConsumedCalories)
 	}
