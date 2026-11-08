@@ -19,6 +19,8 @@ Core and every Module are split into the same three layers:
 
 Core and a Module may also have `utils/`: helpers their own layers share. Core's are also for Modules to use. Examples: Core's MongoDB error helpers (`core/utils/errors.go`), Calories' checks on what the Owner sends and their limits (`calories/utils/checks.go`), and the Editable Window rule (`calories/utils/editable_window.go`). A `utils/` package runs no queries and handles no requests.
 
+A Module's tests live in its `tests/` folder (`calories/tests/meals_test.go`). They use only what the Module and Core export, through the HTTP API, so they don't need to sit next to the code. Core's tests are still beside its code until Core gets the same split.
+
 A file about something there can be many of is named in the plural in every layer and in tests, matching its collection: `model/meals.go`, `service/meals.go`, `repository/meals.go`, `meals_test.go`. Names with no plural form, such as `settings.go`, `identity.go` or `body.go`, stay as they are.
 
 The one difference: Core's service (as `model.CoreService`) is also handed to every Module's service. When a Module needs Core's data (such as Weigh-ins), its service asks Core's service and then uses that data itself or passes it to its own repository. A Module never receives Core's repository, nor another Module's service, repository or database. Reaching another database from a repository (for example via `db.Client()`) is possible with the driver, so this rule is kept by convention.
