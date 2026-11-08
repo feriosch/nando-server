@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
+	"github.com/feriosch/nando-server/internal/calories/utils"
 	coreservice "github.com/feriosch/nando-server/internal/core/service"
 )
 
@@ -110,19 +111,19 @@ func readMeal(w http.ResponseWriter, r *http.Request) (model.Meal, bool) {
 // fromMealBody turns the Meal the API was sent into a Meal, or explains what's
 // wrong with it.
 func fromMealBody(j mealBody) (model.Meal, error) {
-	name, err := checkName("name", j.Name)
+	name, err := utils.CheckName("name", j.Name)
 	if err != nil {
 		return model.Meal{}, err
 	}
-	kcal, err := checkKcal("kcal", j.Kcal)
+	kcal, err := utils.CheckKcal("kcal", j.Kcal)
 	if err != nil {
 		return model.Meal{}, err
 	}
-	store, err := checkOptional("store", j.Store, maxNameLength)
+	store, err := utils.CheckOptional("store", j.Store, utils.MaxNameLength)
 	if err != nil {
 		return model.Meal{}, err
 	}
-	emoji, err := checkOptional("emoji", j.Emoji, maxEmojiLength)
+	emoji, err := utils.CheckOptional("emoji", j.Emoji, utils.MaxEmojiLength)
 	if err != nil {
 		return model.Meal{}, err
 	}
@@ -130,7 +131,7 @@ func fromMealBody(j mealBody) (model.Meal, error) {
 	if u, err := url.Parse(imageURL); imageURL != "" && (err != nil || u.Scheme != "https" || u.Host == "") {
 		return model.Meal{}, errors.New("imageUrl must be an https: URL, or null")
 	}
-	tags, err := checkTags(j.Tags)
+	tags, err := utils.CheckTags(j.Tags)
 	if err != nil {
 		return model.Meal{}, err
 	}

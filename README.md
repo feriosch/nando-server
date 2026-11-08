@@ -17,6 +17,8 @@ Core and every Module are split into the same three layers:
 - `service/`: request handling and validation. Depends only on `model/` interfaces; never touches the database.
 - `repository/`: all database code. Implements the `model/` interface over the area's own `*mongo.Database`. `repository.go` holds the constructor and the shared Mongo type; every other file corresponds to exactly one collection of that database and holds all the code for it (e.g. `calories/repository/meals.go` → `meals`, `entries.go` → `entries`).
 
+A Module may also have `utils/`: helpers its own layers share, such as Calories' checks on what the Owner sends and their limits (`calories/utils/checks.go`). It touches no database and handles no requests.
+
 A file about something there can be many of is named in the plural in every layer and in tests, matching its collection: `model/meals.go`, `service/meals.go`, `repository/meals.go`, `meals_test.go`. Names with no plural form, such as `settings.go`, `identity.go` or `body.go`, stay as they are.
 
 The one difference: Core's service (as `model.CoreService`) is also handed to every Module's service. When a Module needs Core's data (such as Weigh-ins), its service asks Core's service and then uses that data itself or passes it to its own repository. A Module never receives Core's repository, nor another Module's service, repository or database. Reaching another database from a repository (for example via `db.Client()`) is possible with the driver, so this rule is kept by convention.

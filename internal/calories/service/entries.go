@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
+	"github.com/feriosch/nando-server/internal/calories/utils"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreservice "github.com/feriosch/nando-server/internal/core/service"
 )
@@ -45,15 +46,15 @@ type entryValues struct {
 // toEntry checks all three values and returns an Entry with them, or explains
 // what's wrong.
 func (v entryValues) toEntry() (model.Entry, error) {
-	name, err := checkName("name", v.Name)
+	name, err := utils.CheckName("name", v.Name)
 	if err != nil {
 		return model.Entry{}, err
 	}
-	kcal, err := checkKcal("kcalPerServing", v.KcalPerServing)
+	kcal, err := utils.CheckKcal("kcalPerServing", v.KcalPerServing)
 	if err != nil {
 		return model.Entry{}, err
 	}
-	if err := checkServings(v.Servings); err != nil {
+	if err := utils.CheckServings(v.Servings); err != nil {
 		return model.Entry{}, err
 	}
 	return model.Entry{Name: name, KcalPerServing: kcal, Servings: v.Servings}, nil
@@ -145,7 +146,7 @@ func (s *Service) postEntry(w http.ResponseWriter, r *http.Request) {
 // the Meal's name and kcal. If the Meal can't be logged, it answers r and
 // returns false.
 func (s *Service) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID string, servings int) (model.Entry, bool) {
-	if err := checkServings(servings); err != nil {
+	if err := utils.CheckServings(servings); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return model.Entry{}, false
 	}
