@@ -68,7 +68,7 @@ func tokyoTime(hh, mm int) time.Time {
 	return time.Date(2026, 10, 22, hh, mm, 0, 0, tokyo)
 }
 
-func TestTheNothingLoggedReminderIsSentAtItsTimeWhenTodayHasNoEntries(t *testing.T) {
+func TestTheNoEntriesReminderIsSentAtItsTimeWhenTodayHasNoEntries(t *testing.T) {
 	n, phone := signedInPhone(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.saveCaloriesSettings(on("14:00"), off("21:00"))
@@ -79,13 +79,13 @@ func TestTheNothingLoggedReminderIsSentAtItsTimeWhenTodayHasNoEntries(t *testing
 	n.tickAt(tokyoTime(14, 0))
 	n.tickAt(tokyoTime(14, 30))
 
-	want := []testpush.Message{{Title: "Calories", Body: "Nothing logged yet today", URL: "/calories"}}
+	want := []testpush.Notification{{Title: "Calories", Body: "Nothing logged yet today", URL: "/calories"}}
 	if got := push.Received(); !slices.Equal(got, want) {
 		t.Errorf("received %+v, want %+v", got, want)
 	}
 }
 
-func TestTheNothingLoggedReminderIsNotSentOnceTodayHasAnEntry(t *testing.T) {
+func TestTheNoEntriesReminderIsNotSentOnceTodayHasAnEntry(t *testing.T) {
 	n, phone := signedInPhone(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.saveCaloriesSettings(on("14:00"), off("21:00"))
@@ -102,13 +102,13 @@ func TestTheNothingLoggedReminderIsNotSentOnceTodayHasAnEntry(t *testing.T) {
 	phone.mustLogEntry("2026-10-23", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 1})
 	n.tickAt(tokyoTime(14, 0).Add(24 * time.Hour))
 
-	want := []testpush.Message{{Title: "Calories", Body: "Nothing logged yet today", URL: "/calories"}}
+	want := []testpush.Notification{{Title: "Calories", Body: "Nothing logged yet today", URL: "/calories"}}
 	if got := push.Received(); !slices.Equal(got, want) {
 		t.Errorf("received %+v, want only Thursday's reminder %+v", got, want)
 	}
 }
 
-func TestTheNothingLoggedReminderIsNotSentWhileSwitchedOff(t *testing.T) {
+func TestTheNoEntriesReminderIsNotSentWhileSwitchedOff(t *testing.T) {
 	n, phone := signedInPhone(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.saveCaloriesSettings(off("14:00"), off("21:00"))
@@ -136,7 +136,7 @@ func TestTheEveningSummaryTellsTheOwnerTodaysConsumedCaloriesAgainstTheDailyLimi
 	n.tickAt(tokyoTime(21, 30))
 	n.tickAt(tokyoTime(22, 0))
 
-	want := []testpush.Message{{Title: "Calories", Body: "Today: 1460 / 2000 kcal", URL: "/calories"}}
+	want := []testpush.Notification{{Title: "Calories", Body: "Today: 1460 / 2000 kcal", URL: "/calories"}}
 	if got := push.Received(); !slices.Equal(got, want) {
 		t.Errorf("received %+v, want %+v", got, want)
 	}
@@ -152,7 +152,7 @@ func TestTheEveningSummaryWithoutADailyLimitTellsOnlyTodaysConsumedCalories(t *t
 
 	n.tickAt(tokyoTime(21, 0))
 
-	want := []testpush.Message{{Title: "Calories", Body: "Today: 460 kcal", URL: "/calories"}}
+	want := []testpush.Notification{{Title: "Calories", Body: "Today: 460 kcal", URL: "/calories"}}
 	if got := push.Received(); !slices.Equal(got, want) {
 		t.Errorf("received %+v, want %+v", got, want)
 	}
@@ -168,7 +168,7 @@ func TestTheEveningSummaryOfAnUnloggedDaySaysNothingWasLogged(t *testing.T) {
 
 	n.tickAt(tokyoTime(21, 0))
 
-	want := []testpush.Message{{Title: "Calories", Body: "Nothing logged today", URL: "/calories"}}
+	want := []testpush.Notification{{Title: "Calories", Body: "Nothing logged today", URL: "/calories"}}
 	if got := push.Received(); !slices.Equal(got, want) {
 		t.Errorf("received %+v, want %+v (an Unlogged Day isn't 0 kcal)", got, want)
 	}
