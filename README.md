@@ -30,7 +30,7 @@ DOMAIN=localhost \
 ALLOWED_ORIGINS=http://localhost:5173 \
 VAPID_PUBLIC_KEY=<public> VAPID_PRIVATE_KEY=<private> \
 PUSH_CONTACT=mailto:you@example.com \
-TICK_AUDIENCE=http://localhost:8080/internal/tick \
+TICK_AUDIENCE=http://localhost:8080 \
 SCHEDULER_SERVICE_ACCOUNT=none \
 go run ./cmd/nando-server
 
@@ -45,7 +45,7 @@ curl localhost:8080/health
 | `PORT`            | Port to listen on (default `8080`; Cloud Run sets it)            |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | The key pair that signs push messages (required to serve), base64url. Generate one with `webpush.GenerateVAPIDKeys`. Changing it invalidates every Push Subscription. In production the private key comes from Secret Manager. |
 | `PUSH_CONTACT`    | A `mailto:` or `https:` URL where a push service can reach Nando's operator (required to serve; Apple rejects push messages without one). |
-| `TICK_AUDIENCE`   | The URL Cloud Scheduler calls, such as `https://api.nanders.app/internal/tick` (required to serve): the audience its OIDC token must be for. |
+| `TICK_AUDIENCE`   | The audience the Cloud Scheduler job's OIDC token is for (required to serve), exactly as the job sets it: `https://api.nanders.app` in production. |
 | `SCHEDULER_SERVICE_ACCOUNT` | The email of the service account Cloud Scheduler signs its OIDC token as (required to serve). `/internal/tick` accepts no other caller. |
 
 ## Enroll a passkey

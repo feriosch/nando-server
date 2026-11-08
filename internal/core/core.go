@@ -41,8 +41,8 @@ type Config struct {
 type VAPID = service.VAPID
 
 // VerifyGoogleSchedulerToken returns the production VerifySchedulerToken: it
-// accepts only a Google-signed OIDC token issued for audience (the tick URL
-// Cloud Scheduler calls) to the scheduler's service account.
+// accepts only a Google-signed OIDC token issued for audience (as the Cloud
+// Scheduler job sets it) to the scheduler's service account.
 func VerifyGoogleSchedulerToken(audience, serviceAccount string) func(ctx context.Context, token string) error {
 	return func(ctx context.Context, token string) error {
 		payload, err := idtoken.Validate(ctx, token, audience)

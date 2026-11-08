@@ -41,7 +41,7 @@ type config struct {
 	vapid core.VAPID
 	// TICK_AUDIENCE and SCHEDULER_SERVICE_ACCOUNT, required to serve:
 	// /internal/tick accepts only Google-signed OIDC tokens for this audience
-	// (the URL Cloud Scheduler calls) issued to this service account.
+	// (as the Cloud Scheduler job sets it) issued to this service account.
 	tickAudience, schedulerServiceAccount string
 }
 
