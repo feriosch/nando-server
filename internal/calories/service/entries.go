@@ -168,7 +168,7 @@ func (s *Service) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID s
 		return model.Entry{}, false
 	}
 	meal, err := s.meals.Find(r.Context(), mealID)
-	if errors.Is(err, model.ErrNotFound) {
+	if errors.Is(err, coremodel.ErrNotFound) {
 		http.Error(w, "there's no such Meal", http.StatusBadRequest)
 		return model.Entry{}, false
 	} else if err != nil {
@@ -187,7 +187,7 @@ func (s *Service) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID s
 // there's no such Entry, or 409 outside the window.
 func (s *Service) editableEntry(w http.ResponseWriter, r *http.Request, ifMissing int) (model.Entry, bool) {
 	entry, err := s.entries.Find(r.Context(), r.PathValue("id"))
-	if errors.Is(err, model.ErrNotFound) {
+	if errors.Is(err, coremodel.ErrNotFound) {
 		if ifMissing == http.StatusNoContent {
 			w.WriteHeader(ifMissing)
 		} else {

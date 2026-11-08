@@ -34,7 +34,7 @@ type EntriesRepository interface {
 	ListOnDay(ctx context.Context, day coremodel.Day) ([]Entry, error)
 	Find(ctx context.Context, id string) (Entry, error)
 	// Update replaces the name, kcal per serving and Servings of the Entry
-	// with entry's ID. ErrNotFound if there's none.
+	// with entry's ID. Core's ErrNotFound if there's none.
 	Update(ctx context.Context, entry Entry) error
 	Delete(ctx context.Context, id string) error
 	// CountByMeal returns how many Entries each Meal has on the Days from

@@ -10,6 +10,7 @@ import (
 
 	"github.com/feriosch/nando-server/internal/calories/model"
 	"github.com/feriosch/nando-server/internal/calories/utils"
+	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreservice "github.com/feriosch/nando-server/internal/core/service"
 )
 
@@ -169,7 +170,7 @@ func (s *Service) putMeal(w http.ResponseWriter, r *http.Request) {
 	}
 	meal.ID = r.PathValue("id")
 	err := s.meals.Update(r.Context(), meal)
-	if errors.Is(err, model.ErrNotFound) {
+	if errors.Is(err, coremodel.ErrNotFound) {
 		http.Error(w, "there's no such Meal", http.StatusNotFound)
 		return
 	} else if err != nil {
@@ -193,7 +194,7 @@ func (s *Service) restoreMeal(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) setArchivedAt(w http.ResponseWriter, r *http.Request, archivedAt *time.Time) {
 	err := s.meals.SetArchivedAt(r.Context(), r.PathValue("id"), archivedAt)
-	if errors.Is(err, model.ErrNotFound) {
+	if errors.Is(err, coremodel.ErrNotFound) {
 		http.Error(w, "there's no such Meal", http.StatusNotFound)
 		return
 	} else if err != nil {

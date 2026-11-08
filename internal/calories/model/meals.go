@@ -31,9 +31,9 @@ type MealsRepository interface {
 	List(ctx context.Context, archived bool) ([]Meal, error)
 	Find(ctx context.Context, id string) (Meal, error)
 	// Update replaces what the Owner can edit of the Meal with meal's ID:
-	// everything but whether it is archived. ErrNotFound if there's none.
+	// everything but whether it is archived. Core's ErrNotFound if there's none.
 	Update(ctx context.Context, meal Meal) error
 	// SetArchivedAt archives the Meal with this ID at archivedAt, or restores
-	// it if archivedAt is nil. ErrNotFound if there's none.
+	// it if archivedAt is nil. Core's ErrNotFound if there's none.
 	SetArchivedAt(ctx context.Context, id string, archivedAt *time.Time) error
 }
