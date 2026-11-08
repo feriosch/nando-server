@@ -39,6 +39,15 @@ func CheckKcal(field string, kcal *int) (int, error) {
 	return *kcal, nil
 }
 
+// CheckDailyLimit checks that kcal is set and a whole number from 1 to
+// 10,000: a Day's ceiling can't be 0.
+func CheckDailyLimit(kcal *int) (int, error) {
+	if kcal == nil || *kcal < 1 || *kcal > MaxKcal {
+		return 0, errors.New("kcal must be a whole number from 1 to 10000")
+	}
+	return *kcal, nil
+}
+
 // CheckServings checks that servings is a whole number from 1 to 100.
 func CheckServings(servings int) error {
 	if servings < 1 || servings > MaxServings {

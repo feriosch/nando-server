@@ -90,3 +90,30 @@ func (r entries) CountByMeal(ctx context.Context, first, last coremodel.Day) (ma
 	}
 	return counts, nil
 }
+
+func (r entries) ConsumedByDay(ctx context.Context, first, last coremodel.Day) (map[coremodel.Day]int, error) {
+	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{
+			{Key: "day", Value: bson.D{{Key: "$gte", Value: first}, {Key: "$lte", Value: last}}},
+		}}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$day"},
+			{Key: "kcal", Value: bson.D{{Key: "$sum", Value: bson.D{{Key: "$multiply", Value: bson.A{"$kcalPerServing", "$servings"}}}}}},
+		}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		Day  coremodel.Day `bson:"_id"`
+		Kcal int           `bson:"kcal"`
+	}
+	if err := cursor.All(ctx, &rows); err != nil {
+		return nil, err
+	}
+	consumed := make(map[coremodel.Day]int, len(rows))
+	for _, row := range rows {
+		consumed[row.Day] = row.Kcal
+	}
+	return consumed, nil
+}

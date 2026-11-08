@@ -40,4 +40,7 @@ type EntriesRepository interface {
 	// CountByMeal returns how many Entries each Meal has on the Days from
 	// first to last, inclusive, by Meal ID. One-off Entries aren't counted.
 	CountByMeal(ctx context.Context, first, last coremodel.Day) (map[string]int, error)
+	// ConsumedByDay returns the Consumed Calories of each Day from first to
+	// last, inclusive, that has Entries. An Unlogged Day isn't in it.
+	ConsumedByDay(ctx context.Context, first, last coremodel.Day) (map[coremodel.Day]int, error)
 }
