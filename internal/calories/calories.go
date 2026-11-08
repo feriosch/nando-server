@@ -2,9 +2,10 @@
 //
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests and
-// validation (MealsService and EntriesService), and repository holds all
-// database code. The services see only the MealsRepository,
-// EntriesRepository and CoreService interfaces, never a database.
+// validation (MealsService, EntriesService, DailyLimitsService,
+// SettingsService, and DaysService for how each Day went), and repository
+// holds all database code. The services see only the repository and
+// CoreService interfaces, never a database.
 package calories
 
 import (
@@ -22,8 +23,11 @@ import (
 // Module is the Calories Module. Its only access to data is its own database
 // and Core's service.
 type Module struct {
-	meals   *service.MealsService
-	entries *service.EntriesService
+	meals       *service.MealsService
+	entries     *service.EntriesService
+	dailyLimits *service.DailyLimitsService
+	days        *service.DaysService
+	settings    *service.SettingsService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -44,9 +48,14 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 		return nil, err
 	}
 	meals := repository.NewMeals(db)
+	dailyLimits := repository.NewDailyLimits(db)
+	entriesService := service.NewEntries(entries, meals, core, now)
 	return &Module{
-		meals:   service.NewMeals(meals, entries, core, now),
-		entries: service.NewEntries(entries, meals, core, now),
+		meals:       service.NewMeals(meals, entries, core, now),
+		entries:     entriesService,
+		dailyLimits: service.NewDailyLimits(dailyLimits, core),
+		days:        service.NewDays(entries, dailyLimits, entriesService, core),
+		settings:    service.NewSettings(repository.NewSettings(db)),
 	}, nil
 }
 
@@ -54,4 +63,7 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 func (m *Module) Routes(mux *http.ServeMux) {
 	m.meals.Routes(mux)
 	m.entries.Routes(mux)
+	m.dailyLimits.Routes(mux)
+	m.days.Routes(mux)
+	m.settings.Routes(mux)
 }

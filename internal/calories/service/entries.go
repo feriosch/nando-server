@@ -34,31 +34,6 @@ func (s *EntriesService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/calories/entries/{id}", s.deleteEntry)
 }
 
-// entryJSON is an Entry as the API lists it.
-type entryJSON struct {
-	ID             string        `json:"id"`
-	Day            coremodel.Day `json:"day"`
-	MealID         *string       `json:"mealId"`
-	Name           string        `json:"name"`
-	KcalPerServing int           `json:"kcalPerServing"`
-	Servings       int           `json:"servings"`
-	Kcal           int           `json:"kcal"`
-	LoggedAt       string        `json:"loggedAt"`
-}
-
-func toEntryJSON(e model.Entry) entryJSON {
-	return entryJSON{
-		ID:             e.ID,
-		Day:            e.Day,
-		MealID:         orNull(e.MealID),
-		Name:           e.Name,
-		KcalPerServing: e.KcalPerServing,
-		Servings:       e.Servings,
-		Kcal:           e.Kcal(),
-		LoggedAt:       e.LoggedAt.UTC().Format("2006-01-02T15:04:05Z"),
-	}
-}
-
 // entryValues are what the Owner sets of an Entry, as the API is sent them.
 type entryValues struct {
 	Name           string `json:"name"`
@@ -83,10 +58,10 @@ func (v entryValues) toEntry() (model.Entry, error) {
 	return model.Entry{Name: name, KcalPerServing: kcal, Servings: v.Servings}, nil
 }
 
-// checkEditable reports whether day is in the Editable Window, today being the
+// CheckEditable reports whether day is in the Editable Window, today being the
 // current Day in the Owner Time Zone. If it isn't, it answers 409 (or 500 if
 // today can't be known) and returns false.
-func (s *EntriesService) checkEditable(w http.ResponseWriter, r *http.Request, day coremodel.Day) bool {
+func (s *EntriesService) CheckEditable(w http.ResponseWriter, r *http.Request, day coremodel.Day) bool {
 	today, err := s.core.Today(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
@@ -99,19 +74,9 @@ func (s *EntriesService) checkEditable(w http.ResponseWriter, r *http.Request, d
 	return true
 }
 
-// pathDay returns the Day in r's path, or answers 400 and returns false.
-func pathDay(w http.ResponseWriter, r *http.Request) (coremodel.Day, bool) {
-	day, err := coremodel.ParseDay(r.PathValue("day"))
-	if err != nil {
-		http.Error(w, "the Day must be YYYY-MM-DD", http.StatusBadRequest)
-		return "", false
-	}
-	return day, true
-}
-
 // listEntries lists a Day's Entries in the order they were logged.
 func (s *EntriesService) listEntries(w http.ResponseWriter, r *http.Request) {
-	day, ok := pathDay(w, r)
+	day, ok := utils.PathDay(w, r)
 	if !ok {
 		return
 	}
@@ -120,18 +85,14 @@ func (s *EntriesService) listEntries(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	list := make([]entryJSON, len(entries))
-	for i, e := range entries {
-		list[i] = toEntryJSON(e)
-	}
-	coreutils.WriteJSON(w, http.StatusOK, list)
+	coreutils.WriteJSON(w, http.StatusOK, utils.ToEntryJSONs(entries))
 }
 
 // postEntry logs an Entry on the Day in the path: from a Meal, copying its
 // name and kcal, or a one-off with its own.
 func (s *EntriesService) postEntry(w http.ResponseWriter, r *http.Request) {
-	day, ok := pathDay(w, r)
-	if !ok || !s.checkEditable(w, r, day) {
+	day, ok := utils.PathDay(w, r)
+	if !ok || !s.CheckEditable(w, r, day) {
 		return
 	}
 	var body struct {
@@ -221,7 +182,7 @@ func (s *EntriesService) editableEntry(w http.ResponseWriter, r *http.Request, i
 		coreutils.ServerError(w, err)
 		return model.Entry{}, false
 	}
-	return entry, s.checkEditable(w, r, entry.Day)
+	return entry, s.CheckEditable(w, r, entry.Day)
 }
 
 // putEntry edits an Entry's name, kcal per serving and Servings.

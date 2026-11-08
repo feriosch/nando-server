@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"regexp"
 	"strings"
 	"time"
 
@@ -90,9 +89,6 @@ var weekdays = func() map[string]time.Weekday {
 	return m
 }()
 
-// halfHour matches a clock time "HH:MM" on the hour or half hour.
-var halfHour = regexp.MustCompile(`^([01][0-9]|2[0-3]):(00|30)$`)
-
 // fromSettingsJSON turns the settings the API was sent into Settings, or
 // explains what's wrong with them.
 func fromSettingsJSON(j settingsJSON) (model.Settings, error) {
@@ -107,7 +103,7 @@ func fromSettingsJSON(j settingsJSON) (model.Settings, error) {
 	if !ok {
 		return model.Settings{}, errors.New("weighInReminder.weekday must be a weekday such as monday")
 	}
-	if !halfHour.MatchString(j.WeighInReminder.Time) {
+	if !utils.IsHalfHour(j.WeighInReminder.Time) {
 		return model.Settings{}, errors.New("weighInReminder.time must be HH:MM on the hour or half hour")
 	}
 	settings := model.Settings{

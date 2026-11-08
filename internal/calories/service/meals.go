@@ -52,22 +52,6 @@ type mealJSON struct {
 	Archived bool     `json:"archived"`
 }
 
-// orNull is s, or nil if s is "".
-func orNull(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
-// orEmpty is *s, or "" if s is nil.
-func orEmpty(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 func toMealJSON(m model.Meal) mealJSON {
 	tags := m.Tags
 	if tags == nil {
@@ -77,9 +61,9 @@ func toMealJSON(m model.Meal) mealJSON {
 		ID:       m.ID,
 		Name:     m.Name,
 		Kcal:     m.Kcal,
-		Store:    orNull(m.Store),
-		Emoji:    orNull(m.Emoji),
-		ImageURL: orNull(m.ImageURL),
+		Store:    utils.OrNull(m.Store),
+		Emoji:    utils.OrNull(m.Emoji),
+		ImageURL: utils.OrNull(m.ImageURL),
 		Tags:     tags,
 		Pinned:   m.Pinned,
 		Archived: m.ArchivedAt != nil,
@@ -152,7 +136,7 @@ func fromMealBody(j mealBody) (model.Meal, error) {
 	if err != nil {
 		return model.Meal{}, err
 	}
-	imageURL := orEmpty(j.ImageURL)
+	imageURL := utils.OrEmpty(j.ImageURL)
 	if u, err := url.Parse(imageURL); imageURL != "" && (err != nil || u.Scheme != "https" || u.Host == "") {
 		return model.Meal{}, errors.New("imageUrl must be an https: URL, or null")
 	}

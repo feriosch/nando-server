@@ -1,6 +1,6 @@
 # Calories API
 
-The Calories Module: Meals, and the Entries that record what the Owner ate each Day. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
+The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, and the Calories Home Card and Settings Section. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
 
 A Day is a date in the Owner Time Zone, written `YYYY-MM-DD`.
 
@@ -134,3 +134,123 @@ Its `day` and `mealId` can't change.
 
 - `204`: deleted. This is also the answer if there's no such Entry.
 - `409`: its Day isn't in the Editable Window.
+
+## Daily Limit
+
+The Daily Limit is the most kcal the Owner intends to consume in a Day: a ceiling to stay under, not a goal to reach. Each change applies from the Day it is made (today), so past Days keep the limit they had. A second change on the same Day replaces the first. The very first Daily Limit also covers every Day before it. Until one is set, there is none, and no Day is over it.
+
+### `GET /api/calories/daily-limit`
+
+`200`: the Daily Limit in force now, or `null` if none was ever set.
+
+```json
+{ "kcal": 1800, "effectiveFrom": "2026-10-23" }
+```
+
+- `effectiveFrom`: the Day it was set, from which it applies.
+
+### `PUT /api/calories/daily-limit`
+
+Sets the Daily Limit from today.
+
+```json
+{ "kcal": 1800 }
+```
+
+- `204`: saved.
+- `400`: `kcal` is missing or not a whole number from 1 to 10,000.
+
+## Days
+
+Consumed Calories are always derived from a Day's Entries. An **Unlogged Day**, one with no Entries, means "not recorded", not "ate nothing": its `consumedCalories`, `remaining` and `overLimit` are `null`, never `0` or `false`, since it is never over or under the Daily Limit. A Day whose Entries add up to 0 kcal is logged, with `consumedCalories: 0`.
+
+The Day view, the preview, the history and the Home Card all describe a Day with the same fields:
+
+```json
+{ "day": "2026-10-21", "consumedCalories": 1000, "dailyLimit": 2000, "remaining": 1000, "overLimit": false }
+```
+
+- `consumedCalories`: the sum of the Day's Entries' `kcal`, or `null` for an Unlogged Day.
+- `dailyLimit`: the Daily Limit the Day had, or `null` if none was ever set.
+- `remaining`: `dailyLimit − consumedCalories`, negative once over; `null` for an Unlogged Day or without a Daily Limit.
+- `overLimit`: whether `consumedCalories` is more than `dailyLimit`. Reaching it exactly isn't over. `false` without a Daily Limit, and `null` for an Unlogged Day.
+
+### `GET /api/calories/days/{day}`
+
+`200`: the Day view: the fields above, and the Day's `entries` in the order they were logged, as `GET /api/calories/days/{day}/entries` lists them.
+
+```json
+{
+  "day": "2026-10-21",
+  "consumedCalories": 1000,
+  "dailyLimit": 2000,
+  "remaining": 1000,
+  "overLimit": false,
+  "entries": [ … ]
+}
+```
+
+`400`: `day` isn't `YYYY-MM-DD`.
+
+### `GET /api/calories/days/{day}/preview?kcal={kcal}&replacing={id}`
+
+What logging an Entry of `kcal` on `day` would make of the Day, so the web app can warn before it goes over the Daily Limit. Nothing is logged. With `replacing`, the ID of one of the Day's Entries, it is what editing that Entry to `kcal` would make of it instead: that Entry's own kcal is left out.
+
+```json
+{ "day": "2026-10-21", "consumedCalories": 2001, "dailyLimit": 2000, "remaining": -1, "overLimit": true }
+```
+
+The fields are those of the Day with the Entry, so `consumedCalories` and `overLimit` are never `null`.
+
+- `400`: `day` isn't `YYYY-MM-DD`; `kcal` is missing or not a whole number from 0 to 1,000,000 (the most one Entry can have: 10,000 kcal per serving × 100 Servings); or `replacing` isn't one of the Day's Entries.
+- `409`: `day` isn't in the Editable Window, so nothing can be logged or edited on it.
+
+### `GET /api/calories/history?from={day}&to={day}`
+
+`200`: every Day from `from` to `to`, inclusive, newest first, each with the fields above.
+
+```json
+[
+  { "day": "2026-10-22", "consumedCalories": null, "dailyLimit": 1800, "remaining": null, "overLimit": null },
+  { "day": "2026-10-21", "consumedCalories": 1800, "dailyLimit": 1800, "remaining": 0, "overLimit": false },
+  { "day": "2026-10-19", "consumedCalories": 2100, "dailyLimit": 2000, "remaining": -100, "overLimit": true }
+]
+```
+
+`400`: `from` or `to` is missing or isn't `YYYY-MM-DD`, `from` is after `to`, the range is more than 366 Days, or `to` is after today.
+
+## Calories Home Card
+
+### `GET /api/calories/home-card`
+
+`200`: today's Consumed Calories against the Daily Limit, with the fields above, today being the current Day in the Owner Time Zone.
+
+```json
+{ "day": "2026-10-22", "consumedCalories": 460, "dailyLimit": 2000, "remaining": 1540, "overLimit": false }
+```
+
+## Settings
+
+The Calories Settings Section: when its Notifications are sent. The Daily Limit is set on its own route, above.
+
+### `GET /api/calories/settings`
+
+`200`: the settings. Until the Owner first saves them, both Notifications are off, set for 14:00 and 21:00.
+
+```json
+{
+  "noEntriesReminder": { "enabled": false, "time": "14:00" },
+  "eveningSummary": { "enabled": false, "time": "21:00" }
+}
+```
+
+- `noEntriesReminder`: the Notification reminding the Owner that today has no Entries yet.
+- `eveningSummary`: the Notification telling the Owner how today went.
+- `time`: `"HH:MM"` in the Owner Time Zone, on the hour or half hour (`"00:00"` to `"23:30"`).
+
+### `PUT /api/calories/settings`
+
+Body: all of the settings, as `GET` answers them.
+
+- `204`: saved.
+- `400`: the body isn't settings, one of them or its `enabled` or `time` is missing, or a `time` isn't on the hour or half hour. The message says which.

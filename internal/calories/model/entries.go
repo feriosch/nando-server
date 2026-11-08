@@ -26,6 +26,19 @@ func (e Entry) Kcal() int {
 	return e.KcalPerServing * e.Servings
 }
 
+// ConsumedCalories returns the sum of the kcal of a Day's entries, or nil if
+// there are none: an Unlogged Day isn't 0 kcal.
+func ConsumedCalories(entries []Entry) *int {
+	if len(entries) == 0 {
+		return nil
+	}
+	kcal := 0
+	for _, e := range entries {
+		kcal += e.Kcal()
+	}
+	return &kcal
+}
+
 // EntriesRepository reads and writes the entries collection.
 type EntriesRepository interface {
 	// Insert stores entry under a new ID, which it returns.
@@ -40,4 +53,7 @@ type EntriesRepository interface {
 	// CountByMeal returns how many Entries each Meal has on the Days from
 	// first to last, inclusive, by Meal ID. One-off Entries aren't counted.
 	CountByMeal(ctx context.Context, first, last coremodel.Day) (map[string]int, error)
+	// ConsumedByDay returns the Consumed Calories of each Day from first to
+	// last, inclusive, that has Entries. An Unlogged Day isn't in it.
+	ConsumedByDay(ctx context.Context, first, last coremodel.Day) (map[coremodel.Day]int, error)
 }
