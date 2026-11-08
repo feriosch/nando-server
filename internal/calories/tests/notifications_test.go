@@ -84,3 +84,40 @@ func TestTheNothingLoggedReminderIsSentAtItsTimeWhenTodayHasNoEntries(t *testing
 		t.Errorf("received %+v, want %+v", got, want)
 	}
 }
+
+func TestTheNothingLoggedReminderIsNotSentOnceTodayHasAnEntry(t *testing.T) {
+	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.saveCaloriesSettings(on("14:00"), off("21:00"))
+	push := testpush.New(t)
+	phone.subscribe(push)
+
+	// Yesterday's Entry, logged while it was still Wednesday in Tokyo, isn't today's.
+	n.clock.Set(tokyoTime(0, 0).Add(-time.Minute))
+	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Ramen", "kcalPerServing": 900, "servings": 1})
+	n.tickAt(tokyoTime(14, 0))
+
+	// On Friday, something is logged before 14:00.
+	n.clock.Set(tokyoTime(9, 0).Add(24 * time.Hour))
+	phone.mustLogEntry("2026-10-23", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 1})
+	n.tickAt(tokyoTime(14, 0).Add(24 * time.Hour))
+
+	want := []testpush.Message{{Title: "Calories", Body: "Nothing logged yet today", URL: "/calories"}}
+	if got := push.Received(); !slices.Equal(got, want) {
+		t.Errorf("received %+v, want only Thursday's reminder %+v", got, want)
+	}
+}
+
+func TestTheNothingLoggedReminderIsNotSentWhileSwitchedOff(t *testing.T) {
+	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.saveCaloriesSettings(off("14:00"), off("21:00"))
+	push := testpush.New(t)
+	phone.subscribe(push)
+
+	n.tickAt(tokyoTime(14, 0))
+
+	if got := push.Received(); len(got) != 0 {
+		t.Errorf("received %+v, want nothing", got)
+	}
+}
