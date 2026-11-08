@@ -29,7 +29,7 @@ MONGO_URI=mongodb://localhost:27017 \
 DOMAIN=localhost \
 ALLOWED_ORIGINS=http://localhost:5173 \
 VAPID_PUBLIC_KEY=<public> VAPID_PRIVATE_KEY=<private> \
-PUSH_CONTACT=http://localhost:5173 \
+PUSH_CONTACT=mailto:you@example.com \
 TICK_AUDIENCE=http://localhost:8080/internal/tick \
 SCHEDULER_SERVICE_ACCOUNT=none \
 go run ./cmd/nando-server

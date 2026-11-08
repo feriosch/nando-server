@@ -8,7 +8,6 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -27,11 +26,8 @@ type Config struct {
 	Now func() time.Time
 	// VerifySchedulerToken checks the bearer token of a call to /internal/tick.
 	VerifySchedulerToken func(ctx context.Context, token string) error
-	// VAPIDPublicKey and VAPIDPrivateKey sign every push message.
-	VAPIDPublicKey  string
-	VAPIDPrivateKey string
-	// PushContact is the VAPID subject, such as "mailto:owner@example.com".
-	PushContact string
+	// VAPID signs every push message.
+	VAPID VAPID
 }
 
 // Service handles Core's requests.
@@ -42,12 +38,8 @@ type Service struct {
 	now      func() time.Time
 
 	verifySchedulerToken func(ctx context.Context, token string) error
-	vapidPublicKey       string
-	vapidPrivateKey      string
-	pushContact          string
-
-	providersMu sync.Mutex
-	providers   []model.NotificationProvider
+	vapid                VAPID
+	providers            []model.NotificationProvider
 }
 
 // New returns a Service reaching data through repo.
@@ -82,11 +74,9 @@ func New(repo model.CoreRepository, cfg Config) (*Service, error) {
 		now:      now,
 
 		verifySchedulerToken: cfg.VerifySchedulerToken,
-		vapidPublicKey:       cfg.VAPIDPublicKey,
-		vapidPrivateKey:      cfg.VAPIDPrivateKey,
-		pushContact:          cfg.PushContact,
+		vapid:                cfg.VAPID,
 	}
-	s.providers = []model.NotificationProvider{weighInReminder{s}}
+	s.providers = []model.NotificationProvider{weighInReminder{settings: s.settings}}
 	return s, nil
 }
 

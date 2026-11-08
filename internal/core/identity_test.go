@@ -58,9 +58,11 @@ func newNando(t *testing.T) *nando {
 		Origins:              []string{webOrigin},
 		Now:                  clk.Now,
 		VerifySchedulerToken: verifySchedulerToken,
-		VAPIDPublicKey:       vapidPublic,
-		VAPIDPrivateKey:      vapidPrivate,
-		PushContact:          "mailto:owner@example.com",
+		VAPID: core.VAPID{
+			PublicKey:  vapidPublic,
+			PrivateKey: vapidPrivate,
+			Contact:    "mailto:owner@example.com",
+		},
 	})
 	if err != nil {
 		t.Fatalf("core.New: %v", err)

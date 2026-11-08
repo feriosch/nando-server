@@ -7,10 +7,12 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"google.golang.org/api/idtoken"
 
 	"github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/core/repository"
@@ -28,15 +30,32 @@ type Config struct {
 	Now func() time.Time
 	// VerifySchedulerToken checks the bearer token of a call to
 	// /internal/tick, returning an error unless it is a Google-signed OIDC
-	// token from the scheduler's service account. See GoogleSchedulerTokens.
+	// token from the scheduler's service account. In production it is
+	// VerifyGoogleSchedulerToken.
 	VerifySchedulerToken func(ctx context.Context, token string) error
-	// VAPIDPublicKey and VAPIDPrivateKey sign every push message, base64url
-	// as webpush.GenerateVAPIDKeys returns them.
-	VAPIDPublicKey  string
-	VAPIDPrivateKey string
-	// PushContact is how a push service can reach Nando's operator, such as
-	// "mailto:owner@example.com"; Apple requires one.
-	PushContact string
+	// VAPID signs every push message.
+	VAPID VAPID
+}
+
+// VAPID is the key pair and contact that sign every push message.
+type VAPID = service.VAPID
+
+// VerifyGoogleSchedulerToken returns the production VerifySchedulerToken: it
+// accepts only a Google-signed OIDC token issued for audience (the tick URL
+// Cloud Scheduler calls) to the scheduler's service account.
+func VerifyGoogleSchedulerToken(audience, serviceAccount string) func(ctx context.Context, token string) error {
+	return func(ctx context.Context, token string) error {
+		payload, err := idtoken.Validate(ctx, token, audience)
+		if err != nil {
+			return err
+		}
+		email, _ := payload.Claims["email"].(string)
+		verified, _ := payload.Claims["email_verified"].(bool)
+		if email != serviceAccount || !verified {
+			return fmt.Errorf("token is for %q, not the scheduler's service account", email)
+		}
+		return nil
+	}
 }
 
 // Core is Nando's Core. Its only access to data is its own database.
@@ -56,9 +75,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		Now:     cfg.Now,
 
 		VerifySchedulerToken: cfg.VerifySchedulerToken,
-		VAPIDPublicKey:       cfg.VAPIDPublicKey,
-		VAPIDPrivateKey:      cfg.VAPIDPrivateKey,
-		PushContact:          cfg.PushContact,
+		VAPID:                cfg.VAPID,
 	})
 	if err != nil {
 		return nil, err
@@ -84,7 +101,8 @@ func (c *Core) Service() model.CoreService {
 }
 
 // AddNotificationProvider has Core ask p for its due Notifications at every
-// tick. Each Module with Notifications adds its provider once, at startup.
+// tick. Each Module with Notifications adds its provider once, at startup,
+// before serving.
 func (c *Core) AddNotificationProvider(p model.NotificationProvider) {
 	c.service.AddNotificationProvider(p)
 }

@@ -35,15 +35,13 @@ type config struct {
 	allowedOrigins []string
 	port           string // PORT, set by Cloud Run; defaults to 8080
 
-	// VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY, required to serve: the key pair that
-	// signs push messages, base64url, as webpush.GenerateVAPIDKeys returns.
-	vapidPublicKey, vapidPrivateKey string
-	// PUSH_CONTACT, required to serve: a mailto: or https: URL where a push service can
-	// reach Nando's operator.
-	pushContact string
-	// TICK_AUDIENCE and SCHEDULER_SERVICE_ACCOUNT, required to serve: /internal/tick
-	// accepts only Google-signed OIDC tokens for this audience (the URL Cloud
-	// Scheduler calls) issued to this service account.
+	// VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and PUSH_CONTACT, required to
+	// serve: the key pair (base64url) and the mailto: or https: contact that
+	// sign push messages.
+	vapid core.VAPID
+	// TICK_AUDIENCE and SCHEDULER_SERVICE_ACCOUNT, required to serve:
+	// /internal/tick accepts only Google-signed OIDC tokens for this audience
+	// (the URL Cloud Scheduler calls) issued to this service account.
 	tickAudience, schedulerServiceAccount string
 }
 
@@ -53,9 +51,11 @@ func loadConfig() (config, error) {
 		domain:   os.Getenv("DOMAIN"),
 		port:     os.Getenv("PORT"),
 
-		vapidPublicKey:          os.Getenv("VAPID_PUBLIC_KEY"),
-		vapidPrivateKey:         os.Getenv("VAPID_PRIVATE_KEY"),
-		pushContact:             os.Getenv("PUSH_CONTACT"),
+		vapid: core.VAPID{
+			PublicKey:  os.Getenv("VAPID_PUBLIC_KEY"),
+			PrivateKey: os.Getenv("VAPID_PRIVATE_KEY"),
+			Contact:    os.Getenv("PUSH_CONTACT"),
+		},
 		tickAudience:            os.Getenv("TICK_AUDIENCE"),
 		schedulerServiceAccount: os.Getenv("SCHEDULER_SERVICE_ACCOUNT"),
 	}
@@ -86,9 +86,9 @@ func loadConfig() (config, error) {
 // needs them, not `nando-server enroll`.
 func (cfg config) checkNotifications() error {
 	for _, v := range []struct{ name, value string }{
-		{"VAPID_PUBLIC_KEY", cfg.vapidPublicKey},
-		{"VAPID_PRIVATE_KEY", cfg.vapidPrivateKey},
-		{"PUSH_CONTACT", cfg.pushContact},
+		{"VAPID_PUBLIC_KEY", cfg.vapid.PublicKey},
+		{"VAPID_PRIVATE_KEY", cfg.vapid.PrivateKey},
+		{"PUSH_CONTACT", cfg.vapid.Contact},
 		{"TICK_AUDIENCE", cfg.tickAudience},
 		{"SCHEDULER_SERVICE_ACCOUNT", cfg.schedulerServiceAccount},
 	} {
@@ -150,10 +150,8 @@ func run() error {
 		Domain:  cfg.domain,
 		Origins: cfg.allowedOrigins,
 
-		VerifySchedulerToken: core.GoogleSchedulerTokens(cfg.tickAudience, cfg.schedulerServiceAccount),
-		VAPIDPublicKey:       cfg.vapidPublicKey,
-		VAPIDPrivateKey:      cfg.vapidPrivateKey,
-		PushContact:          cfg.pushContact,
+		VerifySchedulerToken: core.VerifyGoogleSchedulerToken(cfg.tickAudience, cfg.schedulerServiceAccount),
+		VAPID:                cfg.vapid,
 	})
 	if err != nil {
 		return err
