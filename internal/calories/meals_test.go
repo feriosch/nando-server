@@ -157,3 +157,42 @@ func TestInvalidMealsAreRejected(t *testing.T) {
 		t.Errorf("meals = %+v, want only the unchanged onigiri", got)
 	}
 }
+
+func TestChangingAMealOrEntryThatDoesNotExistIsNotFound(t *testing.T) {
+	_, phone := signedInPhone(t, wednesday)
+	const missing = "6af05d493ea403a78bf5997b"
+
+	for _, req := range []struct {
+		method, path string
+		body         any
+	}{
+		{http.MethodPut, "/api/calories/meals/" + missing, onigiri},
+		{http.MethodDelete, "/api/calories/meals/" + missing, nil},
+		{http.MethodPost, "/api/calories/meals/" + missing + "/restore", nil},
+		{http.MethodPut, "/api/calories/entries/" + missing, map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 1}},
+	} {
+		if rec := phone.do(req.method, req.path, req.body); rec.Code != http.StatusNotFound {
+			t.Errorf("%s %s: status = %d, body %q; want %d", req.method, req.path, rec.Code, rec.Body, http.StatusNotFound)
+		}
+	}
+	// Deleting an Entry that doesn't exist succeeds, like Core's deletes.
+	phone.must(http.MethodDelete, "/api/calories/entries/"+missing, nil, http.StatusNoContent)
+}
+
+func TestEditingAnArchivedMealKeepsItArchived(t *testing.T) {
+	_, phone := signedInPhone(t, wednesday)
+	id := phone.createMeal(onigiri)
+	phone.must(http.MethodDelete, "/api/calories/meals/"+id, nil, http.StatusNoContent)
+
+	renamed := onigiri
+	renamed.Name = "Salmon onigiri"
+	phone.must(http.MethodPut, "/api/calories/meals/"+id, renamed, http.StatusNoContent)
+
+	if got := get[[]mealJSON](phone, "/api/calories/meals"); len(got) != 0 {
+		t.Errorf("meals in use after editing an archived one = %+v, want none", got)
+	}
+	got := get[[]mealJSON](phone, "/api/calories/meals?archived=true")
+	if len(got) != 1 || got[0].Name != "Salmon onigiri" || !got[0].Archived {
+		t.Errorf("archived meals = %+v, want the renamed Salmon onigiri, still archived", got)
+	}
+}

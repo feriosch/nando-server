@@ -211,3 +211,25 @@ func TestOwnerDeletesAnEntryOnlyInTheEditableWindow(t *testing.T) {
 		t.Errorf("entries after the rejected delete = %+v, want %+v", got, want)
 	}
 }
+
+func TestInvalidEntryEditsAreRejected(t *testing.T) {
+	_, phone := signedInPhone(t, wednesday)
+	id := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
+
+	for name, body := range map[string]any{
+		"not JSON":          "{",
+		"no name":           map[string]any{"name": " ", "kcalPerServing": 45, "servings": 12},
+		"no kcal":           map[string]any{"name": "Sushi", "servings": 12},
+		"negative kcal":     map[string]any{"name": "Sushi", "kcalPerServing": -1, "servings": 12},
+		"zero servings":     map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 0},
+		"too many servings": map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 101},
+	} {
+		if rec := phone.do(http.MethodPut, "/api/calories/entries/"+id, body); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d, body %q; want %d", name, rec.Code, rec.Body, http.StatusBadRequest)
+		}
+	}
+	want := []entryJSON{{ID: id, Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
+	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
+		t.Errorf("entries after rejected edits = %+v, want %+v", got, want)
+	}
+}
