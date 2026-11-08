@@ -1,9 +1,10 @@
 // Package calories is the Module for tracking what the Owner eats each Day.
 //
-// The Module is split in three layers: model declares its data and repository
-// interface, service handles requests and validation, and repository holds all
-// database code. The service sees only the CaloriesRepository and
-// CoreService interfaces, never a database.
+// The Module is split in three layers: model declares its data and one
+// repository interface per collection, service handles requests and
+// validation, and repository holds all database code. The service sees only
+// the MealsRepository, EntriesRepository and CoreService interfaces, never a
+// database.
 package calories
 
 import (
@@ -33,11 +34,11 @@ type Config struct {
 // NewCaloriesModule returns the Calories Module reading and writing its own
 // data through db and asking Core for Core's data through core.
 func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService, cfg Config) (*Module, error) {
-	repo, err := repository.New(ctx, db)
+	entries, err := repository.NewEntries(ctx, db)
 	if err != nil {
 		return nil, err
 	}
-	return &Module{service: service.New(repo, core, cfg.Now)}, nil
+	return &Module{service: service.New(repository.NewMeals(db), entries, core, cfg.Now)}, nil
 }
 
 // Routes adds the Module's routes to mux, all under /api/calories/.

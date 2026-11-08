@@ -92,7 +92,7 @@ func (s *Service) listEntries(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	entries, err := s.repo.ListEntries(r.Context(), day)
+	entries, err := s.entries.ListOnDay(r.Context(), day)
 	if err != nil {
 		coreservice.ServerError(w, err)
 		return
@@ -138,11 +138,12 @@ func (s *Service) postEntry(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if body.SaveAsMeal {
-			entry.MealID, err = s.repo.InsertMeal(r.Context(), model.Meal{
+			entry.MealID, err = s.meals.Insert(r.Context(), model.Meal{
 				Name:      entry.Name,
 				Kcal:      entry.KcalPerServing,
 				CreatedAt: s.now(),
 			})
+
 			if err != nil {
 				coreservice.ServerError(w, err)
 				return
@@ -150,7 +151,7 @@ func (s *Service) postEntry(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	entry.Day, entry.LoggedAt = day, s.now()
-	id, err := s.repo.InsertEntry(r.Context(), entry)
+	id, err := s.entries.Insert(r.Context(), entry)
 	if err != nil {
 		coreservice.ServerError(w, err)
 		return
@@ -166,7 +167,7 @@ func (s *Service) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID s
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return model.Entry{}, false
 	}
-	meal, err := s.repo.FindMeal(r.Context(), mealID)
+	meal, err := s.meals.Find(r.Context(), mealID)
 	if errors.Is(err, model.ErrNotFound) {
 		http.Error(w, "there's no such Meal", http.StatusBadRequest)
 		return model.Entry{}, false
@@ -185,7 +186,7 @@ func (s *Service) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID s
 // Editable Window. Otherwise it answers r and returns false: with ifMissing if
 // there's no such Entry, or 409 outside the window.
 func (s *Service) editableEntry(w http.ResponseWriter, r *http.Request, ifMissing int) (model.Entry, bool) {
-	entry, err := s.repo.FindEntry(r.Context(), r.PathValue("id"))
+	entry, err := s.entries.Find(r.Context(), r.PathValue("id"))
 	if errors.Is(err, model.ErrNotFound) {
 		if ifMissing == http.StatusNoContent {
 			w.WriteHeader(ifMissing)
@@ -217,7 +218,7 @@ func (s *Service) putEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	entry.Name, entry.KcalPerServing, entry.Servings = edited.Name, edited.KcalPerServing, edited.Servings
-	if err := s.repo.UpdateEntry(r.Context(), entry); err != nil {
+	if err := s.entries.Update(r.Context(), entry); err != nil {
 		coreservice.ServerError(w, err)
 		return
 	}
@@ -230,7 +231,7 @@ func (s *Service) deleteEntry(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.repo.DeleteEntry(r.Context(), entry.ID); err != nil {
+	if err := s.entries.Delete(r.Context(), entry.ID); err != nil {
 		coreservice.ServerError(w, err)
 		return
 	}

@@ -64,7 +64,7 @@ func toMealJSON(m model.Meal) mealJSON {
 // listMeals lists the Meals in use by name, or with ?archived=true the
 // archived ones.
 func (s *Service) listMeals(w http.ResponseWriter, r *http.Request) {
-	meals, err := s.repo.ListMeals(r.Context(), r.URL.Query().Get("archived") == "true")
+	meals, err := s.meals.List(r.Context(), r.URL.Query().Get("archived") == "true")
 	if err != nil {
 		coreservice.ServerError(w, err)
 		return
@@ -153,7 +153,7 @@ func (s *Service) postMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	meal.CreatedAt = s.now()
-	id, err := s.repo.InsertMeal(r.Context(), meal)
+	id, err := s.meals.Insert(r.Context(), meal)
 	if err != nil {
 		coreservice.ServerError(w, err)
 		return
@@ -168,7 +168,7 @@ func (s *Service) putMeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	meal.ID = r.PathValue("id")
-	err := s.repo.UpdateMeal(r.Context(), meal)
+	err := s.meals.Update(r.Context(), meal)
 	if errors.Is(err, model.ErrNotFound) {
 		http.Error(w, "there's no such Meal", http.StatusNotFound)
 		return
@@ -192,7 +192,7 @@ func (s *Service) restoreMeal(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) setArchivedAt(w http.ResponseWriter, r *http.Request, archivedAt *time.Time) {
-	err := s.repo.SetMealArchivedAt(r.Context(), r.PathValue("id"), archivedAt)
+	err := s.meals.SetArchivedAt(r.Context(), r.PathValue("id"), archivedAt)
 	if errors.Is(err, model.ErrNotFound) {
 		http.Error(w, "there's no such Meal", http.StatusNotFound)
 		return
@@ -215,12 +215,12 @@ func (s *Service) quickMeals(w http.ResponseWriter, r *http.Request) {
 		coreservice.ServerError(w, err)
 		return
 	}
-	meals, err := s.repo.ListMeals(r.Context(), false)
+	meals, err := s.meals.List(r.Context(), false)
 	if err != nil {
 		coreservice.ServerError(w, err)
 		return
 	}
-	counts, err := s.repo.CountEntriesByMeal(r.Context(), today.AddDays(1-quickListDays), today)
+	counts, err := s.entries.CountByMeal(r.Context(), today.AddDays(1-quickListDays), today)
 	if err != nil {
 		coreservice.ServerError(w, err)
 		return

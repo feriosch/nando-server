@@ -11,20 +11,32 @@ import (
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 )
 
-const entries = "entries"
-
-var entryIndexes = []mongo.IndexModel{
-	{Keys: bson.D{{Key: "day", Value: 1}, {Key: "loggedAt", Value: 1}}},
+// NewEntries returns the EntriesRepository over the entries collection in
+// db, first creating any indexes it lacks.
+func NewEntries(ctx context.Context, db *mongo.Database) (model.EntriesRepository, error) {
+	collection := db.Collection("entries")
+	_, err := collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{Keys: bson.D{{Key: "day", Value: 1}, {Key: "loggedAt", Value: 1}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return entries{collection: collection}, nil
 }
 
-func (r mongoRepository) InsertEntry(ctx context.Context, entry model.Entry) (string, error) {
+// entries is the entries collection.
+type entries struct {
+	collection *mongo.Collection
+}
+
+func (r entries) Insert(ctx context.Context, entry model.Entry) (string, error) {
 	entry.ID = bson.NewObjectID().Hex()
-	_, err := r.db.Collection(entries).InsertOne(ctx, entry)
+	_, err := r.collection.InsertOne(ctx, entry)
 	return entry.ID, err
 }
 
-func (r mongoRepository) ListEntries(ctx context.Context, day coremodel.Day) ([]model.Entry, error) {
-	cursor, err := r.db.Collection(entries).Find(ctx, bson.D{{Key: "day", Value: day}},
+func (r entries) ListOnDay(ctx context.Context, day coremodel.Day) ([]model.Entry, error) {
+	cursor, err := r.collection.Find(ctx, bson.D{{Key: "day", Value: day}},
 		options.Find().SetSort(bson.D{{Key: "loggedAt", Value: 1}, {Key: "_id", Value: 1}}))
 	if err != nil {
 		return nil, err
@@ -33,14 +45,14 @@ func (r mongoRepository) ListEntries(ctx context.Context, day coremodel.Day) ([]
 	return list, cursor.All(ctx, &list)
 }
 
-func (r mongoRepository) FindEntry(ctx context.Context, id string) (model.Entry, error) {
+func (r entries) Find(ctx context.Context, id string) (model.Entry, error) {
 	var entry model.Entry
-	err := r.db.Collection(entries).FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&entry)
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&entry)
 	return entry, notFound(err)
 }
 
-func (r mongoRepository) UpdateEntry(ctx context.Context, entry model.Entry) error {
-	result, err := r.db.Collection(entries).UpdateByID(ctx, entry.ID, bson.D{{Key: "$set", Value: bson.D{
+func (r entries) Update(ctx context.Context, entry model.Entry) error {
+	result, err := r.collection.UpdateByID(ctx, entry.ID, bson.D{{Key: "$set", Value: bson.D{
 		{Key: "name", Value: entry.Name},
 		{Key: "kcalPerServing", Value: entry.KcalPerServing},
 		{Key: "servings", Value: entry.Servings},
@@ -48,13 +60,13 @@ func (r mongoRepository) UpdateEntry(ctx context.Context, entry model.Entry) err
 	return matched(result, err)
 }
 
-func (r mongoRepository) DeleteEntry(ctx context.Context, id string) error {
-	_, err := r.db.Collection(entries).DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+func (r entries) Delete(ctx context.Context, id string) error {
+	_, err := r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
 	return err
 }
 
-func (r mongoRepository) CountEntriesByMeal(ctx context.Context, first, last coremodel.Day) (map[string]int, error) {
-	cursor, err := r.db.Collection(entries).Aggregate(ctx, mongo.Pipeline{
+func (r entries) CountByMeal(ctx context.Context, first, last coremodel.Day) (map[string]int, error) {
+	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: bson.D{
 			{Key: "day", Value: bson.D{{Key: "$gte", Value: first}, {Key: "$lte", Value: last}}},
 			{Key: "mealId", Value: bson.D{{Key: "$ne", Value: ""}}},

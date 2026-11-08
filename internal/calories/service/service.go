@@ -1,6 +1,7 @@
 // Package service handles the Calories Module's requests and validates them.
-// It never touches the database; it reaches its own data only through
-// CaloriesRepository, and asks Core for Core's data through CoreService.
+// It never touches the database; it reaches its own data only through the
+// MealsRepository and EntriesRepository, and asks Core for Core's data
+// through CoreService.
 package service
 
 import (
@@ -14,18 +15,20 @@ import (
 
 // Service handles the Calories Module's requests.
 type Service struct {
-	repo model.CaloriesRepository
-	core coremodel.CoreService
-	now  func() time.Time
+	meals   model.MealsRepository
+	entries model.EntriesRepository
+	core    coremodel.CoreService
+	now     func() time.Time
 }
 
-// New returns a Service reaching its own data through repo and asking Core
-// through core, with now as its clock (nil means time.Now).
-func New(repo model.CaloriesRepository, core coremodel.CoreService, now func() time.Time) *Service {
+// New returns a Service reaching its own data through one repository per
+// collection and asking Core through core, with now as its clock (nil means
+// time.Now).
+func New(meals model.MealsRepository, entries model.EntriesRepository, core coremodel.CoreService, now func() time.Time) *Service {
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{repo: repo, core: core, now: now}
+	return &Service{meals: meals, entries: entries, core: core, now: now}
 }
 
 // Routes adds the Module's routes to mux, all under /api/calories/.

@@ -13,9 +13,9 @@ Go API for Nando. Domain language: [`GLOSSARY.md`](GLOSSARY.md). Decisions: [`do
 
 Core and every Module are split into the same three layers:
 
-- `model/`: the area's data and its repository interface (`CoreRepository`, `CaloriesRepository`), shaped for that one area. Core's also declares `CoreService`.
+- `model/`: the area's data and one repository interface per collection, declared next to the data it stores (`MealsRepository` in `calories/model/meals.go`, `EntriesRepository` in `entries.go`). Core's also declares `CoreService`. Core still has a single `CoreRepository` until it is split the same way.
 - `service/`: request handling and validation. Depends only on `model/` interfaces; never touches the database.
-- `repository/`: all database code. Implements the `model/` interface over the area's own `*mongo.Database`. `repository.go` holds the constructor and the shared Mongo type; every other file corresponds to exactly one collection of that database and holds all the code for it (e.g. `calories/repository/meals.go` → `meals`, `entries.go` → `entries`).
+- `repository/`: all database code, one repository per collection, over the area's own `*mongo.Database`. Each file holds one collection's repository and all the code for it, including its constructor and indexes (e.g. `calories/repository/meals.go` → `meals`, `entries.go` → `entries`); `repository.go` holds only helpers they share. A method that reads more than one collection belongs to the repository of the collection it is mainly about, as with a SQL join: counting Entries per Meal is the Entries repository's.
 
 A Module may also have `utils/`: helpers its own layers share, such as Calories' checks on what the Owner sends and their limits (`calories/utils/checks.go`), and the Editable Window rule (`calories/utils/editable_window.go`). It touches no database and handles no requests.
 
