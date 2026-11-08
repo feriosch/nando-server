@@ -41,6 +41,11 @@ func (r passkeys) List(ctx context.Context) ([]model.Passkey, error) {
 	return list, cursor.All(ctx, &list)
 }
 
+func (r passkeys) Update(ctx context.Context, id []byte, credential []byte) error {
+	_, err := r.collection.UpdateOne(ctx, bson.D{{Key: "_id", Value: id}}, bson.D{{Key: "$set", Value: bson.D{{Key: "credential", Value: credential}}}})
+	return err
+}
+
 func (r passkeys) Delete(ctx context.Context, id []byte) error {
 	_, err := r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
 	return err

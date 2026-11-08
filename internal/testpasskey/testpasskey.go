@@ -22,6 +22,7 @@ type Passkey struct {
 	id         []byte
 	key        *ecdsa.PrivateKey
 	userHandle []byte
+	signCount  uint32
 }
 
 // New returns a passkey not yet created, used from the web app at origin.
@@ -46,6 +47,13 @@ const (
 )
 
 var b64 = base64.RawURLEncoding
+
+// SetSignCount makes the passkey report n as its sign count from now on, as a
+// hardware security key counts its uses. Left alone it reports 0, as synced
+// passkeys such as iCloud Keychain do.
+func (p *Passkey) SetSignCount(n uint32) {
+	p.signCount = n
+}
 
 // ExcludedBy reports whether the options from /auth/register/begin exclude
 // this passkey, in which case the browser refuses with InvalidStateError.
@@ -169,11 +177,11 @@ func (p *Passkey) Get(t *testing.T, options []byte) []byte {
 	})
 }
 
-// authData starts the authenticator data: the RP ID hash, flags and a sign
-// count, which synced passkeys always leave at 0.
+// authData starts the authenticator data: the RP ID hash, flags and the sign
+// count.
 func (p *Passkey) authData(rpID string, flags byte) []byte {
 	rpIDHash := sha256.Sum256([]byte(rpID))
-	return append(append(rpIDHash[:], flags), 0, 0, 0, 0)
+	return binary.BigEndian.AppendUint32(append(rpIDHash[:], flags), p.signCount)
 }
 
 func clientData(t *testing.T, origin, typ, challenge string) []byte {

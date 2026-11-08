@@ -214,8 +214,8 @@ func (s *IdentityService) beginSignIn(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, assertion)
 }
 
-// finishSignIn checks the passkey's answer from navigator.credentials.get and
-// signs this device in.
+// finishSignIn checks the passkey's answer from navigator.credentials.get,
+// saves its new sign count and signs this device in.
 func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 	parsed, err := protocol.ParseCredentialRequestResponseBody(r.Body)
 	if err != nil {
@@ -231,9 +231,25 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "that challenge was not for a sign-in", http.StatusBadRequest)
 		return
 	}
-	_, _, err = s.webauthn.ValidatePasskeyLogin(s.findOwner(r.Context()), sessionData, parsed)
+	_, credential, err := s.webauthn.ValidatePasskeyLogin(s.findOwner(r.Context()), sessionData, parsed)
 	if err != nil {
 		http.Error(w, "that passkey is unknown or could not be verified", http.StatusUnauthorized)
+		return
+	}
+	// A sign count that didn't go up means another copy of the passkey may
+	// exist. Synced passkeys always report 0, which never sets this, so it
+	// guards hardware security keys.
+	if credential.Authenticator.CloneWarning {
+		http.Error(w, "that passkey's sign count went backwards; it may have been copied", http.StatusUnauthorized)
+		return
+	}
+	stored, err := json.Marshal(credential)
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	if err := s.passkeys.Update(r.Context(), credential.ID, stored); err != nil {
+		utils.ServerError(w, err)
 		return
 	}
 	if err := s.sessions.startSession(w, r); err != nil {

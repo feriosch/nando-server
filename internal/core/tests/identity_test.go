@@ -212,6 +212,52 @@ func TestOwnerSignsInWithTheirPasskey(t *testing.T) {
 	}
 }
 
+func TestPasskeyWhoseSignCountGoesUpSignsInRepeatedly(t *testing.T) {
+	n := newNando(t)
+	// A hardware security key, which counts its uses.
+	laptop := n.newDevice("Laptop")
+	laptop.mustEnroll()
+
+	for count := uint32(1); count <= 3; count++ {
+		laptop.passkey.SetSignCount(count)
+		if rec := laptop.signIn(); rec.Code != http.StatusNoContent {
+			t.Fatalf("sign in with sign count %d: status = %d, body %q", count, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestSyncedPasskeyThatAlwaysReportsZeroKeepsSigningIn(t *testing.T) {
+	n := newNando(t)
+	phone := n.newDevice("iPhone") // iCloud Keychain: sign count always 0
+	phone.mustEnroll()
+
+	for i := 1; i <= 3; i++ {
+		if rec := phone.signIn(); rec.Code != http.StatusNoContent {
+			t.Fatalf("sign in %d with sign count 0: status = %d, body %q", i, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestSignInWithALowerSignCountIsRejected(t *testing.T) {
+	n := newNando(t)
+	// A hardware security key, which counts its uses.
+	laptop := n.newDevice("Laptop")
+	laptop.mustEnroll()
+	laptop.passkey.SetSignCount(5)
+	laptop.mustSignIn()
+
+	// A copy of the key that is behind the original: a sign of cloning.
+	clone := n.newDevice("Unknown").syncedFrom(laptop)
+	clone.passkey.SetSignCount(3)
+
+	if rec := clone.signIn(); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("sign in with sign count 3 after 5: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if rec := clone.do(http.MethodGet, "/api/sessions", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("GET /api/sessions after the rejected sign-in: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
 func TestUsedEnrollmentCodeIsRejected(t *testing.T) {
 	n := newNando(t)
 	code := n.issueEnrollmentCode()
