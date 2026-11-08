@@ -30,15 +30,16 @@ type Service struct {
 	private *ecdh.PrivateKey
 	auth    []byte
 
-	mu       sync.Mutex
-	status   int
-	requests int
-	messages []Message
-	headers  []http.Header
+	mu        sync.Mutex
+	status    int
+	requests  int
+	delivered []Notification
+	headers   []http.Header
 }
 
-// Message is the Notification the web app's service worker shows.
-type Message struct {
+// Notification is what the web app's service worker shows for one delivered
+// push message.
+type Notification struct {
 	Title string
 	Body  string
 	URL   string
@@ -47,7 +48,7 @@ type Message struct {
 // shownBy reads a push message's JSON the way nando-web's service worker does
 // (src/core/sw/notifications.ts): a field that is missing or null falls back
 // to its default.
-func shownBy(t *testing.T, payload []byte) Message {
+func shownBy(t *testing.T, payload []byte) Notification {
 	var sent struct{ Title, Body, URL *string }
 	if err := json.Unmarshal(payload, &sent); err != nil {
 		t.Errorf("push message isn't JSON: %v", err)
@@ -58,7 +59,7 @@ func shownBy(t *testing.T, payload []byte) Message {
 		}
 		return *s
 	}
-	return Message{Title: or(sent.Title, "Nando"), Body: or(sent.Body, ""), URL: or(sent.URL, "/")}
+	return Notification{Title: or(sent.Title, "Nando"), Body: or(sent.Body, ""), URL: or(sent.URL, "/")}
 }
 
 // New starts a push service holding one Push Subscription, stopped when the
@@ -90,6 +91,7 @@ func (p *Service) SubscriptionJSON() map[string]any {
 	}
 }
 
+// Endpoint is the Push Subscription's endpoint, the URL Nando sends to.
 func (p *Service) Endpoint() string { return p.SubscriptionJSON()["endpoint"].(string) }
 
 // Answer makes the push service reply to every later push message with status.
@@ -99,11 +101,11 @@ func (p *Service) Answer(status int) {
 	p.status = status
 }
 
-// Received returns the push messages delivered so far.
-func (p *Service) Received() []Message {
+// Received returns the push delivered delivered so far.
+func (p *Service) Received() []Notification {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]Message(nil), p.messages...)
+	return append([]Notification(nil), p.delivered...)
 }
 
 // VAPIDKeys returns the VAPID public key ("k=") of each delivered push message.
@@ -122,7 +124,7 @@ func (p *Service) VAPIDKeys() []string {
 	return keys
 }
 
-// RequestCount is how many push messages were sent here, delivered or not.
+// RequestCount is how many push delivered were sent here, delivered or not.
 func (p *Service) RequestCount() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -141,7 +143,7 @@ func (p *Service) receive(w http.ResponseWriter, r *http.Request) {
 		p.t.Errorf("push message Content-Encoding = %q, want aes128gcm", r.Header.Get("Content-Encoding"))
 	}
 	if p.status == http.StatusCreated {
-		p.messages = append(p.messages, shownBy(p.t, p.decrypt(body)))
+		p.delivered = append(p.delivered, shownBy(p.t, p.decrypt(body)))
 		p.headers = append(p.headers, r.Header.Clone())
 	}
 	w.WriteHeader(p.status)

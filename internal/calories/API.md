@@ -248,16 +248,16 @@ The Calories Settings Section: when its Notifications are sent. The Daily Limit 
 - `eveningSummary`: the Notification telling the Owner how today went.
 - `time`: `"HH:MM"` in the Owner Time Zone, on the hour or half hour (`"00:00"` to `"23:30"`).
 
-## Notifications
-
-Core's tick asks the Calories Module for its Notifications every half hour (see [Core's API](../core/API.md)). Each is sent at most once a Day, only while switched on, at its `time` in the settings, titled `Calories`, and opens `/calories` when tapped:
-
-- **Nothing logged yet**: `Nothing logged yet today`, only if today has no Entries at that time.
-- **Evening summary**: today's Consumed Calories against the Daily Limit today has: `Today: 1460 / 2000 kcal`, or `Today: 1460 kcal` if no Daily Limit was ever set. On an Unlogged Day it is `Nothing logged today`, never 0 kcal.
-
 ### `PUT /api/calories/settings`
 
 Body: all of the settings, as `GET` answers them.
 
 - `204`: saved.
 - `400`: the body isn't settings, one of them or its `enabled` or `time` is missing, or a `time` isn't on the hour or half hour. The message says which.
+
+## Notifications
+
+Core's tick asks the Calories Module for its Notifications every half hour (see [Core's API](../core/API.md)). Each is sent at most once a Day, only while switched on, at its `time` in the settings, titled `Calories`, and opens `/calories` when tapped:
+
+- **No-Entries reminder** (`noEntriesReminder`): `Nothing logged yet today`, only if today has no Entries at that time.
+- **Evening summary** (`eveningSummary`): today's Consumed Calories against the Daily Limit today has: `Today: 1460 / 2000 kcal`, or `Today: 1460 kcal` if no Daily Limit was ever set. On an Unlogged Day it is `Nothing logged today`, never 0 kcal.

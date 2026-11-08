@@ -95,7 +95,7 @@ func TestTickSendsDueNotificationsToEveryPushSubscription(t *testing.T) {
 
 	n.mustTick()
 
-	want := []testpush.Message{{Title: "Calories", Body: "Nothing logged today", URL: "/calories"}}
+	want := []testpush.Notification{{Title: "Calories", Body: "Nothing logged today", URL: "/calories"}}
 	for name, push := range map[string]*testpush.Service{"Home Screen app": homeScreenApp, "Safari": safari} {
 		if got := push.Received(); !slices.Equal(got, want) {
 			t.Errorf("%s received %+v, want %+v", name, got, want)
@@ -228,7 +228,7 @@ func (d *device) saveWeighInReminder(r reminderJSON) {
 	}
 }
 
-var weighInReminder = testpush.Message{Title: "Weigh-in", Body: "Time to log this week's weight", URL: "/"}
+var weighInReminder = testpush.Notification{Title: "Weigh-in", Body: "Time to log this week's weight", URL: "/"}
 
 func TestWeighInReminderIsSentAtItsTimeEachWeek(t *testing.T) {
 	tokyo, _ := time.LoadLocation("Asia/Tokyo")
@@ -250,7 +250,7 @@ func TestWeighInReminderIsSentAtItsTimeEachWeek(t *testing.T) {
 	n.mustTick()
 	n.clock.Advance(28 * time.Minute) // 08:30
 	n.mustTick()
-	if got := push.Received(); !slices.Equal(got, []testpush.Message{weighInReminder}) {
+	if got := push.Received(); !slices.Equal(got, []testpush.Notification{weighInReminder}) {
 		t.Fatalf("on Monday by 08:30 received %+v, want one %+v", got, weighInReminder)
 	}
 
@@ -312,7 +312,7 @@ func TestWeighInReminderIsSentInATimeZoneOffsetByAQuarterHour(t *testing.T) {
 
 	n.mustTick()
 
-	if got := push.Received(); !slices.Equal(got, []testpush.Message{weighInReminder}) {
+	if got := push.Received(); !slices.Equal(got, []testpush.Notification{weighInReminder}) {
 		t.Errorf("at 08:00 in Kathmandu received %+v, want %+v", got, weighInReminder)
 	}
 }
@@ -327,7 +327,7 @@ func TestANotificationWithoutATitleOrLinkShowsTheDefaults(t *testing.T) {
 
 	n.mustTick()
 
-	want := []testpush.Message{{Title: "Nando", Body: "Nothing logged today", URL: "/"}}
+	want := []testpush.Notification{{Title: "Nando", Body: "Nothing logged today", URL: "/"}}
 	if got := push.Received(); !slices.Equal(got, want) {
 		t.Errorf("the service worker shows %+v, want %+v", got, want)
 	}
@@ -344,7 +344,7 @@ func TestANotificationCoreCannotRecordDoesNotStopTheOthers(t *testing.T) {
 
 	rec := n.tick(schedulerToken)
 
-	if got := push.Received(); !slices.Equal(got, []testpush.Message{{Title: "Calories", Body: "Nothing logged today", URL: "/calories"}}) {
+	if got := push.Received(); !slices.Equal(got, []testpush.Notification{{Title: "Calories", Body: "Nothing logged today", URL: "/calories"}}) {
 		t.Errorf("received %+v, want only the evening summary", got)
 	}
 	if rec.Code != http.StatusInternalServerError {
