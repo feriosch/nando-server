@@ -159,6 +159,7 @@ func TestInvalidEntriesAreRejected(t *testing.T) {
 		"negative kcal":         {"2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": -1, "servings": 1}},
 		"too many kcal":         {"2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 10001, "servings": 1}},
 		"one-off without kcal":  {"2026-10-21", map[string]any{"name": "Sushi", "servings": 1}},
+		"Meal saved as Meal":    {"2026-10-21", map[string]any{"mealId": mealID, "servings": 1, "saveAsMeal": true}},
 	} {
 		if rec := phone.logEntry(tc.day, tc.entry); rec.Code != http.StatusBadRequest {
 			t.Errorf("%s: status = %d, body %q; want %d", name, rec.Code, rec.Body, http.StatusBadRequest)
@@ -231,5 +232,18 @@ func TestInvalidEntryEditsAreRejected(t *testing.T) {
 	want := []entryJSON{{ID: id, Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
 		t.Errorf("entries after rejected edits = %+v, want %+v", got, want)
+	}
+}
+
+func TestAnEntryRecordsWhenItWasLogged(t *testing.T) {
+	_, phone := signedInPhone(t, wednesday)
+
+	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 1})
+
+	got := get[[]struct {
+		LoggedAt string `json:"loggedAt"`
+	}](phone, "/api/calories/days/2026-10-21/entries")
+	if len(got) != 1 || got[0].LoggedAt != "2026-10-21T12:00:00Z" {
+		t.Errorf("loggedAt = %+v, want [2026-10-21T12:00:00Z], the clock's time", got)
 	}
 }

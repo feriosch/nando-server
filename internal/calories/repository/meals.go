@@ -48,16 +48,10 @@ func (r mongoRepository) UpdateMeal(ctx context.Context, meal model.Meal) error 
 		{Key: "tags", Value: meal.Tags},
 		{Key: "pinned", Value: meal.Pinned},
 	}}})
-	if err == nil && result.MatchedCount == 0 {
-		return model.ErrNotFound
-	}
-	return err
+	return matched(result, err)
 }
 
 func (r mongoRepository) SetMealArchivedAt(ctx context.Context, id string, archivedAt *time.Time) error {
 	result, err := r.db.Collection(meals).UpdateByID(ctx, id, bson.D{{Key: "$set", Value: bson.D{{Key: "archivedAt", Value: archivedAt}}}})
-	if err == nil && result.MatchedCount == 0 {
-		return model.ErrNotFound
-	}
-	return err
+	return matched(result, err)
 }

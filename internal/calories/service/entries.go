@@ -34,6 +34,30 @@ func toEntryJSON(e model.Entry) entryJSON {
 	}
 }
 
+// entryValues are what the Owner sets of an Entry, as the API is sent them.
+type entryValues struct {
+	Name           string `json:"name"`
+	KcalPerServing *int   `json:"kcalPerServing"`
+	Servings       int    `json:"servings"`
+}
+
+// toEntry checks all three values and returns an Entry with them, or explains
+// what's wrong.
+func (v entryValues) toEntry() (model.Entry, error) {
+	name, err := checkName("name", v.Name)
+	if err != nil {
+		return model.Entry{}, err
+	}
+	kcal, err := checkKcal("kcalPerServing", v.KcalPerServing)
+	if err != nil {
+		return model.Entry{}, err
+	}
+	if err := checkServings(v.Servings); err != nil {
+		return model.Entry{}, err
+	}
+	return model.Entry{Name: name, KcalPerServing: kcal, Servings: v.Servings}, nil
+}
+
 // pathDay returns the Day in r's path, or answers 400 and returns false.
 func pathDay(w http.ResponseWriter, r *http.Request) (coremodel.Day, bool) {
 	day, err := coremodel.ParseDay(r.PathValue("day"))
@@ -70,10 +94,8 @@ func (s *Service) postEntry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		MealID         *string `json:"mealId"`
-		Name           string  `json:"name"`
-		KcalPerServing *int    `json:"kcalPerServing"`
-		Servings       int     `json:"servings"`
+		MealID *string `json:"mealId"`
+		entryValues
 		// SaveAsMeal also saves a one-off Entry as a Meal, which it then
 		// belongs to.
 		SaveAsMeal bool `json:"saveAsMeal"`
@@ -82,63 +104,76 @@ func (s *Service) postEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the body isn't an Entry", http.StatusBadRequest)
 		return
 	}
-	if err := checkServings(body.Servings); err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	entry := model.Entry{Day: day, Servings: body.Servings, LoggedAt: s.now()}
-	if body.MealID == nil {
-		var err error
-		if entry.Name, err = checkName("name", body.Name); err == nil {
-			entry.KcalPerServing, err = checkKcal("kcalPerServing", body.KcalPerServing)
+	var entry model.Entry
+	if body.MealID != nil {
+		if body.SaveAsMeal {
+			http.Error(w, "saveAsMeal is only for a one-off Entry, not one logged from a Meal", http.StatusBadRequest)
+			return
 		}
-		if err != nil {
+		if entry, ok = s.entryFromMeal(w, r, *body.MealID, body.Servings); !ok {
+			return
+		}
+	} else {
+		var err error
+		if entry, err = body.toEntry(); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if body.SaveAsMeal {
+			entry.MealID, err = s.repo.InsertMeal(r.Context(), model.Meal{
+				Name:      entry.Name,
+				Kcal:      entry.KcalPerServing,
+				CreatedAt: s.now(),
+			})
+			if err != nil {
+				serverError(w, err)
+				return
+			}
+		}
 	}
-	if body.MealID != nil {
-		meal, err := s.repo.FindMeal(r.Context(), *body.MealID)
-		if errors.Is(err, model.ErrNotFound) {
-			http.Error(w, "there's no such Meal", http.StatusBadRequest)
-			return
-		} else if err != nil {
-			serverError(w, err)
-			return
-		}
-		if meal.ArchivedAt != nil {
-			http.Error(w, "that Meal is archived; restore it to log it", http.StatusBadRequest)
-			return
-		}
-		entry.MealID, entry.Name, entry.KcalPerServing = meal.ID, meal.Name, meal.Kcal
-	} else if body.SaveAsMeal {
-		mealID, err := s.repo.InsertMeal(r.Context(), model.Meal{
-			Name:      entry.Name,
-			Kcal:      entry.KcalPerServing,
-			CreatedAt: s.now(),
-		})
-		if err != nil {
-			serverError(w, err)
-			return
-		}
-		entry.MealID = mealID
-	}
+	entry.Day, entry.LoggedAt = day, s.now()
 	id, err := s.repo.InsertEntry(r.Context(), entry)
 	if err != nil {
 		serverError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, struct {
-		ID string `json:"id"`
-	}{id})
+	writeCreated(w, id)
 }
 
-// pathEntry returns the Entry whose ID is in r's path if its Day is in the
-// Editable Window. Otherwise it answers r and returns false.
-func (s *Service) pathEntry(w http.ResponseWriter, r *http.Request) (model.Entry, bool) {
+// entryFromMeal returns an Entry of servings of the Meal with mealID, with
+// the Meal's name and kcal. If the Meal can't be logged, it answers r and
+// returns false.
+func (s *Service) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID string, servings int) (model.Entry, bool) {
+	if err := checkServings(servings); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return model.Entry{}, false
+	}
+	meal, err := s.repo.FindMeal(r.Context(), mealID)
+	if errors.Is(err, model.ErrNotFound) {
+		http.Error(w, "there's no such Meal", http.StatusBadRequest)
+		return model.Entry{}, false
+	} else if err != nil {
+		serverError(w, err)
+		return model.Entry{}, false
+	}
+	if meal.ArchivedAt != nil {
+		http.Error(w, "that Meal is archived; restore it to log it", http.StatusBadRequest)
+		return model.Entry{}, false
+	}
+	return model.Entry{MealID: meal.ID, Name: meal.Name, KcalPerServing: meal.Kcal, Servings: servings}, true
+}
+
+// editableEntry returns the Entry whose ID is in r's path if its Day is in the
+// Editable Window. Otherwise it answers r and returns false: with ifMissing if
+// there's no such Entry, or 409 outside the window.
+func (s *Service) editableEntry(w http.ResponseWriter, r *http.Request, ifMissing int) (model.Entry, bool) {
 	entry, err := s.repo.FindEntry(r.Context(), r.PathValue("id"))
 	if errors.Is(err, model.ErrNotFound) {
-		http.Error(w, "there's no such Entry", http.StatusNotFound)
+		if ifMissing == http.StatusNoContent {
+			w.WriteHeader(ifMissing)
+		} else {
+			http.Error(w, "there's no such Entry", ifMissing)
+		}
 		return model.Entry{}, false
 	} else if err != nil {
 		serverError(w, err)
@@ -149,32 +184,21 @@ func (s *Service) pathEntry(w http.ResponseWriter, r *http.Request) (model.Entry
 
 // putEntry edits an Entry's name, kcal per serving and Servings.
 func (s *Service) putEntry(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		Name           string `json:"name"`
-		KcalPerServing *int   `json:"kcalPerServing"`
-		Servings       int    `json:"servings"`
-	}
+	var body entryValues
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "the body isn't an Entry", http.StatusBadRequest)
 		return
 	}
-	name, err := checkName("name", body.Name)
-	var kcal int
-	if err == nil {
-		kcal, err = checkKcal("kcalPerServing", body.KcalPerServing)
-	}
-	if err == nil {
-		err = checkServings(body.Servings)
-	}
+	edited, err := body.toEntry()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	entry, ok := s.pathEntry(w, r)
+	entry, ok := s.editableEntry(w, r, http.StatusNotFound)
 	if !ok {
 		return
 	}
-	entry.Name, entry.KcalPerServing, entry.Servings = name, kcal, body.Servings
+	entry.Name, entry.KcalPerServing, entry.Servings = edited.Name, edited.KcalPerServing, edited.Servings
 	if err := s.repo.UpdateEntry(r.Context(), entry); err != nil {
 		serverError(w, err)
 		return
@@ -184,15 +208,8 @@ func (s *Service) putEntry(w http.ResponseWriter, r *http.Request) {
 
 // deleteEntry deletes an Entry. Deleting one that doesn't exist also succeeds.
 func (s *Service) deleteEntry(w http.ResponseWriter, r *http.Request) {
-	entry, err := s.repo.FindEntry(r.Context(), r.PathValue("id"))
-	if errors.Is(err, model.ErrNotFound) {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	} else if err != nil {
-		serverError(w, err)
-		return
-	}
-	if !s.checkEditable(w, r, entry.Day) {
+	entry, ok := s.editableEntry(w, r, http.StatusNoContent)
+	if !ok {
 		return
 	}
 	if err := s.repo.DeleteEntry(r.Context(), entry.ID); err != nil {

@@ -156,7 +156,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	caloriesModule, err := calories.NewCaloriesModule(connectCtx, dbs.Calories, nandoCore.Service())
+	caloriesModule, err := calories.NewCaloriesModule(connectCtx, dbs.Calories, nandoCore.Service(), calories.Config{})
 	if err != nil {
 		return err
 	}

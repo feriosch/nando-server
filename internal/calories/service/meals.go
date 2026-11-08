@@ -67,6 +67,11 @@ func (s *Service) listMeals(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	writeMeals(w, meals)
+}
+
+// writeMeals answers 200 with meals as the API lists them.
+func writeMeals(w http.ResponseWriter, meals []model.Meal) {
 	list := make([]mealJSON, len(meals))
 	for i, m := range meals {
 		list[i] = toMealJSON(m)
@@ -93,7 +98,7 @@ func readMeal(w http.ResponseWriter, r *http.Request) (model.Meal, bool) {
 		http.Error(w, "the body isn't a Meal", http.StatusBadRequest)
 		return model.Meal{}, false
 	}
-	meal, err := checkMeal(j)
+	meal, err := fromMealBody(j)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return model.Meal{}, false
@@ -101,9 +106,9 @@ func readMeal(w http.ResponseWriter, r *http.Request) (model.Meal, bool) {
 	return meal, true
 }
 
-// checkMeal turns the Meal the API was sent into a Meal, or explains what's
+// fromMealBody turns the Meal the API was sent into a Meal, or explains what's
 // wrong with it.
-func checkMeal(j mealBody) (model.Meal, error) {
+func fromMealBody(j mealBody) (model.Meal, error) {
 	name, err := checkName("name", j.Name)
 	if err != nil {
 		return model.Meal{}, err
@@ -151,9 +156,7 @@ func (s *Service) postMeal(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, struct {
-		ID string `json:"id"`
-	}{id})
+	writeCreated(w, id)
 }
 
 // putMeal edits a Meal. Entries already logged from it keep their values.
@@ -230,9 +233,5 @@ func (s *Service) quickMeals(w http.ResponseWriter, r *http.Request) {
 		}
 		return counts[b.ID] - counts[a.ID]
 	})
-	list := make([]mealJSON, len(meals))
-	for i, m := range meals {
-		list[i] = toMealJSON(m)
-	}
-	writeJSON(w, http.StatusOK, list)
+	writeMeals(w, meals)
 }

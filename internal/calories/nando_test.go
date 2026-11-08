@@ -55,7 +55,7 @@ func newNando(t *testing.T) *nando {
 	if err != nil {
 		t.Fatalf("core.New: %v", err)
 	}
-	cal, err := calories.NewCaloriesModule(context.Background(), client.Database("calories"), c.Service())
+	cal, err := calories.NewCaloriesModule(context.Background(), client.Database("calories"), c.Service(), calories.Config{Now: clk.Now})
 	if err != nil {
 		t.Fatalf("NewCaloriesModule: %v", err)
 	}

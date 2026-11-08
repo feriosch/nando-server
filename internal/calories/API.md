@@ -109,10 +109,10 @@ which copies the Meal's `name` and `kcal`, or as a one-off:
 { "name": "Sushi", "kcalPerServing": 45, "servings": 12, "saveAsMeal": false }
 ```
 
-`saveAsMeal: true` also saves the one-off as a new Meal (with only its name and kcal) and logs the Entry from it.
+`saveAsMeal: true` also saves the one-off as a new Meal (with only its name and kcal) and logs the Entry from it. It can't be sent with `mealId`.
 
 - `201`: `{ "id": "…" }`.
-- `400`: `day` isn't `YYYY-MM-DD`; the body isn't an Entry; `servings` is missing or not a whole number from 1 to 100; the Meal doesn't exist or is archived; or a one-off's `name` or `kcalPerServing` is missing or invalid (as for a Meal's `name` and `kcal`).
+- `400`: `day` isn't `YYYY-MM-DD`; the body isn't an Entry; `servings` is missing or not a whole number from 1 to 100; the Meal doesn't exist or is archived; `saveAsMeal` was sent with `mealId`; or a one-off's `name` or `kcalPerServing` is missing or invalid (as for a Meal's `name` and `kcal`).
 - `409`: `day` isn't in the Editable Window.
 
 ### `PUT /api/calories/entries/{id}`

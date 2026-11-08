@@ -45,10 +45,7 @@ func (r mongoRepository) UpdateEntry(ctx context.Context, entry model.Entry) err
 		{Key: "kcalPerServing", Value: entry.KcalPerServing},
 		{Key: "servings", Value: entry.Servings},
 	}}})
-	if err == nil && result.MatchedCount == 0 {
-		return model.ErrNotFound
-	}
-	return err
+	return matched(result, err)
 }
 
 func (r mongoRepository) DeleteEntry(ctx context.Context, id string) error {

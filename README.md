@@ -7,8 +7,9 @@ Go API for Nando. Domain language: [`GLOSSARY.md`](GLOSSARY.md). Decisions: [`do
 - `cmd/nando-server`: the program: reads config, connects to MongoDB, wires Core and Modules, serves HTTP.
 - `internal/server`: the HTTP API (routes, CORS) and `server.RegisterDatabases`, which opens the MongoDB connection and binds it as singletons in a [golobby container](https://github.com/golobby/container): the `*mongo.Client` and one named `*mongo.Database` each for Core and every Module (`core`, `calories`). `main` fills a `server.Databases` from the container and hands each area its own database.
 - `internal/core`: Core, wired in `core.go`. Its HTTP API is documented in [`internal/core/API.md`](internal/core/API.md).
-- `internal/calories`: the Calories Module, wired in `calories.go`.
+- `internal/calories`: the Calories Module, wired in `calories.go`. Its HTTP API is documented in [`internal/calories/API.md`](internal/calories/API.md).
 - `internal/testmongo`: test helper that starts a real MongoDB container.
+- `internal/testpasskey`: test helper, a software passkey, so tests can sign a device in.
 
 Core and every Module are split into the same three layers:
 

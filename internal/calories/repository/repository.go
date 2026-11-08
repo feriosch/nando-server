@@ -24,6 +24,14 @@ type mongoRepository struct {
 	db *mongo.Database
 }
 
+// matched turns an update that matched no document into model.ErrNotFound.
+func matched(result *mongo.UpdateResult, err error) error {
+	if err == nil && result.MatchedCount == 0 {
+		return model.ErrNotFound
+	}
+	return err
+}
+
 // notFound turns the driver's "no documents" into model.ErrNotFound.
 func notFound(err error) error {
 	if errors.Is(err, mongo.ErrNoDocuments) {

@@ -9,6 +9,7 @@ package calories
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
@@ -23,14 +24,20 @@ type Module struct {
 	service *service.Service
 }
 
+// Config is what the Module needs besides its database and Core.
+type Config struct {
+	// Now is the clock; nil means time.Now.
+	Now func() time.Time
+}
+
 // NewCaloriesModule returns the Calories Module reading and writing its own
 // data through db and asking Core for Core's data through core.
-func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService) (*Module, error) {
+func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService, cfg Config) (*Module, error) {
 	repo, err := repository.New(ctx, db)
 	if err != nil {
 		return nil, err
 	}
-	return &Module{service: service.New(repo, core)}, nil
+	return &Module{service: service.New(repo, core, cfg.Now)}, nil
 }
 
 // Routes adds the Module's routes to mux, all under /api/calories/.
