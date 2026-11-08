@@ -7,6 +7,9 @@
 package calories
 
 import (
+	"context"
+	"net/http"
+
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/feriosch/nando-server/internal/calories/repository"
@@ -22,6 +25,15 @@ type Module struct {
 
 // NewCaloriesModule returns the Calories Module reading and writing its own
 // data through db and asking Core for Core's data through core.
-func NewCaloriesModule(db *mongo.Database, core coremodel.CoreService) *Module {
-	return &Module{service: service.New(repository.New(db), core)}
+func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService) (*Module, error) {
+	repo, err := repository.New(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	return &Module{service: service.New(repo, core)}, nil
+}
+
+// Routes adds the Module's routes to mux, all under /api/calories/.
+func (m *Module) Routes(mux *http.ServeMux) {
+	m.service.Routes(mux)
 }
