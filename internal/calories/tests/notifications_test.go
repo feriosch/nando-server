@@ -173,3 +173,18 @@ func TestTheEveningSummaryOfAnUnloggedDaySaysNothingWasLogged(t *testing.T) {
 		t.Errorf("received %+v, want %+v (an Unlogged Day isn't 0 kcal)", got, want)
 	}
 }
+
+func TestTheEveningSummaryIsNotSentWhileSwitchedOff(t *testing.T) {
+	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.saveCaloriesSettings(off("14:00"), off("21:00"))
+	push := testpush.New(t)
+	phone.subscribe(push)
+	phone.mustLogEntry("2026-10-22", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 2})
+
+	n.tickAt(tokyoTime(21, 0))
+
+	if got := push.Received(); len(got) != 0 {
+		t.Errorf("received %+v, want nothing", got)
+	}
+}
