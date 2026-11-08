@@ -16,6 +16,13 @@ type Config struct {
 	// Core signs the Owner in and guards every /api/ route. Nil serves only
 	// /health, for tests of the API's plumbing.
 	Core *core.Core
+	// Modules add their routes under /api/<module>/, behind Core's session.
+	Modules []Module
+}
+
+// Module is what the API needs from a Module: its routes.
+type Module interface {
+	Routes(mux *http.ServeMux)
 }
 
 // New returns the handler serving the whole API.
@@ -29,6 +36,9 @@ func New(cfg Config) http.Handler {
 		return cors(cfg.AllowedOrigins, mux)
 	}
 	cfg.Core.Routes(mux)
+	for _, m := range cfg.Modules {
+		m.Routes(mux)
+	}
 	return cors(cfg.AllowedOrigins, requireSessionForAPI(cfg.Core, mux))
 }
 

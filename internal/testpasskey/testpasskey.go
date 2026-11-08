@@ -1,4 +1,5 @@
-package core_test
+// Package testpasskey gives tests a passkey without a browser or Face ID.
+package testpasskey
 
 import (
 	"crypto/ecdsa"
@@ -13,13 +14,24 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
-// passkey is a software authenticator standing in for Face ID with iCloud
+// Passkey is a software authenticator standing in for Face ID with iCloud
 // Keychain: it answers the options the server sends the way the browser's
 // navigator.credentials.create and .get would.
-type passkey struct {
+type Passkey struct {
+	origin     string
 	id         []byte
 	key        *ecdsa.PrivateKey
 	userHandle []byte
+}
+
+// New returns a passkey not yet created, used from the web app at origin.
+func New(origin string) *Passkey {
+	return &Passkey{origin: origin}
+}
+
+// ID is the credential ID, base64url without padding, as the server lists it.
+func (p *Passkey) ID() string {
+	return b64.EncodeToString(p.id)
 }
 
 // Authenticator data flags (WebAuthn §6.1). Synced passkeys are backup
@@ -35,9 +47,9 @@ const (
 
 var b64 = base64.RawURLEncoding
 
-// excludedBy reports whether the options from /auth/register/begin exclude
+// ExcludedBy reports whether the options from /auth/register/begin exclude
 // this passkey, in which case the browser refuses with InvalidStateError.
-func (p *passkey) excludedBy(t *testing.T, options []byte) bool {
+func (p *Passkey) ExcludedBy(t *testing.T, options []byte) bool {
 	t.Helper()
 	var opts struct {
 		PublicKey struct {
@@ -57,9 +69,9 @@ func (p *passkey) excludedBy(t *testing.T, options []byte) bool {
 	return false
 }
 
-// create answers the options from /auth/register/begin with a new passkey and
+// Create answers the options from /auth/register/begin with a new passkey and
 // returns the body for /auth/register/finish.
-func (p *passkey) create(t *testing.T, options []byte) []byte {
+func (p *Passkey) Create(t *testing.T, options []byte) []byte {
 	t.Helper()
 	var opts struct {
 		PublicKey struct {
@@ -106,7 +118,7 @@ func (p *passkey) create(t *testing.T, options []byte) []byte {
 		"rawId": b64.EncodeToString(p.id),
 		"type":  "public-key",
 		"response": map[string]any{
-			"clientDataJSON": b64.EncodeToString(clientData(t, "webauthn.create", opts.PublicKey.Challenge)),
+			"clientDataJSON": b64.EncodeToString(clientData(t, p.origin, "webauthn.create", opts.PublicKey.Challenge)),
 			"attestationObject": b64.EncodeToString(mustCBOR(t, map[string]any{
 				"fmt":      "none",
 				"attStmt":  map[string]any{},
@@ -119,9 +131,9 @@ func (p *passkey) create(t *testing.T, options []byte) []byte {
 	})
 }
 
-// get answers the options from /auth/signin/begin by signing in with this
+// Get answers the options from /auth/signin/begin by signing in with this
 // passkey and returns the body for /auth/signin/finish.
-func (p *passkey) get(t *testing.T, options []byte) []byte {
+func (p *Passkey) Get(t *testing.T, options []byte) []byte {
 	t.Helper()
 	var opts struct {
 		PublicKey struct {
@@ -134,7 +146,7 @@ func (p *passkey) get(t *testing.T, options []byte) []byte {
 	}
 
 	authData := p.authData(opts.PublicKey.RPID, passkeyFlags)
-	cdata := clientData(t, "webauthn.get", opts.PublicKey.Challenge)
+	cdata := clientData(t, p.origin, "webauthn.get", opts.PublicKey.Challenge)
 	cdataHash := sha256.Sum256(cdata)
 	digest := sha256.Sum256(append(authData, cdataHash[:]...))
 	sig, err := ecdsa.SignASN1(rand.Reader, p.key, digest[:])
@@ -159,16 +171,16 @@ func (p *passkey) get(t *testing.T, options []byte) []byte {
 
 // authData starts the authenticator data: the RP ID hash, flags and a sign
 // count, which synced passkeys always leave at 0.
-func (p *passkey) authData(rpID string, flags byte) []byte {
+func (p *Passkey) authData(rpID string, flags byte) []byte {
 	rpIDHash := sha256.Sum256([]byte(rpID))
 	return append(append(rpIDHash[:], flags), 0, 0, 0, 0)
 }
 
-func clientData(t *testing.T, typ, challenge string) []byte {
+func clientData(t *testing.T, origin, typ, challenge string) []byte {
 	return mustJSON(t, map[string]any{
 		"type":        typ,
 		"challenge":   challenge,
-		"origin":      webOrigin,
+		"origin":      origin,
 		"crossOrigin": false,
 	})
 }

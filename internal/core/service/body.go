@@ -30,18 +30,18 @@ func (s *Service) getBody(w http.ResponseWriter, r *http.Request) {
 	}
 	latest, err := s.repo.FindLatestWeighIn(r.Context())
 	if errors.Is(err, model.ErrNotFound) {
-		writeJSON(w, card)
+		WriteJSON(w, http.StatusOK, card)
 		return
 	}
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	card.Latest = &weighInJSON{Week: latest.Week, Kg: latest.Kg}
 
 	settings, err := s.settings(r.Context())
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	if settings.HeightCm != 0 {
@@ -55,8 +55,8 @@ func (s *Service) getBody(w http.ResponseWriter, r *http.Request) {
 		change := round1(latest.Kg - previous.Kg)
 		card.Change = &change
 	case !errors.Is(err, model.ErrNotFound):
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
-	writeJSON(w, card)
+	WriteJSON(w, http.StatusOK, card)
 }

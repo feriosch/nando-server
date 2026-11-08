@@ -145,7 +145,7 @@ func run() error {
 	}
 
 	// Core and each Module get only their own database; Modules also get Core's
-	// service. Calories' routes arrive with #10.
+	// service.
 	nandoCore, err := core.New(connectCtx, dbs.Core, core.Config{
 		Domain:  cfg.domain,
 		Origins: cfg.allowedOrigins,
@@ -156,7 +156,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	_ = calories.NewCaloriesModule(dbs.Calories, nandoCore.Service())
+	caloriesModule, err := calories.NewCaloriesModule(connectCtx, dbs.Calories, nandoCore.Service(), calories.Config{})
+	if err != nil {
+		return err
+	}
 
 	switch args := os.Args[1:]; {
 	case len(args) == 1 && args[0] == "enroll":
@@ -174,8 +177,12 @@ func run() error {
 	}
 
 	srv := &http.Server{
-		Addr:              ":" + cfg.port,
-		Handler:           server.New(server.Config{AllowedOrigins: cfg.allowedOrigins, Core: nandoCore}),
+		Addr: ":" + cfg.port,
+		Handler: server.New(server.Config{
+			AllowedOrigins: cfg.allowedOrigins,
+			Core:           nandoCore,
+			Modules:        []server.Module{caloriesModule},
+		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	shutdownDone := make(chan error, 1)

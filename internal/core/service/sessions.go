@@ -80,12 +80,12 @@ func (s *Service) RequireSession(next http.Handler) http.Handler {
 				http.Error(w, "sign in first", http.StatusUnauthorized)
 				return
 			}
-			serverError(w, err)
+			ServerError(w, err)
 			return
 		}
 		if now.Sub(session.RenewedAt) >= renewalInterval {
 			if err := s.repo.RenewSession(r.Context(), session.ID, now, now.Add(sessionLifetime)); err != nil {
-				serverError(w, err)
+				ServerError(w, err)
 				return
 			}
 			s.setSessionCookie(w, cookie.Value)
@@ -107,7 +107,7 @@ func currentSession(r *http.Request) string {
 func (s *Service) listSessions(w http.ResponseWriter, r *http.Request) {
 	sessions, err := s.repo.ListSessions(r.Context(), s.now())
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	type sessionJSON struct {
@@ -127,7 +127,7 @@ func (s *Service) listSessions(w http.ResponseWriter, r *http.Request) {
 			Current:   session.ID == currentSession(r),
 		}
 	}
-	writeJSON(w, list)
+	WriteJSON(w, http.StatusOK, list)
 }
 
 // deleteSession signs a device out. Deleting the current session signs out
@@ -135,7 +135,7 @@ func (s *Service) listSessions(w http.ResponseWriter, r *http.Request) {
 func (s *Service) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.repo.DeleteSession(r.Context(), id); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	if id == currentSession(r) {

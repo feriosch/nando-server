@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const weighIns = "weigh_ins"
@@ -33,11 +34,11 @@ func (r mongoRepository) DeleteWeighIn(ctx context.Context, week model.Day) erro
 func (r mongoRepository) FindLatestWeighIn(ctx context.Context) (model.WeighIn, error) {
 	var weighIn model.WeighIn
 	err := r.db.Collection(weighIns).FindOne(ctx, bson.D{}, options.FindOne().SetSort(bson.D{{Key: "_id", Value: -1}})).Decode(&weighIn)
-	return weighIn, notFound(err)
+	return weighIn, utils.NotFound(err)
 }
 
 func (r mongoRepository) FindWeighIn(ctx context.Context, week model.Day) (model.WeighIn, error) {
 	var weighIn model.WeighIn
 	err := r.db.Collection(weighIns).FindOne(ctx, bson.D{{Key: "_id", Value: week}}).Decode(&weighIn)
-	return weighIn, notFound(err)
+	return weighIn, utils.NotFound(err)
 }

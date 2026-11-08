@@ -15,9 +15,10 @@ import (
 // getVAPIDPublicKey answers the key the web app passes to
 // pushManager.subscribe as its applicationServerKey.
 func (s *Service) getVAPIDPublicKey(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, struct {
+	WriteJSON(w, http.StatusOK, struct {
 		PublicKey string `json:"publicKey"`
 	}{s.vapid.PublicKey})
+
 }
 
 // pushSubscriptionJSON is a Push Subscription as PushSubscription.toJSON()
@@ -78,7 +79,7 @@ func (s *Service) postPushSubscription(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: s.now(),
 	}
 	if err := s.repo.SavePushSubscription(r.Context(), sub); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -93,7 +94,7 @@ func (s *Service) deletePushSubscription(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := s.repo.DeletePushSubscription(r.Context(), endpoint); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

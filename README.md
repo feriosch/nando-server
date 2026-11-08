@@ -7,16 +7,25 @@ Go API for Nando. Domain language: [`GLOSSARY.md`](GLOSSARY.md). Decisions: [`do
 - `cmd/nando-server`: the program: reads config, connects to MongoDB, wires Core and Modules, serves HTTP.
 - `internal/server`: the HTTP API (routes, CORS) and `server.RegisterDatabases`, which opens the MongoDB connection and binds it as singletons in a [golobby container](https://github.com/golobby/container): the `*mongo.Client` and one named `*mongo.Database` each for Core and every Module (`core`, `calories`). `main` fills a `server.Databases` from the container and hands each area its own database.
 - `internal/core`: Core, wired in `core.go`. Its HTTP API is documented in [`internal/core/API.md`](internal/core/API.md).
-- `internal/calories`: the Calories Module, wired in `calories.go`.
+- `internal/calories`: the Calories Module, wired in `calories.go`. Its HTTP API is documented in [`internal/calories/API.md`](internal/calories/API.md).
 - `internal/testmongo`: test helper that starts a real MongoDB container.
+- `internal/testpasskey`: test helper, a software passkey, so tests can sign a device in.
 
 Core and every Module are split into the same three layers:
 
-- `model/`: the area's data and its repository interface (`CoreRepository`, `CaloriesRepository`), shaped for that one area. Core's also declares `CoreService`.
-- `service/`: request handling and validation. Depends only on `model/` interfaces; never touches the database.
-- `repository/`: all database code. Implements the `model/` interface over the area's own `*mongo.Database`. `repository.go` holds the constructor and the shared Mongo type; every other file corresponds to exactly one collection of that database and holds all the code for it (e.g. `calories/repository/meals.go` → `meals`, `entries.go` → `entries`).
+- `model/`: the area's data and one repository interface per collection, declared next to the data it stores (`MealsRepository` in `calories/model/meals.go`, `EntriesRepository` in `entries.go`). Core's also declares `CoreService`. Core still has a single `CoreRepository` until it is split the same way.
+- `service/`: request handling and validation, one service per collection it serves, each in the file named after it with its own routes (`MealsService` in `calories/service/meals.go`, `EntriesService` in `entries.go`). A service holds only the repositories it uses, which may include another collection's, such as the Entries one for the quick list's counts. Depends only on `model/` interfaces; never touches the database. Core still has a single `Service` until it is split the same way.
+- `repository/`: all database code, one repository per collection, over the area's own `*mongo.Database`. Each file holds one collection's repository and all the code for it, including its constructor and indexes (e.g. `calories/repository/meals.go` → `meals`, `entries.go` → `entries`). Turning MongoDB's "nothing found" into `ErrNotFound` is shared through Core's `core/utils/errors.go` (`utils.NotFound`, `utils.Matched`); a Module checks for Core's `model.ErrNotFound` rather than declaring its own. A method that reads more than one collection belongs to the repository of the collection it is mainly about, as with a SQL join: counting Entries per Meal is the Entries repository's.
+
+Core and a Module may also have `utils/`: helpers their own layers share. Core's are also for Modules to use. Examples: Core's MongoDB error helpers (`core/utils/errors.go`), Calories' checks on what the Owner sends and their limits (`calories/utils/checks.go`), and the Editable Window rule (`calories/utils/editable_window.go`). A `utils/` package runs no queries and handles no requests.
+
+A Module's tests live in its `tests/` folder (`calories/tests/meals_test.go`). They use only what the Module and Core export, through the HTTP API, so they don't need to sit next to the code. Core's tests are still beside its code until Core gets the same split.
+
+A file about something there can be many of is named in the plural in every layer and in tests, matching its collection: `model/meals.go`, `service/meals.go`, `repository/meals.go`, `meals_test.go`. Names with no plural form, such as `settings.go`, `identity.go` or `body.go`, stay as they are.
 
 The one difference: Core's service (as `model.CoreService`) is also handed to every Module's service. When a Module needs Core's data (such as Weigh-ins), its service asks Core's service and then uses that data itself or passes it to its own repository. A Module never receives Core's repository, nor another Module's service, repository or database. Reaching another database from a repository (for example via `db.Client()`) is possible with the driver, so this rule is kept by convention.
+
+Imports follow the same direction. A Module may import what Core exports, such as Core's `model` types and the response helpers `service.WriteJSON` and `service.ServerError`, so every part of the API answers alike. Core never imports a Module, and a Module never imports another Module. Core's data still reaches a Module only through `model.CoreService`, never by calling Core's service or repository directly. `internal/imports_test.go` fails the build if Core imports a Module, a Module imports another Module, or a Module imports Core's repository. It treats every folder under `internal/` as a Module except `core`, `server` and the `test…` helpers.
 
 ## Run locally
 

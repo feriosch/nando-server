@@ -75,20 +75,20 @@ func (s *Service) beginRegistration(w http.ResponseWriter, r *http.Request) {
 	// silently replacing it, which would leave the old one listed but unusable.
 	o, err := s.loadOwner(r.Context())
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	exclusions := webauthn.Credentials(o.credentials).CredentialDescriptors()
 	creation, sessionData, err := s.webauthn.BeginRegistration(o, webauthn.WithExclusions(exclusions))
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	if err := s.beginCeremony(r.Context(), sessionData, codeHash); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
-	writeJSON(w, creation)
+	WriteJSON(w, http.StatusOK, creation)
 }
 
 // finishRegistration stores the new passkey from navigator.credentials.create,
@@ -116,12 +116,12 @@ func (s *Service) finishRegistration(w http.ResponseWriter, r *http.Request) {
 
 	stored, err := json.Marshal(credential)
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	err = s.repo.InsertPasskey(r.Context(), model.Passkey{ID: credential.ID, Credential: stored, CreatedAt: s.now()})
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	// The code is used up only once the passkey is stored, so a cancelled
@@ -129,14 +129,14 @@ func (s *Service) finishRegistration(w http.ResponseWriter, r *http.Request) {
 	// registration used it first, this passkey is taken back out.
 	if err := s.repo.UseEnrollmentCode(r.Context(), ceremony.EnrollmentCodeHash, s.now()); err != nil {
 		if deleteErr := s.repo.DeletePasskey(r.Context(), credential.ID); deleteErr != nil {
-			serverError(w, errors.Join(err, deleteErr))
+			ServerError(w, errors.Join(err, deleteErr))
 			return
 		}
 		enrollmentCodeError(w, err)
 		return
 	}
 	if err := s.startSession(w, r); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -147,14 +147,14 @@ func (s *Service) finishRegistration(w http.ResponseWriter, r *http.Request) {
 func (s *Service) beginSignIn(w http.ResponseWriter, r *http.Request) {
 	assertion, sessionData, err := s.webauthn.BeginDiscoverableLogin()
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	if err := s.beginCeremony(r.Context(), sessionData, nil); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
-	writeJSON(w, assertion)
+	WriteJSON(w, http.StatusOK, assertion)
 }
 
 // finishSignIn checks the passkey's answer from navigator.credentials.get and
@@ -180,7 +180,7 @@ func (s *Service) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.startSession(w, r); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -230,7 +230,7 @@ func credentialOf(passkey model.Passkey) (webauthn.Credential, error) {
 func (s *Service) listPasskeys(w http.ResponseWriter, r *http.Request) {
 	passkeys, err := s.repo.ListPasskeys(r.Context())
 	if err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	type passkeyJSON struct {
@@ -241,7 +241,7 @@ func (s *Service) listPasskeys(w http.ResponseWriter, r *http.Request) {
 	for i, passkey := range passkeys {
 		list[i] = passkeyJSON{ID: base64.RawURLEncoding.EncodeToString(passkey.ID), CreatedAt: passkey.CreatedAt}
 	}
-	writeJSON(w, list)
+	WriteJSON(w, http.StatusOK, list)
 }
 
 // deletePasskey stops a passkey signing in. Devices already signed in with it
@@ -253,7 +253,7 @@ func (s *Service) deletePasskey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.repo.DeletePasskey(r.Context(), id); err != nil {
-		serverError(w, err)
+		ServerError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -264,7 +264,7 @@ func enrollmentCodeError(w http.ResponseWriter, err error) {
 		http.Error(w, "that Enrollment Code is unknown, used or expired", http.StatusUnauthorized)
 		return
 	}
-	serverError(w, err)
+	ServerError(w, err)
 }
 
 // beginCeremony keeps sessionData, go-webauthn's state, until the ceremony's finish request.
@@ -305,7 +305,7 @@ func ceremonyError(w http.ResponseWriter, err error) {
 		http.Error(w, "that challenge is unknown, used or expired; start again", http.StatusUnauthorized)
 		return
 	}
-	serverError(w, err)
+	ServerError(w, err)
 }
 
 // sha256Of hashes a secret (an Enrollment Code or a session token) for storing.

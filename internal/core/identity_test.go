@@ -16,6 +16,7 @@ import (
 	"github.com/feriosch/nando-server/internal/core"
 	"github.com/feriosch/nando-server/internal/server"
 	"github.com/feriosch/nando-server/internal/testmongo"
+	"github.com/feriosch/nando-server/internal/testpasskey"
 )
 
 const (
@@ -91,7 +92,7 @@ type device struct {
 	nando     *nando
 	userAgent string
 	session   *http.Cookie
-	passkey   *passkey
+	passkey   *testpasskey.Passkey
 }
 
 func (n *nando) newDevice(userAgent string) *device {
@@ -132,11 +133,11 @@ func (d *device) enroll(code string) *httptest.ResponseRecorder {
 	if rec.Code != http.StatusOK {
 		return rec
 	}
-	if d.passkey != nil && d.passkey.excludedBy(d.nando.t, rec.Body.Bytes()) {
+	if d.passkey != nil && d.passkey.ExcludedBy(d.nando.t, rec.Body.Bytes()) {
 		return rec
 	}
-	d.passkey = &passkey{}
-	return d.do(http.MethodPost, "/auth/register/finish", d.passkey.create(d.nando.t, rec.Body.Bytes()))
+	d.passkey = testpasskey.New(webOrigin)
+	return d.do(http.MethodPost, "/auth/register/finish", d.passkey.Create(d.nando.t, rec.Body.Bytes()))
 }
 
 // mustEnroll enrolls with a fresh Enrollment Code and fails the test if that
@@ -156,7 +157,7 @@ func (d *device) signIn() *httptest.ResponseRecorder {
 	if rec.Code != http.StatusOK {
 		return rec
 	}
-	return d.do(http.MethodPost, "/auth/signin/finish", d.passkey.get(d.nando.t, rec.Body.Bytes()))
+	return d.do(http.MethodPost, "/auth/signin/finish", d.passkey.Get(d.nando.t, rec.Body.Bytes()))
 }
 
 // mustSignIn signs in and fails the test if that doesn't work.
@@ -408,7 +409,7 @@ func TestOwnerSeesEachPasskey(t *testing.T) {
 
 	got := phone.listPasskeys()
 
-	want := []string{b64.EncodeToString(phone.passkey.id), b64.EncodeToString(pixel.passkey.id)}
+	want := []string{phone.passkey.ID(), pixel.passkey.ID()}
 	if len(got) != len(want) {
 		t.Fatalf("passkeys = %+v, want ids %q", got, want)
 	}
@@ -446,8 +447,8 @@ func TestReEnrollingADeviceKeepsItsPasskey(t *testing.T) {
 	// this passkey with a new one, leaving the old one listed but unusable.
 	phone.enroll(n.issueEnrollmentCode())
 
-	if got := phone.listPasskeys(); len(got) != 1 || got[0].ID != b64.EncodeToString(phone.passkey.id) {
-		t.Errorf("passkeys after enrolling the iPhone again = %+v, want only %q", got, b64.EncodeToString(phone.passkey.id))
+	if got := phone.listPasskeys(); len(got) != 1 || got[0].ID != phone.passkey.ID() {
+		t.Errorf("passkeys after enrolling the iPhone again = %+v, want only %q", got, phone.passkey.ID())
 	}
 }
 
@@ -457,10 +458,10 @@ func TestEnrollmentCodeRegistersOnlyOnePasskeyEvenWhenBegunTwice(t *testing.T) {
 	phone, mac := n.newDevice("iPhone"), n.newDevice("Mac")
 	phoneOptions := phone.do(http.MethodPost, "/auth/register/begin", code)
 	macOptions := mac.do(http.MethodPost, "/auth/register/begin", code)
-	phone.passkey, mac.passkey = &passkey{}, &passkey{}
+	phone.passkey, mac.passkey = testpasskey.New(webOrigin), testpasskey.New(webOrigin)
 
-	first := phone.do(http.MethodPost, "/auth/register/finish", phone.passkey.create(t, phoneOptions.Body.Bytes()))
-	second := mac.do(http.MethodPost, "/auth/register/finish", mac.passkey.create(t, macOptions.Body.Bytes()))
+	first := phone.do(http.MethodPost, "/auth/register/finish", phone.passkey.Create(t, phoneOptions.Body.Bytes()))
+	second := mac.do(http.MethodPost, "/auth/register/finish", mac.passkey.Create(t, macOptions.Body.Bytes()))
 
 	if first.Code != http.StatusNoContent {
 		t.Fatalf("first finish: status = %d, body %q", first.Code, first.Body)
@@ -468,8 +469,8 @@ func TestEnrollmentCodeRegistersOnlyOnePasskeyEvenWhenBegunTwice(t *testing.T) {
 	if second.Code != http.StatusUnauthorized {
 		t.Errorf("second finish with the same code: status = %d, want %d", second.Code, http.StatusUnauthorized)
 	}
-	if got := phone.listPasskeys(); len(got) != 1 || got[0].ID != b64.EncodeToString(phone.passkey.id) {
-		t.Errorf("passkeys = %+v, want only the iPhone's %q", got, b64.EncodeToString(phone.passkey.id))
+	if got := phone.listPasskeys(); len(got) != 1 || got[0].ID != phone.passkey.ID() {
+		t.Errorf("passkeys = %+v, want only the iPhone's %q", got, phone.passkey.ID())
 	}
 }
 
@@ -492,4 +493,13 @@ func TestDeletingTheCurrentSessionClearsItsCookie(t *testing.T) {
 	if c.Domain != "example.com" || c.Path != "/" {
 		t.Errorf("clearing cookie scope = %s%s, want example.com/", c.Domain, c.Path)
 	}
+}
+
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
