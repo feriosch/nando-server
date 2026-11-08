@@ -46,7 +46,7 @@ func NewNotifications(
 	now func() time.Time,
 ) (*NotificationsService, error) {
 	if verifySchedulerToken == nil {
-		return nil, errors.New("VerifySchedulerToken is required")
+		return nil, errors.New("verifySchedulerToken is required")
 	}
 	return &NotificationsService{
 		pushSubscriptions: pushSubscriptions,

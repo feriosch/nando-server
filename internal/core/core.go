@@ -70,6 +70,8 @@ type Core struct {
 	body              *service.BodyService
 	pushSubscriptions *service.PushSubscriptionsService
 	notifications     *service.NotificationsService
+	// coreService is what Modules' services are handed.
+	coreService coreService
 }
 
 // New returns Core reading and writing through db, Core's own database.
@@ -105,6 +107,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
+	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns}
 	c.body = service.NewBody(weighIns, c.settings)
 	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, cfg.Domain, cfg.Origins, now)
 	if err != nil {
@@ -140,7 +143,7 @@ func (c *Core) Routes(mux *http.ServeMux) {
 
 // Service is Core's service, which Modules' services call for Core's data.
 func (c *Core) Service() model.CoreService {
-	return coreService{settings: c.settings, weighIns: c.weighIns}
+	return c.coreService
 }
 
 // coreService is model.CoreService: what Modules may ask of Core, answered by
