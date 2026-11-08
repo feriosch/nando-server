@@ -14,6 +14,30 @@ import (
 	coreservice "github.com/feriosch/nando-server/internal/core/service"
 )
 
+// MealsService handles requests about Meals. It reads Entries too, for the
+// quick list's counts.
+type MealsService struct {
+	meals   model.MealsRepository
+	entries model.EntriesRepository
+	core    coremodel.CoreService
+	now     func() time.Time
+}
+
+// NewMeals returns the MealsService, with now as its clock.
+func NewMeals(meals model.MealsRepository, entries model.EntriesRepository, core coremodel.CoreService, now func() time.Time) *MealsService {
+	return &MealsService{meals: meals, entries: entries, core: core, now: now}
+}
+
+// Routes adds the Meal routes to mux, under /api/calories/meals.
+func (s *MealsService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/calories/meals", s.listMeals)
+	mux.HandleFunc("POST /api/calories/meals", s.postMeal)
+	mux.HandleFunc("GET /api/calories/meals/quick", s.quickMeals)
+	mux.HandleFunc("PUT /api/calories/meals/{id}", s.putMeal)
+	mux.HandleFunc("DELETE /api/calories/meals/{id}", s.deleteMeal)
+	mux.HandleFunc("POST /api/calories/meals/{id}/restore", s.restoreMeal)
+}
+
 // mealJSON is a Meal as the API reads and writes it. Optional strings are
 // null when not set.
 type mealJSON struct {
@@ -64,7 +88,7 @@ func toMealJSON(m model.Meal) mealJSON {
 
 // listMeals lists the Meals in use by name, or with ?archived=true the
 // archived ones.
-func (s *Service) listMeals(w http.ResponseWriter, r *http.Request) {
+func (s *MealsService) listMeals(w http.ResponseWriter, r *http.Request) {
 	meals, err := s.meals.List(r.Context(), r.URL.Query().Get("archived") == "true")
 	if err != nil {
 		coreservice.ServerError(w, err)
@@ -148,7 +172,7 @@ func fromMealBody(j mealBody) (model.Meal, error) {
 }
 
 // postMeal saves a new Meal.
-func (s *Service) postMeal(w http.ResponseWriter, r *http.Request) {
+func (s *MealsService) postMeal(w http.ResponseWriter, r *http.Request) {
 	meal, ok := readMeal(w, r)
 	if !ok {
 		return
@@ -159,11 +183,11 @@ func (s *Service) postMeal(w http.ResponseWriter, r *http.Request) {
 		coreservice.ServerError(w, err)
 		return
 	}
-	writeCreated(w, id)
+	coreservice.WriteCreated(w, id)
 }
 
 // putMeal edits a Meal. Entries already logged from it keep their values.
-func (s *Service) putMeal(w http.ResponseWriter, r *http.Request) {
+func (s *MealsService) putMeal(w http.ResponseWriter, r *http.Request) {
 	meal, ok := readMeal(w, r)
 	if !ok {
 		return
@@ -182,17 +206,17 @@ func (s *Service) putMeal(w http.ResponseWriter, r *http.Request) {
 
 // deleteMeal archives a Meal: it leaves the lists and can't be logged, but its
 // Entries stay and it can be restored.
-func (s *Service) deleteMeal(w http.ResponseWriter, r *http.Request) {
+func (s *MealsService) deleteMeal(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
 	s.setArchivedAt(w, r, &now)
 }
 
 // restoreMeal brings an archived Meal back.
-func (s *Service) restoreMeal(w http.ResponseWriter, r *http.Request) {
+func (s *MealsService) restoreMeal(w http.ResponseWriter, r *http.Request) {
 	s.setArchivedAt(w, r, nil)
 }
 
-func (s *Service) setArchivedAt(w http.ResponseWriter, r *http.Request, archivedAt *time.Time) {
+func (s *MealsService) setArchivedAt(w http.ResponseWriter, r *http.Request, archivedAt *time.Time) {
 	err := s.meals.SetArchivedAt(r.Context(), r.PathValue("id"), archivedAt)
 	if errors.Is(err, coremodel.ErrNotFound) {
 		http.Error(w, "there's no such Meal", http.StatusNotFound)
@@ -210,7 +234,7 @@ const quickListDays = 30
 
 // quickMeals lists the Meals in use for one-tap logging: pinned ones first,
 // then the most-logged in the last 30 Days, then by name.
-func (s *Service) quickMeals(w http.ResponseWriter, r *http.Request) {
+func (s *MealsService) quickMeals(w http.ResponseWriter, r *http.Request) {
 	today, err := s.core.Today(r.Context())
 	if err != nil {
 		coreservice.ServerError(w, err)

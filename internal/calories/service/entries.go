@@ -4,12 +4,35 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
 	"github.com/feriosch/nando-server/internal/calories/utils"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreservice "github.com/feriosch/nando-server/internal/core/service"
 )
+
+// EntriesService handles requests about Entries. It reads Meals too, to log
+// an Entry from one, and saves one for "save as Meal".
+type EntriesService struct {
+	entries model.EntriesRepository
+	meals   model.MealsRepository
+	core    coremodel.CoreService
+	now     func() time.Time
+}
+
+// NewEntries returns the EntriesService, with now as its clock.
+func NewEntries(entries model.EntriesRepository, meals model.MealsRepository, core coremodel.CoreService, now func() time.Time) *EntriesService {
+	return &EntriesService{entries: entries, meals: meals, core: core, now: now}
+}
+
+// Routes adds the Entry routes to mux, under /api/calories/.
+func (s *EntriesService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/calories/days/{day}/entries", s.listEntries)
+	mux.HandleFunc("POST /api/calories/days/{day}/entries", s.postEntry)
+	mux.HandleFunc("PUT /api/calories/entries/{id}", s.putEntry)
+	mux.HandleFunc("DELETE /api/calories/entries/{id}", s.deleteEntry)
+}
 
 // entryJSON is an Entry as the API lists it.
 type entryJSON struct {
@@ -63,7 +86,7 @@ func (v entryValues) toEntry() (model.Entry, error) {
 // checkEditable reports whether day is in the Editable Window, today being the
 // current Day in the Owner Time Zone. If it isn't, it answers 409 (or 500 if
 // today can't be known) and returns false.
-func (s *Service) checkEditable(w http.ResponseWriter, r *http.Request, day coremodel.Day) bool {
+func (s *EntriesService) checkEditable(w http.ResponseWriter, r *http.Request, day coremodel.Day) bool {
 	today, err := s.core.Today(r.Context())
 	if err != nil {
 		coreservice.ServerError(w, err)
@@ -87,7 +110,7 @@ func pathDay(w http.ResponseWriter, r *http.Request) (coremodel.Day, bool) {
 }
 
 // listEntries lists a Day's Entries in the order they were logged.
-func (s *Service) listEntries(w http.ResponseWriter, r *http.Request) {
+func (s *EntriesService) listEntries(w http.ResponseWriter, r *http.Request) {
 	day, ok := pathDay(w, r)
 	if !ok {
 		return
@@ -106,7 +129,7 @@ func (s *Service) listEntries(w http.ResponseWriter, r *http.Request) {
 
 // postEntry logs an Entry on the Day in the path: from a Meal, copying its
 // name and kcal, or a one-off with its own.
-func (s *Service) postEntry(w http.ResponseWriter, r *http.Request) {
+func (s *EntriesService) postEntry(w http.ResponseWriter, r *http.Request) {
 	day, ok := pathDay(w, r)
 	if !ok || !s.checkEditable(w, r, day) {
 		return
@@ -156,13 +179,13 @@ func (s *Service) postEntry(w http.ResponseWriter, r *http.Request) {
 		coreservice.ServerError(w, err)
 		return
 	}
-	writeCreated(w, id)
+	coreservice.WriteCreated(w, id)
 }
 
 // entryFromMeal returns an Entry of servings of the Meal with mealID, with
 // the Meal's name and kcal. If the Meal can't be logged, it answers r and
 // returns false.
-func (s *Service) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID string, servings int) (model.Entry, bool) {
+func (s *EntriesService) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID string, servings int) (model.Entry, bool) {
 	if err := utils.CheckServings(servings); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return model.Entry{}, false
@@ -185,7 +208,7 @@ func (s *Service) entryFromMeal(w http.ResponseWriter, r *http.Request, mealID s
 // editableEntry returns the Entry whose ID is in r's path if its Day is in the
 // Editable Window. Otherwise it answers r and returns false: with ifMissing if
 // there's no such Entry, or 409 outside the window.
-func (s *Service) editableEntry(w http.ResponseWriter, r *http.Request, ifMissing int) (model.Entry, bool) {
+func (s *EntriesService) editableEntry(w http.ResponseWriter, r *http.Request, ifMissing int) (model.Entry, bool) {
 	entry, err := s.entries.Find(r.Context(), r.PathValue("id"))
 	if errors.Is(err, coremodel.ErrNotFound) {
 		if ifMissing == http.StatusNoContent {
@@ -202,7 +225,7 @@ func (s *Service) editableEntry(w http.ResponseWriter, r *http.Request, ifMissin
 }
 
 // putEntry edits an Entry's name, kcal per serving and Servings.
-func (s *Service) putEntry(w http.ResponseWriter, r *http.Request) {
+func (s *EntriesService) putEntry(w http.ResponseWriter, r *http.Request) {
 	var body entryValues
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "the body isn't an Entry", http.StatusBadRequest)
@@ -226,7 +249,7 @@ func (s *Service) putEntry(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteEntry deletes an Entry. Deleting one that doesn't exist also succeeds.
-func (s *Service) deleteEntry(w http.ResponseWriter, r *http.Request) {
+func (s *EntriesService) deleteEntry(w http.ResponseWriter, r *http.Request) {
 	entry, ok := s.editableEntry(w, r, http.StatusNoContent)
 	if !ok {
 		return

@@ -116,6 +116,14 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
+// WriteCreated answers 201 with the ID of what a POST created, as
+// {"id": "…"}. Modules use it too.
+func WriteCreated(w http.ResponseWriter, id string) {
+	WriteJSON(w, http.StatusCreated, struct {
+		ID string `json:"id"`
+	}{id})
+}
+
 // ServerError logs err and answers 500 without revealing it. Modules use it
 // too.
 func ServerError(w http.ResponseWriter, err error) {
