@@ -34,6 +34,17 @@ type config struct {
 	// call the API with credentials and use passkeys.
 	allowedOrigins []string
 	port           string // PORT, set by Cloud Run; defaults to 8080
+
+	// VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY, required to serve: the key pair that
+	// signs push messages, base64url, as webpush.GenerateVAPIDKeys returns.
+	vapidPublicKey, vapidPrivateKey string
+	// PUSH_CONTACT, required to serve: a mailto: or https: URL where a push service can
+	// reach Nando's operator.
+	pushContact string
+	// TICK_AUDIENCE and SCHEDULER_SERVICE_ACCOUNT, required to serve: /internal/tick
+	// accepts only Google-signed OIDC tokens for this audience (the URL Cloud
+	// Scheduler calls) issued to this service account.
+	tickAudience, schedulerServiceAccount string
 }
 
 func loadConfig() (config, error) {
@@ -41,6 +52,12 @@ func loadConfig() (config, error) {
 		mongoURI: os.Getenv("MONGO_URI"),
 		domain:   os.Getenv("DOMAIN"),
 		port:     os.Getenv("PORT"),
+
+		vapidPublicKey:          os.Getenv("VAPID_PUBLIC_KEY"),
+		vapidPrivateKey:         os.Getenv("VAPID_PRIVATE_KEY"),
+		pushContact:             os.Getenv("PUSH_CONTACT"),
+		tickAudience:            os.Getenv("TICK_AUDIENCE"),
+		schedulerServiceAccount: os.Getenv("SCHEDULER_SERVICE_ACCOUNT"),
 	}
 	if cfg.mongoURI == "" {
 		return config{}, errors.New("MONGO_URI is required")
@@ -63,6 +80,23 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("ALLOWED_ORIGINS is required")
 	}
 	return cfg, nil
+}
+
+// checkNotifications reports a missing Notifications setting. Only serving
+// needs them, not `nando-server enroll`.
+func (cfg config) checkNotifications() error {
+	for _, v := range []struct{ name, value string }{
+		{"VAPID_PUBLIC_KEY", cfg.vapidPublicKey},
+		{"VAPID_PRIVATE_KEY", cfg.vapidPrivateKey},
+		{"PUSH_CONTACT", cfg.pushContact},
+		{"TICK_AUDIENCE", cfg.tickAudience},
+		{"SCHEDULER_SERVICE_ACCOUNT", cfg.schedulerServiceAccount},
+	} {
+		if v.value == "" {
+			return fmt.Errorf("%s is required", v.name)
+		}
+	}
+	return nil
 }
 
 // checkOrigin rejects anything a browser would never send as an Origin, such as
@@ -115,6 +149,11 @@ func run() error {
 	nandoCore, err := core.New(connectCtx, dbs.Core, core.Config{
 		Domain:  cfg.domain,
 		Origins: cfg.allowedOrigins,
+
+		VerifySchedulerToken: core.GoogleSchedulerTokens(cfg.tickAudience, cfg.schedulerServiceAccount),
+		VAPIDPublicKey:       cfg.vapidPublicKey,
+		VAPIDPrivateKey:      cfg.vapidPrivateKey,
+		PushContact:          cfg.pushContact,
 	})
 	if err != nil {
 		return err
@@ -131,6 +170,9 @@ func run() error {
 		return nil
 	case len(args) > 0:
 		return fmt.Errorf("unknown arguments %q; the only command is enroll", args)
+	}
+	if err := cfg.checkNotifications(); err != nil {
+		return err
 	}
 
 	srv := &http.Server{

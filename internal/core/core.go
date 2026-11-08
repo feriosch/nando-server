@@ -26,6 +26,17 @@ type Config struct {
 	Origins []string
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// VerifySchedulerToken checks the bearer token of a call to
+	// /internal/tick, returning an error unless it is a Google-signed OIDC
+	// token from the scheduler's service account. See GoogleSchedulerTokens.
+	VerifySchedulerToken func(ctx context.Context, token string) error
+	// VAPIDPublicKey and VAPIDPrivateKey sign every push message, base64url
+	// as webpush.GenerateVAPIDKeys returns them.
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	// PushContact is how a push service can reach Nando's operator, such as
+	// "mailto:owner@example.com"; Apple requires one.
+	PushContact string
 }
 
 // Core is Nando's Core. Its only access to data is its own database.
@@ -43,6 +54,11 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		Domain:  cfg.Domain,
 		Origins: cfg.Origins,
 		Now:     cfg.Now,
+
+		VerifySchedulerToken: cfg.VerifySchedulerToken,
+		VAPIDPublicKey:       cfg.VAPIDPublicKey,
+		VAPIDPrivateKey:      cfg.VAPIDPrivateKey,
+		PushContact:          cfg.PushContact,
 	})
 	if err != nil {
 		return nil, err
@@ -65,6 +81,12 @@ func (c *Core) Routes(mux *http.ServeMux) {
 // Service is Core's service, which Modules' services call for Core's data.
 func (c *Core) Service() model.CoreService {
 	return c.service
+}
+
+// AddNotificationProvider has Core ask p for its due Notifications at every
+// tick. Each Module with Notifications adds its provider once, at startup.
+func (c *Core) AddNotificationProvider(p model.NotificationProvider) {
+	c.service.AddNotificationProvider(p)
 }
 
 // RequireSession lets a request through to next only if it carries a valid

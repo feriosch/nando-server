@@ -2,6 +2,7 @@
 
 Identity: passkeys, Enrollment Codes and sessions ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)).
 Settings and body measurements: the Owner Time Zone, height and Weigh-ins ([ADR 0003](../../docs/adr/0003-body-measurements-in-core.md)).
+Notifications: Push Subscriptions, the push messages Core sends, and the scheduler's tick ([ADR 0001](../../docs/adr/0001-cloud-run-hosting.md)).
 
 The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors are a status code with a short plain-text message.
 
@@ -171,3 +172,65 @@ Logs the Weigh-in for `week`, replacing any it already has.
 - `latest`: the newest week's Weigh-in, or `null` if there are none. Then `bmi` and `change` are `null` too.
 - `bmi`: `latest`'s body mass index to 1 decimal, or `null` until the height is set. It is always derived, never stored.
 - `change`: `latest`'s kg minus the kg of the week before it, or `null` if that week has no Weigh-in.
+
+## Notifications
+
+Core sends every Notification, for a Module or for itself, to every Push Subscription. Each one is sent at most once, even if the scheduler retries a tick.
+
+### `GET /api/push-subscriptions/vapid-public-key`
+
+`200`: the key to pass as `applicationServerKey` to `registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`. It is base64url, without padding.
+
+```json
+{ "publicKey": "BNc…" }
+```
+
+### `POST /api/push-subscriptions`
+
+Registers this copy of Nando for Notifications. Body: the `PushSubscription` from `pushManager.subscribe` (or `getSubscription`), as `subscription.toJSON()`.
+
+```json
+{
+  "endpoint": "https://web.push.apple.com/QG…",
+  "expirationTime": null,
+  "keys": { "p256dh": "BOr…", "auth": "Ys5…" }
+}
+```
+
+- `204`: registered. Registering the same `endpoint` again replaces its keys, so it is safe to send on every launch.
+- `400`: the body isn't a `PushSubscription`: `endpoint` isn't an absolute URL, `keys.p256dh` isn't a P-256 public key, or `keys.auth` isn't 16 bytes (both base64url). The message says which.
+
+When a push service says it no longer knows a Push Subscription (`404` or `410`, for example after the Owner turned Notifications off or removed the app), Core deletes it. Registering again brings it back.
+
+### `DELETE /api/push-subscriptions?endpoint={endpoint}`
+
+Unregisters the Push Subscription with this `endpoint` (URL-encoded), for example after `subscription.unsubscribe()`.
+
+- `204`: that endpoint gets no more Notifications. This is also the answer if it wasn't registered.
+- `400`: `endpoint` is missing.
+
+### The push message
+
+Each push message carries one Notification as JSON, encrypted for the Push Subscription (`aes128gcm`) and signed with the VAPID key above:
+
+```json
+{ "title": "Calories", "body": "Nothing logged today", "url": "/calories" }
+```
+
+- `title`, `body`: shown as-is.
+- `url`: the path in the web app to open when the Owner taps the Notification, such as `/calories`. The service worker opens `/` (Home) if it is missing or `null`.
+- The service worker falls back to a default for any field that is missing or `null` (`title` → "Nando"). A push message with no payload, or one that isn't JSON, still shows a plain "Nando" Notification, since Safari revokes a Push Subscription whose push message shows nothing.
+
+A push service keeps an undelivered message for up to 12 hours.
+
+Core's own Notification is the Weigh-in reminder: `{ "title": "Weigh-in", "body": "Time to log this week's weight", "url": "/" }`, sent once a week at the `weighInReminder`'s weekday and time while it is `enabled`.
+
+### `POST /internal/tick`
+
+Called only by Cloud Scheduler, every 30 minutes at :00 and :30. It needs no session, but its `Authorization: Bearer` token must be a Google-signed OIDC token for `TICK_AUDIENCE` issued to `SCHEDULER_SERVICE_ACCOUNT`.
+
+At each tick Core asks every Notification provider (Core's own and every Module's) which Notifications are due in the half hour starting at :00 or :30, and sends each one that hasn't been sent before. Every Notification has an ID, such as `calories:evening-summary:2026-10-20`, that Core remembers for 30 days in `sent_notifications`.
+
+- `204`: done. A push service that failed to take a message doesn't fail the tick; that Notification isn't retried.
+- `401`: no token, or not the scheduler's.
+- `500`: a provider failed. The other providers' Notifications were still sent, and Cloud Scheduler's retry won't send them again.

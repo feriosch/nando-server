@@ -3,9 +3,12 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -22,6 +25,13 @@ type Config struct {
 	Origins []string
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
+	// VerifySchedulerToken checks the bearer token of a call to /internal/tick.
+	VerifySchedulerToken func(ctx context.Context, token string) error
+	// VAPIDPublicKey and VAPIDPrivateKey sign every push message.
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	// PushContact is the VAPID subject, such as "mailto:owner@example.com".
+	PushContact string
 }
 
 // Service handles Core's requests.
@@ -30,6 +40,14 @@ type Service struct {
 	webauthn *webauthn.WebAuthn
 	domain   string
 	now      func() time.Time
+
+	verifySchedulerToken func(ctx context.Context, token string) error
+	vapidPublicKey       string
+	vapidPrivateKey      string
+	pushContact          string
+
+	providersMu sync.Mutex
+	providers   []model.NotificationProvider
 }
 
 // New returns a Service reaching data through repo.
@@ -54,7 +72,22 @@ func New(repo model.CoreRepository, cfg Config) (*Service, error) {
 	if now == nil {
 		now = time.Now
 	}
-	return &Service{repo: repo, webauthn: relyingParty, domain: cfg.Domain, now: now}, nil
+	if cfg.VerifySchedulerToken == nil {
+		return nil, errors.New("VerifySchedulerToken is required")
+	}
+	s := &Service{
+		repo:     repo,
+		webauthn: relyingParty,
+		domain:   cfg.Domain,
+		now:      now,
+
+		verifySchedulerToken: cfg.VerifySchedulerToken,
+		vapidPublicKey:       cfg.VAPIDPublicKey,
+		vapidPrivateKey:      cfg.VAPIDPrivateKey,
+		pushContact:          cfg.PushContact,
+	}
+	s.providers = []model.NotificationProvider{weighInReminder{s}}
+	return s, nil
 }
 
 // Routes adds Core's routes to mux: signing in under /auth/, and everything
@@ -76,6 +109,11 @@ func (s *Service) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/weigh-ins/{week}", s.putWeighIn)
 	mux.HandleFunc("DELETE /api/weigh-ins/{week}", s.deleteWeighIn)
 	mux.HandleFunc("GET /api/body", s.getBody)
+
+	mux.HandleFunc("GET /api/push-subscriptions/vapid-public-key", s.getVAPIDPublicKey)
+	mux.HandleFunc("POST /api/push-subscriptions", s.postPushSubscription)
+	mux.HandleFunc("DELETE /api/push-subscriptions", s.deletePushSubscription)
+	mux.HandleFunc("POST /internal/tick", s.tick)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {
