@@ -2,8 +2,8 @@ package model
 
 import "context"
 
-// Settings are the Owner's Calories preferences besides the Daily Limit: one
-// document.
+// Settings are what the Calories Settings Section saves besides the Daily
+// Limit: one document.
 type Settings struct {
 	// NoEntriesReminder reminds the Owner when today has no Entries yet.
 	NoEntriesReminder NotificationSetting `bson:"noEntriesReminder"`

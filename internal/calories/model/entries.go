@@ -26,6 +26,19 @@ func (e Entry) Kcal() int {
 	return e.KcalPerServing * e.Servings
 }
 
+// ConsumedCalories returns the sum of the kcal of a Day's entries, or nil if
+// there are none: an Unlogged Day isn't 0 kcal.
+func ConsumedCalories(entries []Entry) *int {
+	if len(entries) == 0 {
+		return nil
+	}
+	kcal := 0
+	for _, e := range entries {
+		kcal += e.Kcal()
+	}
+	return &kcal
+}
+
 // EntriesRepository reads and writes the entries collection.
 type EntriesRepository interface {
 	// Insert stores entry under a new ID, which it returns.

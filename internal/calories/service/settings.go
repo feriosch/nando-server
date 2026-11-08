@@ -10,8 +10,8 @@ import (
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
-// SettingsService handles requests about the Calories settings: when its
-// Notifications are sent.
+// SettingsService handles requests about the Calories Settings Section: when
+// the Module's Notifications are sent.
 type SettingsService struct {
 	settings model.SettingsRepository
 }
@@ -27,8 +27,8 @@ func (s *SettingsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/calories/settings", s.putSettings)
 }
 
-// current returns the saved settings, or the defaults if none were saved.
-func (s *SettingsService) current(ctx context.Context) (model.Settings, error) {
+// savedOrDefault returns the saved settings, or the defaults if none were saved.
+func (s *SettingsService) savedOrDefault(ctx context.Context) (model.Settings, error) {
 	settings, err := s.settings.Find(ctx)
 	if errors.Is(err, coreutils.ErrNotFound) {
 		return model.DefaultSettings, nil
@@ -43,33 +43,39 @@ type settingsJSON struct {
 	EveningSummary    *notificationSettingJSON `json:"eveningSummary"`
 }
 
+// notificationSettingJSON is one Notification's setting. Enabled is nil when
+// it wasn't sent, so it can be rejected.
 type notificationSettingJSON struct {
-	Enabled bool   `json:"enabled"`
+	Enabled *bool  `json:"enabled"`
 	Time    string `json:"time"`
 }
 
 func (s *SettingsService) getSettings(w http.ResponseWriter, r *http.Request) {
-	settings, err := s.current(r.Context())
+	settings, err := s.savedOrDefault(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
 	coreutils.WriteJSON(w, http.StatusOK, settingsJSON{
-		NoEntriesReminder: &notificationSettingJSON{Enabled: settings.NoEntriesReminder.Enabled, Time: settings.NoEntriesReminder.Time},
-		EveningSummary:    &notificationSettingJSON{Enabled: settings.EveningSummary.Enabled, Time: settings.EveningSummary.Time},
+		NoEntriesReminder: toNotificationSettingJSON(settings.NoEntriesReminder),
+		EveningSummary:    toNotificationSettingJSON(settings.EveningSummary),
 	})
+}
+
+func toNotificationSettingJSON(setting model.NotificationSetting) *notificationSettingJSON {
+	return &notificationSettingJSON{Enabled: &setting.Enabled, Time: setting.Time}
 }
 
 // fromNotificationSettingJSON checks the Notification setting field was sent,
 // or explains what's wrong with it.
 func fromNotificationSettingJSON(field string, j *notificationSettingJSON) (model.NotificationSetting, error) {
-	if j == nil {
-		return model.NotificationSetting{}, errors.New(field + " is missing")
+	if j == nil || j.Enabled == nil {
+		return model.NotificationSetting{}, errors.New(field + " must have enabled and time")
 	}
 	if !coreutils.IsHalfHour(j.Time) {
 		return model.NotificationSetting{}, errors.New(field + ".time must be HH:MM on the hour or half hour")
 	}
-	return model.NotificationSetting{Enabled: j.Enabled, Time: j.Time}, nil
+	return model.NotificationSetting{Enabled: *j.Enabled, Time: j.Time}, nil
 }
 
 // putSettings replaces all of the settings.

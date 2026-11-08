@@ -73,7 +73,7 @@ func TestEachDayIsJudgedAgainstTheDailyLimitItHad(t *testing.T) {
 		"2026-10-24": 1800,
 	} {
 		if got := phone.dailyLimitOn(day); !equalInts(got, &want) {
-			t.Errorf("daily limit on %s = %v, want %d", day, deref(got), want)
+			t.Errorf("daily limit on %s = %v, want %d", day, show(got), want)
 		}
 	}
 }

@@ -35,6 +35,51 @@ func (limits DailyLimits) On(day coremodel.Day) *int {
 	return &kcal
 }
 
+// Latest returns the Daily Limit in force now: the newest. It returns false
+// if none was ever set.
+func (limits DailyLimits) Latest() (DailyLimit, bool) {
+	if len(limits) == 0 {
+		return DailyLimit{}, false
+	}
+	return limits[len(limits)-1], true
+}
+
+// Calories returns day's Consumed Calories (nil for an Unlogged Day) against
+// the Daily Limit it had.
+func (limits DailyLimits) Calories(day coremodel.Day, consumed *int) DayCalories {
+	return DayCalories{Day: day, ConsumedCalories: consumed, DailyLimit: limits.On(day)}
+}
+
+// DayCalories is a Day's Consumed Calories against the Daily Limit it had.
+type DayCalories struct {
+	Day coremodel.Day
+	// ConsumedCalories is nil for an Unlogged Day, which isn't 0 kcal.
+	ConsumedCalories *int
+	// DailyLimit is nil if none was ever set.
+	DailyLimit *int
+}
+
+// Remaining is what's left of the Daily Limit, negative once over. It is nil
+// for an Unlogged Day or without a Daily Limit.
+func (d DayCalories) Remaining() *int {
+	if d.ConsumedCalories == nil || d.DailyLimit == nil {
+		return nil
+	}
+	remaining := *d.DailyLimit - *d.ConsumedCalories
+	return &remaining
+}
+
+// OverLimit reports whether the Day went over its Daily Limit; reaching it
+// isn't over. It is false without a Daily Limit, and nil for an Unlogged Day,
+// which is never over or under it.
+func (d DayCalories) OverLimit() *bool {
+	if d.ConsumedCalories == nil {
+		return nil
+	}
+	over := d.DailyLimit != nil && *d.ConsumedCalories > *d.DailyLimit
+	return &over
+}
+
 // DailyLimitsRepository reads and writes the daily_limits collection.
 type DailyLimitsRepository interface {
 	// Save stores limit, replacing any made the same Day.

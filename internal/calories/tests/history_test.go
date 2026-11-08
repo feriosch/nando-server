@@ -12,6 +12,7 @@ type historyDayJSON struct {
 	Day              string `json:"day"`
 	ConsumedCalories *int   `json:"consumedCalories"`
 	DailyLimit       *int   `json:"dailyLimit"`
+	Remaining        *int   `json:"remaining"`
 	OverLimit        *bool  `json:"overLimit"`
 }
 
@@ -32,11 +33,11 @@ func TestHistoryShowsEachDayAgainstItsDailyLimitAndUnloggedDaysAsNotLogged(t *te
 
 	want := []historyDayJSON{
 		{Day: "2026-10-22", DailyLimit: iptr(1800)},
-		{Day: "2026-10-21", ConsumedCalories: iptr(1800), DailyLimit: iptr(1800), OverLimit: bptr(false)},
+		{Day: "2026-10-21", ConsumedCalories: iptr(1800), DailyLimit: iptr(1800), Remaining: iptr(0), OverLimit: bptr(false)},
 		{Day: "2026-10-20", DailyLimit: iptr(2000)},
-		{Day: "2026-10-19", ConsumedCalories: iptr(2100), DailyLimit: iptr(2000), OverLimit: bptr(true)},
+		{Day: "2026-10-19", ConsumedCalories: iptr(2100), DailyLimit: iptr(2000), Remaining: iptr(-100), OverLimit: bptr(true)},
 		// Before the first Daily Limit, which covers it too.
-		{Day: "2026-10-18", ConsumedCalories: iptr(500), DailyLimit: iptr(2000), OverLimit: bptr(false)},
+		{Day: "2026-10-18", ConsumedCalories: iptr(500), DailyLimit: iptr(2000), Remaining: iptr(1500), OverLimit: bptr(false)},
 	}
 	if !slices.EqualFunc(got, want, equalHistoryDays) {
 		t.Errorf("history =\n%s\nwant\n%s", showHistory(got), showHistory(want))
@@ -68,6 +69,7 @@ func TestInvalidHistoryRangesAreRejected(t *testing.T) {
 		"?from=2026-10-22&to=2026-10-21",
 		"?from=21-10-2026&to=2026-10-21",
 		"?from=2025-10-20&to=2026-10-21", // 367 Days
+		"?from=2026-10-21&to=2026-10-22", // tomorrow isn't past yet
 	} {
 		if rec := phone.do(http.MethodGet, "/api/calories/history"+query, nil); rec.Code != http.StatusBadRequest {
 			t.Errorf("GET history%s: status = %d, want 400", query, rec.Code)
@@ -80,17 +82,14 @@ func TestInvalidHistoryRangesAreRejected(t *testing.T) {
 
 func equalHistoryDays(a, b historyDayJSON) bool {
 	return a.Day == b.Day && equalInts(a.ConsumedCalories, b.ConsumedCalories) && equalInts(a.DailyLimit, b.DailyLimit) &&
-		((a.OverLimit == nil && b.OverLimit == nil) || (a.OverLimit != nil && b.OverLimit != nil && *a.OverLimit == *b.OverLimit))
+		equalInts(a.Remaining, b.Remaining) && equalBools(a.OverLimit, b.OverLimit)
 }
 
 func showHistory(days []historyDayJSON) string {
 	s := ""
 	for _, d := range days {
-		over := any("null")
-		if d.OverLimit != nil {
-			over = *d.OverLimit
-		}
-		s += fmt.Sprintf("%s consumed %v limit %v over %v\n", d.Day, deref(d.ConsumedCalories), deref(d.DailyLimit), over)
+		s += fmt.Sprintf("%s consumed %v limit %v remaining %v over %v\n",
+			d.Day, show(d.ConsumedCalories), show(d.DailyLimit), show(d.Remaining), showBool(d.OverLimit))
 	}
 	return s
 }

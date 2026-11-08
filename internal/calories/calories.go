@@ -49,11 +49,12 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	}
 	meals := repository.NewMeals(db)
 	dailyLimits := repository.NewDailyLimits(db)
+	entriesService := service.NewEntries(entries, meals, core, now)
 	return &Module{
 		meals:       service.NewMeals(meals, entries, core, now),
-		entries:     service.NewEntries(entries, meals, core, now),
+		entries:     entriesService,
 		dailyLimits: service.NewDailyLimits(dailyLimits, core),
-		days:        service.NewDays(entries, dailyLimits, core),
+		days:        service.NewDays(entries, dailyLimits, entriesService, core),
 		settings:    service.NewSettings(repository.NewSettings(db)),
 	}, nil
 }

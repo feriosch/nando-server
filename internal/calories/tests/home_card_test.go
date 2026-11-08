@@ -11,6 +11,7 @@ type homeCardJSON struct {
 	ConsumedCalories *int   `json:"consumedCalories"`
 	DailyLimit       *int   `json:"dailyLimit"`
 	Remaining        *int   `json:"remaining"`
+	OverLimit        *bool  `json:"overLimit"`
 }
 
 func TestHomeCardShowsTodaysConsumedCaloriesAgainstTheDailyLimit(t *testing.T) {
@@ -20,17 +21,18 @@ func TestHomeCardShowsTodaysConsumedCaloriesAgainstTheDailyLimit(t *testing.T) {
 	phone.setDailyLimit(2000)
 
 	got := get[homeCardJSON](phone, "/api/calories/home-card")
-	if got.Day != "2026-10-22" || got.ConsumedCalories != nil || !equalInts(got.DailyLimit, iptr(2000)) || got.Remaining != nil {
-		t.Errorf("home card before logging = %s %v/%v/%v, want 2026-10-22 null/2000/null",
-			got.Day, deref(got.ConsumedCalories), deref(got.DailyLimit), deref(got.Remaining))
+	if got.Day != "2026-10-22" || got.ConsumedCalories != nil || !equalInts(got.DailyLimit, iptr(2000)) || got.Remaining != nil || got.OverLimit != nil {
+		t.Errorf("home card before logging = %s %v/%v/%v, want 2026-10-22 null/2000/null, overLimit null",
+			got.Day, show(got.ConsumedCalories), show(got.DailyLimit), show(got.Remaining))
 	}
 
 	phone.mustLogEntry("2026-10-22", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 2})
 	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Ramen", "kcalPerServing": 900, "servings": 1})
 
 	got = get[homeCardJSON](phone, "/api/calories/home-card")
-	if got.Day != "2026-10-22" || !equalInts(got.ConsumedCalories, iptr(460)) || !equalInts(got.DailyLimit, iptr(2000)) || !equalInts(got.Remaining, iptr(1540)) {
-		t.Errorf("home card = %s %v/%v/%v, want 2026-10-22 460/2000/1540",
-			got.Day, deref(got.ConsumedCalories), deref(got.DailyLimit), deref(got.Remaining))
+	if got.Day != "2026-10-22" || !equalInts(got.ConsumedCalories, iptr(460)) || !equalInts(got.DailyLimit, iptr(2000)) || !equalInts(got.Remaining, iptr(1540)) ||
+		!equalBools(got.OverLimit, bptr(false)) {
+		t.Errorf("home card = %s %v/%v/%v, want 2026-10-22 460/2000/1540, not over",
+			got.Day, show(got.ConsumedCalories), show(got.DailyLimit), show(got.Remaining))
 	}
 }

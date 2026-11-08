@@ -41,11 +41,11 @@ func (s *DailyLimitsService) getDailyLimit(w http.ResponseWriter, r *http.Reques
 		coreutils.ServerError(w, err)
 		return
 	}
-	if len(limits) == 0 {
+	latest, ok := limits.Latest()
+	if !ok {
 		coreutils.WriteJSON(w, http.StatusOK, nil)
 		return
 	}
-	latest := limits[len(limits)-1]
 	coreutils.WriteJSON(w, http.StatusOK, dailyLimitJSON{Kcal: latest.Kcal, EffectiveFrom: latest.EffectiveFrom})
 }
 
@@ -58,7 +58,7 @@ func (s *DailyLimitsService) putDailyLimit(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "the body isn't a Daily Limit", http.StatusBadRequest)
 		return
 	}
-	kcal, err := utils.CheckDailyLimit(body.Kcal)
+	kcal, err := utils.CheckDailyLimit("kcal", body.Kcal)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
