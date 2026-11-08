@@ -19,5 +19,9 @@ type PasskeysRepository interface {
 	Find(ctx context.Context, id []byte) (Passkey, error)
 	// List returns every passkey, oldest first.
 	List(ctx context.Context) ([]Passkey, error)
+	// Update replaces the Credential of the passkey with this id, but only if
+	// it is still old. It returns utils.ErrNotFound if the passkey is gone or
+	// its Credential changed since it was read.
+	Update(ctx context.Context, id []byte, old, credential []byte) error
 	Delete(ctx context.Context, id []byte) error
 }

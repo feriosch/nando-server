@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -24,6 +25,9 @@ const (
 	// enrollmentCodeAlphabet has 32 symbols, leaving out I, L, O and U, which
 	// are easily misread.
 	enrollmentCodeAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+	// signInRefused is the answer to every refused passkey, so a copied key
+	// isn't told what gave it away.
+	signInRefused = "that passkey is unknown or could not be verified"
 )
 
 // IdentityService signs the Owner in under /auth/: registering a passkey
@@ -214,8 +218,8 @@ func (s *IdentityService) beginSignIn(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, assertion)
 }
 
-// finishSignIn checks the passkey's answer from navigator.credentials.get and
-// signs this device in.
+// finishSignIn checks the passkey's answer from navigator.credentials.get,
+// saves its new sign count and signs this device in.
 func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 	parsed, err := protocol.ParseCredentialRequestResponseBody(r.Body)
 	if err != nil {
@@ -231,9 +235,37 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "that challenge was not for a sign-in", http.StatusBadRequest)
 		return
 	}
-	_, _, err = s.webauthn.ValidatePasskeyLogin(s.findOwner(r.Context()), sessionData, parsed)
+	var passkey model.Passkey
+	_, credential, err := s.webauthn.ValidatePasskeyLogin(s.findOwner(r.Context(), &passkey), sessionData, parsed)
 	if err != nil {
-		http.Error(w, "that passkey is unknown or could not be verified", http.StatusUnauthorized)
+		http.Error(w, signInRefused, http.StatusUnauthorized)
+		return
+	}
+	// A sign count that didn't go up means another copy of the passkey may
+	// exist. Synced passkeys always report 0, which never sets this, so it
+	// guards hardware security keys.
+	if credential.Authenticator.CloneWarning {
+		log.Printf("sign-in refused: passkey %x reported sign count %d, not above the stored %d; it may have been copied",
+			credential.ID, parsed.Response.AuthenticatorData.Counter, credential.Authenticator.SignCount)
+		http.Error(w, signInRefused, http.StatusUnauthorized)
+		return
+	}
+	stored, err := json.Marshal(credential)
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	// Saved only if unchanged since it was read: of two sign-ins checked
+	// against the same sign count, only the first counts, and a passkey
+	// deleted meanwhile can't sign in.
+	err = s.passkeys.Update(r.Context(), passkey.ID, passkey.Credential, stored)
+	if errors.Is(err, utils.ErrNotFound) {
+		log.Printf("sign-in refused: passkey %x was deleted or signed in again meanwhile", passkey.ID)
+		http.Error(w, signInRefused, http.StatusUnauthorized)
+		return
+	}
+	if err != nil {
+		utils.ServerError(w, err)
 		return
 	}
 	if err := s.sessions.startSession(w, r); err != nil {
@@ -243,13 +275,15 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// findOwner finds the Owner by the passkey they signed in with.
-func (s *IdentityService) findOwner(ctx context.Context) webauthn.DiscoverableUserHandler {
+// findOwner finds the Owner by the passkey they signed in with, keeping that
+// passkey as it was stored in found.
+func (s *IdentityService) findOwner(ctx context.Context, found *model.Passkey) webauthn.DiscoverableUserHandler {
 	return func(rawID, userHandle []byte) (webauthn.User, error) {
 		passkey, err := s.passkeys.Find(ctx, rawID)
 		if err != nil {
 			return nil, err
 		}
+		*found = passkey
 		credential, err := credentialOf(passkey)
 		if err != nil {
 			return nil, err
