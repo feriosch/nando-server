@@ -56,15 +56,22 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 		if err != nil {
 			return nil, err
 		}
-		calories := limits.Calories(day, model.ConsumedCalories(entries))
 		due = append(due, coremodel.Notification{
 			ID:    coremodel.NotificationID("calories", "evening-summary", day),
 			Title: "Calories",
-			Body:  fmt.Sprintf("Today: %d / %d kcal", *calories.ConsumedCalories, *calories.DailyLimit),
+			Body:  summary(limits.Calories(day, model.ConsumedCalories(entries))),
 			URL:   "/calories",
 		})
 	}
 	return due, nil
+}
+
+// summary is the evening summary's text for the Day.
+func summary(d model.DayCalories) string {
+	if d.DailyLimit == nil {
+		return fmt.Sprintf("Today: %d kcal", *d.ConsumedCalories)
+	}
+	return fmt.Sprintf("Today: %d / %d kcal", *d.ConsumedCalories, *d.DailyLimit)
 }
 
 // isDue reports whether the Notification with this setting is due at slot.

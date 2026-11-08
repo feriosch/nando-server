@@ -141,3 +141,19 @@ func TestTheEveningSummaryTellsTheOwnerTodaysConsumedCaloriesAgainstTheDailyLimi
 		t.Errorf("received %+v, want %+v", got, want)
 	}
 }
+
+func TestTheEveningSummaryWithoutADailyLimitTellsOnlyTodaysConsumedCalories(t *testing.T) {
+	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.saveCaloriesSettings(off("14:00"), on("21:00"))
+	push := testpush.New(t)
+	phone.subscribe(push)
+	phone.mustLogEntry("2026-10-22", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 2})
+
+	n.tickAt(tokyoTime(21, 0))
+
+	want := []testpush.Message{{Title: "Calories", Body: "Today: 460 kcal", URL: "/calories"}}
+	if got := push.Received(); !slices.Equal(got, want) {
+		t.Errorf("received %+v, want %+v", got, want)
+	}
+}
