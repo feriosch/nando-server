@@ -19,7 +19,7 @@ type reminderJSON struct {
 	Time    string `json:"time"`
 }
 
-func (d *device) getSettings() settingsJSON {
+func (d *browser) getSettings() settingsJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/settings", nil)
 	if rec.Code != http.StatusOK {
@@ -34,7 +34,7 @@ func (d *device) getSettings() settingsJSON {
 
 func TestSettingsStartAsDefaults(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 
 	got := phone.getSettings()
@@ -51,7 +51,7 @@ func TestSettingsStartAsDefaults(t *testing.T) {
 
 func TestOwnerSavesTheirSettings(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 	height := 175
 	saved := settingsJSON{
@@ -72,7 +72,7 @@ func TestOwnerSavesTheirSettings(t *testing.T) {
 
 func TestInvalidSettingsAreRejected(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 
 	for name, body := range map[string]string{

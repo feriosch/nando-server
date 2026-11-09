@@ -151,8 +151,8 @@ func (s *SessionsService) listSessions(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, list)
 }
 
-// deleteSession deletes a Session, which signs it out. Deleting the current
-// Session also has the browser asking delete its cookie.
+// deleteSession deletes a Session, which signs its browser out. Deleting the
+// current Session also has the browser asking delete its cookie.
 func (s *SessionsService) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.sessions.Delete(r.Context(), id); err != nil {

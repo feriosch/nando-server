@@ -19,7 +19,7 @@ type historyDayJSON struct {
 func bptr(b bool) *bool { return &b }
 
 func TestHistoryShowsEachDayAgainstItsDailyLimitAndUnloggedDaysAsNotLogged(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday.AddDate(0, 0, -2)) // Monday 2026-10-19
+	n, phone := signedInBrowser(t, wednesday.AddDate(0, 0, -2)) // Monday 2026-10-19
 	phone.setDailyLimit(2000)
 	n.clock.Set(wednesday)
 	phone.setDailyLimit(1800)
@@ -45,7 +45,7 @@ func TestHistoryShowsEachDayAgainstItsDailyLimitAndUnloggedDaysAsNotLogged(t *te
 }
 
 func TestHistoryWithoutADailyLimitIsNeverOverIt(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Ramen", "kcalPerServing": 900, "servings": 5})
 
 	got := get[[]historyDayJSON](phone, "/api/calories/history?from=2026-10-20&to=2026-10-21")
@@ -60,7 +60,7 @@ func TestHistoryWithoutADailyLimitIsNeverOverIt(t *testing.T) {
 }
 
 func TestInvalidHistoryRangesAreRejected(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	for _, query := range []string{
 		"",

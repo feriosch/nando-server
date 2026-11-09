@@ -18,7 +18,7 @@ type settingsJSON struct {
 }
 
 func TestCaloriesNotificationsAreOffUntilTheOwnerTurnsThemOn(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	want := settingsJSON{
 		NoEntriesReminder: notificationSettingJSON{Enabled: false, Time: "14:00"},
@@ -30,7 +30,7 @@ func TestCaloriesNotificationsAreOffUntilTheOwnerTurnsThemOn(t *testing.T) {
 }
 
 func TestOwnerSavesWhenCaloriesNotificationsAreSent(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	saved := settingsJSON{
 		NoEntriesReminder: notificationSettingJSON{Enabled: true, Time: "13:30"},
 		EveningSummary:    notificationSettingJSON{Enabled: true, Time: "22:00"},
@@ -44,7 +44,7 @@ func TestOwnerSavesWhenCaloriesNotificationsAreSent(t *testing.T) {
 }
 
 func TestInvalidCaloriesNotificationSettingsAreRejected(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	valid := map[string]any{"enabled": true, "time": "20:00"}
 
 	for _, body := range []any{

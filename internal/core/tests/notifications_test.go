@@ -63,7 +63,7 @@ func (p *provider) DueNotifications(context.Context, time.Time) ([]model.Notific
 
 // subscribe registers push's Push Subscription, as the web app does once the
 // Owner allows Notifications on this device.
-func (d *device) subscribe(push *testpush.Service) {
+func (d *browser) subscribe(push *testpush.Service) {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodPost, "/api/push-subscriptions", mustJSON(d.nando.t, push.SubscriptionJSON()))
 	if rec.Code != http.StatusNoContent {
@@ -87,7 +87,7 @@ var eveningSummary = model.Notification{
 }
 
 func TestTickSendsDueNotificationsToEveryPushSubscription(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	homeScreenApp, safari := testpush.New(t), testpush.New(t)
 	phone.subscribe(homeScreenApp)
 	phone.subscribe(safari)
@@ -104,7 +104,7 @@ func TestTickSendsDueNotificationsToEveryPushSubscription(t *testing.T) {
 }
 
 func TestARetriedTickSendsEachNotificationOnlyOnce(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	push := testpush.New(t)
 	phone.subscribe(push)
 	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
@@ -128,7 +128,7 @@ func TestAPushSubscriptionThePushServiceNoLongerKnowsIsDeleted(t *testing.T) {
 		{status: http.StatusInternalServerError, keepsTrying: true},
 	} {
 		t.Run(http.StatusText(tc.status), func(t *testing.T) {
-			n, phone := signedInPhone(t, wednesday)
+			n, phone := signedInBrowser(t, wednesday)
 			push := testpush.New(t)
 			phone.subscribe(push)
 			p := &provider{due: []model.Notification{eveningSummary}}
@@ -152,7 +152,7 @@ func TestAPushSubscriptionThePushServiceNoLongerKnowsIsDeleted(t *testing.T) {
 }
 
 func TestAnUnregisteredPushSubscriptionGetsNoNotifications(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	push := testpush.New(t)
 	phone.subscribe(push)
 	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
@@ -169,7 +169,7 @@ func TestAnUnregisteredPushSubscriptionGetsNoNotifications(t *testing.T) {
 }
 
 func TestInvalidPushSubscriptionsAreRejected(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	valid := testpush.New(t).SubscriptionJSON()
 	keys := valid["keys"].(map[string]string)
 	with := func(change func(sub map[string]any, keys map[string]string)) []byte {
@@ -196,7 +196,7 @@ func TestInvalidPushSubscriptionsAreRejected(t *testing.T) {
 }
 
 func TestPushMessagesAreSignedWithTheVAPIDKeyTheWebAppSubscribesWith(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	rec := phone.do(http.MethodGet, "/api/push-subscriptions/vapid-public-key", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/push-subscriptions/vapid-public-key: status = %d, body %q", rec.Code, rec.Body)
@@ -219,7 +219,7 @@ func TestPushMessagesAreSignedWithTheVAPIDKeyTheWebAppSubscribesWith(t *testing.
 }
 
 // saveWeighInReminder sets the Weigh-in reminder, keeping the other settings.
-func (d *device) saveWeighInReminder(r reminderJSON) {
+func (d *browser) saveWeighInReminder(r reminderJSON) {
 	d.nando.t.Helper()
 	s := d.getSettings()
 	s.WeighInReminder = r
@@ -233,7 +233,7 @@ var weighInReminder = testpush.Notification{Title: "Weigh-in", Body: "Time to lo
 func TestWeighInReminderIsSentAtItsTimeEachWeek(t *testing.T) {
 	tokyo, _ := time.LoadLocation("Asia/Tokyo")
 	mondayMorning := time.Date(2026, 10, 26, 8, 0, 0, 0, tokyo) // Sunday 23:00 UTC
-	n, phone := signedInPhone(t, mondayMorning.Add(-30*time.Minute))
+	n, phone := signedInBrowser(t, mondayMorning.Add(-30*time.Minute))
 	push := testpush.New(t)
 	phone.subscribe(push)
 	phone.saveTimeZone("Asia/Tokyo")
@@ -263,7 +263,7 @@ func TestWeighInReminderIsSentAtItsTimeEachWeek(t *testing.T) {
 
 func TestDisabledWeighInReminderIsNotSent(t *testing.T) {
 	monday8am := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
-	n, phone := signedInPhone(t, monday8am)
+	n, phone := signedInBrowser(t, monday8am)
 	push := testpush.New(t)
 	phone.subscribe(push)
 	phone.saveWeighInReminder(reminderJSON{Enabled: false, Weekday: "monday", Time: "08:00"})
@@ -284,7 +284,7 @@ func (brokenProvider) DueNotifications(context.Context, time.Time) ([]model.Noti
 }
 
 func TestABrokenProviderDoesNotStopTheOthers(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	push := testpush.New(t)
 	phone.subscribe(push)
 	n.core.AddNotificationProvider(brokenProvider{})
@@ -304,7 +304,7 @@ func TestABrokenProviderDoesNotStopTheOthers(t *testing.T) {
 func TestWeighInReminderIsSentInATimeZoneOffsetByAQuarterHour(t *testing.T) {
 	kathmandu, _ := time.LoadLocation("Asia/Kathmandu") // UTC+5:45
 	mondayMorning := time.Date(2026, 10, 26, 8, 0, 0, 0, kathmandu)
-	n, phone := signedInPhone(t, mondayMorning)
+	n, phone := signedInBrowser(t, mondayMorning)
 	push := testpush.New(t)
 	phone.subscribe(push)
 	phone.saveTimeZone("Asia/Kathmandu")
@@ -318,7 +318,7 @@ func TestWeighInReminderIsSentInATimeZoneOffsetByAQuarterHour(t *testing.T) {
 }
 
 func TestANotificationWithoutATitleOrLinkShowsTheDefaults(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	push := testpush.New(t)
 	phone.subscribe(push)
 	n.core.AddNotificationProvider(&provider{due: []model.Notification{
@@ -334,7 +334,7 @@ func TestANotificationWithoutATitleOrLinkShowsTheDefaults(t *testing.T) {
 }
 
 func TestANotificationCoreCannotRecordDoesNotStopTheOthers(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	push := testpush.New(t)
 	phone.subscribe(push)
 	// An ID too big for a MongoDB document (16 MB), so recording it as sent fails.

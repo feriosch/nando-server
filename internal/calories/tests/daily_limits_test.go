@@ -6,7 +6,7 @@ import (
 )
 
 // dailyLimitOn is the Daily Limit the Day view shows for day, or nil.
-func (d *device) dailyLimitOn(day string) *int {
+func (d *browser) dailyLimitOn(day string) *int {
 	d.nando.t.Helper()
 	return get[dayJSON](d, "/api/calories/days/"+day).DailyLimit
 }
@@ -18,13 +18,13 @@ type dailyLimitJSON struct {
 }
 
 // setDailyLimit sets the Daily Limit to kcal from today.
-func (d *device) setDailyLimit(kcal int) {
+func (d *browser) setDailyLimit(kcal int) {
 	d.nando.t.Helper()
 	d.must(http.MethodPut, "/api/calories/daily-limit", map[string]any{"kcal": kcal}, http.StatusNoContent)
 }
 
 func TestOwnerSetsTheDailyLimitFromToday(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	phone.setDailyLimit(2000)
 
@@ -35,7 +35,7 @@ func TestOwnerSetsTheDailyLimitFromToday(t *testing.T) {
 }
 
 func TestInvalidDailyLimitsAreRejected(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	phone.setDailyLimit(2000)
 
 	for _, body := range []any{
@@ -55,7 +55,7 @@ func TestInvalidDailyLimitsAreRejected(t *testing.T) {
 }
 
 func TestEachDayIsJudgedAgainstTheDailyLimitItHad(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	phone.setDailyLimit(2000)
 	n.clock.Set(wednesday.AddDate(0, 0, 2)) // Friday 2026-10-23
 	phone.setDailyLimit(1500)
@@ -79,7 +79,7 @@ func TestEachDayIsJudgedAgainstTheDailyLimitItHad(t *testing.T) {
 }
 
 func TestThereIsNoDailyLimitUntilOneIsSet(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	if got := get[*dailyLimitJSON](phone, "/api/calories/daily-limit"); got != nil {
 		t.Errorf("daily limit = %+v, want null", got)

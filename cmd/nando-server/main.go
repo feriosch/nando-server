@@ -168,7 +168,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Enrollment Code: %s\nValid for one passkey, for the next 15 minutes.\n", code)
+		fmt.Printf("Enrollment Code: %s\nValid for one Passkey, for the next 15 minutes.\n", code)
 		return nil
 	case len(args) > 0:
 		return fmt.Errorf("unknown arguments %q; the only command is enroll", args)

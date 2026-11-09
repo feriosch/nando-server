@@ -11,19 +11,19 @@ import (
 	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
-// signedInPhone returns Nando with an enrolled, signed-in iPhone, its clock
-// set to now.
-func signedInPhone(t *testing.T, now time.Time) (*nando, *device) {
+// signedInBrowser returns Nando with a browser on the Owner's iPhone that has
+// enrolled a Passkey and has a Session, its clock set to now.
+func signedInBrowser(t *testing.T, now time.Time) (*nando, *browser) {
 	t.Helper()
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 	n.clock.Set(now)
 	return n, phone
 }
 
 // saveTimeZone sets the Owner Time Zone, keeping the other settings.
-func (d *device) saveTimeZone(name string) {
+func (d *browser) saveTimeZone(name string) {
 	d.nando.t.Helper()
 	s := d.getSettings()
 	s.TimeZone = name
@@ -35,7 +35,7 @@ func (d *device) saveTimeZone(name string) {
 func TestTodayIsTheDayInTheOwnerTimeZone(t *testing.T) {
 	ctx := context.Background()
 	// Late on Sunday in UTC, already Monday in Tokyo.
-	n, phone := signedInPhone(t, time.Date(2026, 10, 25, 16, 0, 0, 0, time.UTC))
+	n, phone := signedInBrowser(t, time.Date(2026, 10, 25, 16, 0, 0, 0, time.UTC))
 	core := n.core.Service()
 
 	if got, err := core.Today(ctx); err != nil || got != "2026-10-25" {
@@ -54,7 +54,7 @@ func TestTodayIsTheDayInTheOwnerTimeZone(t *testing.T) {
 
 func TestLatestWeighInIsTheNewestWeeks(t *testing.T) {
 	ctx := context.Background()
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	core := n.core.Service()
 
 	if _, err := core.LatestWeighIn(ctx); !errors.Is(err, utils.ErrNotFound) {

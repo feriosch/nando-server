@@ -91,11 +91,11 @@ A single-use, short-lived code, issued only from the server's command line, that
 _Avoid_: Invite, setup token, recovery code, password
 
 **Sign in**:
-Proving it is the Owner with a Passkey, either an existing one or one just registered with an Enrollment Code, which starts a Session. Deleting that Session signs it out.
+Proving it is the Owner with a Passkey, either an existing one or one just registered with an Enrollment Code, which starts a Session. Unlike the other terms it is a verb, written in lowercase ("sign in", and "sign-in" as a noun).
 _Avoid_: Log in, login, authenticate
 
 **Session**:
-One browser or Home Screen app in which the Owner is signed in, so one iPhone can have two. It ends after 90 days unused or when the Owner deletes it, and is separate from any Push Subscription on the same device.
+One browser or Home Screen app in which the Owner is signed in, so one iPhone can have two, and separate from any Push Subscription on the same device. It expires if left unused, and deleting it signs that browser or Home Screen app out.
 _Avoid_: Login, token, device
 
 ## Notifications

@@ -75,7 +75,7 @@ Every `/api/...` route, Core's and every Module's, needs a valid Session cookie 
 
 ### `DELETE /api/sessions/{id}`
 
-`204`: signs that Session out; its browser's next request gets `401`. Deleting the `current` Session also deletes this browser's cookie (`Max-Age=0`). Deleting a Session that doesn't exist also answers `204`.
+`204`: deletes that Session, which signs its browser out; that browser's next request gets `401`. Deleting the `current` Session also deletes this browser's cookie (`Max-Age=0`). Deleting a Session that doesn't exist also answers `204`.
 
 ### `GET /api/passkeys`
 
