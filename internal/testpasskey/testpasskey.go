@@ -18,16 +18,15 @@ import (
 // Keychain: it answers the options the server sends the way the browser's
 // navigator.credentials.create and .get would.
 type Passkey struct {
-	origin     string
 	id         []byte
 	key        *ecdsa.PrivateKey
 	userHandle []byte
 	signCount  uint32
 }
 
-// New returns a passkey not yet created, used from the web app at origin.
-func New(origin string) *Passkey {
-	return &Passkey{origin: origin}
+// New returns a passkey not yet created.
+func New() *Passkey {
+	return &Passkey{}
 }
 
 // ID is the credential ID, base64url without padding, as the server lists it.
@@ -54,14 +53,6 @@ var b64 = base64.RawURLEncoding
 func (p *Passkey) Copy() *Passkey {
 	c := *p
 	return &c
-}
-
-// UsedFrom returns this passkey as synced to a browser on the web app at
-// origin, which the browser then puts in each answer.
-func (p *Passkey) UsedFrom(origin string) *Passkey {
-	c := p.Copy()
-	c.origin = origin
-	return c
 }
 
 // SetSignCount makes the passkey report n as its sign count from now on, as a
@@ -93,9 +84,10 @@ func (p *Passkey) ExcludedBy(t *testing.T, options []byte) bool {
 	return false
 }
 
-// Create answers the options from /auth/register/begin with a new passkey and
-// returns the body for /auth/register/finish.
-func (p *Passkey) Create(t *testing.T, options []byte) []byte {
+// Create answers the options from /auth/register/begin with a new passkey,
+// from a browser on the web app at origin, and returns the body for
+// /auth/register/finish.
+func (p *Passkey) Create(t *testing.T, origin string, options []byte) []byte {
 	t.Helper()
 	var opts struct {
 		PublicKey struct {
@@ -142,7 +134,7 @@ func (p *Passkey) Create(t *testing.T, options []byte) []byte {
 		"rawId": b64.EncodeToString(p.id),
 		"type":  "public-key",
 		"response": map[string]any{
-			"clientDataJSON": b64.EncodeToString(clientData(t, p.origin, "webauthn.create", opts.PublicKey.Challenge)),
+			"clientDataJSON": b64.EncodeToString(clientData(t, origin, "webauthn.create", opts.PublicKey.Challenge)),
 			"attestationObject": b64.EncodeToString(mustCBOR(t, map[string]any{
 				"fmt":      "none",
 				"attStmt":  map[string]any{},
@@ -156,8 +148,9 @@ func (p *Passkey) Create(t *testing.T, options []byte) []byte {
 }
 
 // Get answers the options from /auth/signin/begin by signing in with this
-// passkey and returns the body for /auth/signin/finish.
-func (p *Passkey) Get(t *testing.T, options []byte) []byte {
+// passkey, from a browser on the web app at origin, and returns the body for
+// /auth/signin/finish.
+func (p *Passkey) Get(t *testing.T, origin string, options []byte) []byte {
 	t.Helper()
 	var opts struct {
 		PublicKey struct {
@@ -170,7 +163,7 @@ func (p *Passkey) Get(t *testing.T, options []byte) []byte {
 	}
 
 	authData := p.authData(opts.PublicKey.RPID, passkeyFlags)
-	cdata := clientData(t, p.origin, "webauthn.get", opts.PublicKey.Challenge)
+	cdata := clientData(t, origin, "webauthn.get", opts.PublicKey.Challenge)
 	cdataHash := sha256.Sum256(cdata)
 	digest := sha256.Sum256(append(authData, cdataHash[:]...))
 	sig, err := ecdsa.SignASN1(rand.Reader, p.key, digest[:])

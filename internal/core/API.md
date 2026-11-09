@@ -8,7 +8,7 @@ The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors
 
 ## Signing in
 
-These routes need no session. Passkeys belong to the relying party `<DOMAIN>` and work from every origin in `ALLOWED_ORIGINS` that is under it ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)); a `finish` whose answer comes from any other origin is refused with `401`. Each ceremony is a `begin` that returns the options for the browser, then a `finish` that takes what the browser returned. A ceremony can finish only once, within 5 minutes of its `begin`.
+These routes need no session. Passkeys belong to the relying party `<DOMAIN>` and work from every origin in `ALLOWED_ORIGINS`; a `finish` whose answer comes from any other origin is refused. The server doesn't check that those origins are under `<DOMAIN>`, but browsers use a passkey only on pages under its relying party ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)). Each ceremony is a `begin` that returns the options for the browser, then a `finish` that takes what the browser returned. A ceremony can finish only once, within 5 minutes of its `begin`.
 
 Both `finish` routes answer `204` and set the session cookie, which signs the device in:
 
@@ -35,7 +35,7 @@ Body: the `PublicKeyCredential` from `navigator.credentials.create`, as `credent
 
 - `204`: the passkey is stored and the device is signed in. The Enrollment Code is used up only now, so a cancelled Face ID prompt doesn't waste it.
 - `400`: the body isn't a `PublicKeyCredential`, or its challenge was for a sign-in.
-- `401`: the challenge is unknown, used or expired; the passkey couldn't be verified; or the Enrollment Code expired or was used in the meantime.
+- `401`: the challenge is unknown, used or expired; the passkey couldn't be verified, for example because it answered from an origin not in `ALLOWED_ORIGINS`; or the Enrollment Code expired or was used in the meantime.
 
 ### `POST /auth/signin/begin`
 
@@ -49,7 +49,7 @@ Body: the `PublicKeyCredential` from `navigator.credentials.get`, as `credential
 
 - `204`: the device is signed in.
 - `400`: the body isn't a `PublicKeyCredential`, or its challenge was for a registration.
-- `401`: the challenge is unknown, used or expired; the passkey is unknown (for example, deleted) or couldn't be verified; its sign count didn't go up since its last sign-in, which suggests it was copied; or another sign-in with the same passkey finished first. Synced passkeys always report a sign count of 0, which is never rejected; this mainly protects hardware security keys. Every refused passkey gets the same message, so a copied one isn't told why; the server logs the reason.
+- `401`: the challenge is unknown, used or expired; the passkey is unknown (for example, deleted) or couldn't be verified, for example because it answered from an origin not in `ALLOWED_ORIGINS`; its sign count didn't go up since its last sign-in, which suggests it was copied; or another sign-in with the same passkey finished first. Synced passkeys always report a sign count of 0, which is never rejected; this mainly protects hardware security keys. Every refused passkey gets the same message, so a copied one isn't told why; the server logs the reason.
 
 ## Everything under `/api/`
 

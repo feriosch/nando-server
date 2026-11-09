@@ -22,12 +22,13 @@ import (
 
 const (
 	webOrigin     = "https://web.example.com"
+	betaOrigin    = "https://beta.example.com" // a second copy of the web app
+	evilOrigin    = "https://evil.example.com" // under the domain, but not allowed
 	sessionCookie = "nando_session"
 )
 
-// allowedOrigins is ALLOWED_ORIGINS: the web app at webOrigin and a second
-// copy of it, both under the Domain example.com.
-var allowedOrigins = []string{webOrigin, "https://beta.example.com"}
+// allowedOrigins is ALLOWED_ORIGINS, both under the domain example.com.
+var allowedOrigins = []string{webOrigin, betaOrigin}
 
 // clock is the time Core sees; tests set it and move it forward by hand.
 type clock struct{ now time.Time }
@@ -95,7 +96,7 @@ func (n *nando) issueEnrollmentCode() string {
 // and, once it has one, a passkey.
 type device struct {
 	nando     *nando
-	origin    string // the web app's origin this device uses
+	origin    string
 	userAgent string
 	session   *http.Cookie
 	passkey   *testpasskey.Passkey
@@ -147,8 +148,8 @@ func (d *device) enroll(code string) *httptest.ResponseRecorder {
 	if d.passkey != nil && d.passkey.ExcludedBy(d.nando.t, rec.Body.Bytes()) {
 		return rec
 	}
-	d.passkey = testpasskey.New(d.origin)
-	return d.do(http.MethodPost, "/auth/register/finish", d.passkey.Create(d.nando.t, rec.Body.Bytes()))
+	d.passkey = testpasskey.New()
+	return d.do(http.MethodPost, "/auth/register/finish", d.passkey.Create(d.nando.t, d.origin, rec.Body.Bytes()))
 }
 
 // mustEnroll enrolls with a fresh Enrollment Code and fails the test if that
@@ -168,7 +169,7 @@ func (d *device) signIn() *httptest.ResponseRecorder {
 	if rec.Code != http.StatusOK {
 		return rec
 	}
-	return d.do(http.MethodPost, "/auth/signin/finish", d.passkey.Get(d.nando.t, rec.Body.Bytes()))
+	return d.do(http.MethodPost, "/auth/signin/finish", d.passkey.Get(d.nando.t, d.origin, rec.Body.Bytes()))
 }
 
 // mustSignIn signs in and fails the test if that doesn't work.
@@ -292,8 +293,8 @@ func TestSimultaneousSignInsNeverLowerTheSignCount(t *testing.T) {
 		behind.passkey, ahead.passkey = laptop.passkey.Copy(), laptop.passkey.Copy()
 		behind.passkey.SetSignCount(base + 1)
 		ahead.passkey.SetSignCount(base + 2)
-		behindBody := behind.passkey.Get(t, behind.do(http.MethodPost, "/auth/signin/begin", nil).Body.Bytes())
-		aheadBody := ahead.passkey.Get(t, ahead.do(http.MethodPost, "/auth/signin/begin", nil).Body.Bytes())
+		behindBody := behind.passkey.Get(t, behind.origin, behind.do(http.MethodPost, "/auth/signin/begin", nil).Body.Bytes())
+		aheadBody := ahead.passkey.Get(t, ahead.origin, ahead.do(http.MethodPost, "/auth/signin/begin", nil).Body.Bytes())
 
 		var wg sync.WaitGroup
 		var behindCode, aheadCode int
@@ -326,10 +327,7 @@ func TestPasskeySignsInFromEveryAllowedOrigin(t *testing.T) {
 	phone := n.newDevice("iPhone")
 	phone.mustEnroll()
 
-	beta := n.newDeviceAt("https://beta.example.com", "iPhone")
-	beta.passkey = phone.passkey.UsedFrom("https://beta.example.com")
-
-	beta.mustSignIn()
+	n.newDeviceAt(betaOrigin, "iPhone").syncedFrom(phone).mustSignIn()
 }
 
 func TestPasskeyFromAnOriginNotAllowedIsRejected(t *testing.T) {
@@ -337,16 +335,13 @@ func TestPasskeyFromAnOriginNotAllowedIsRejected(t *testing.T) {
 	phone := n.newDevice("iPhone")
 	phone.mustEnroll()
 
-	// Under the Domain, so a browser would let it use the passkey, but not in
-	// ALLOWED_ORIGINS.
-	evil := n.newDeviceAt("https://evil.example.com", "iPhone")
-	evil.passkey = phone.passkey.UsedFrom("https://evil.example.com")
+	evil := n.newDeviceAt(evilOrigin, "iPhone").syncedFrom(phone)
 
 	if rec := evil.signIn(); rec.Code != http.StatusUnauthorized {
-		t.Fatalf("sign in from https://evil.example.com: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		t.Fatalf("sign in from %s: status = %d, want %d", evilOrigin, rec.Code, http.StatusUnauthorized)
 	}
 	if evil.session != nil {
-		t.Error("sign in from https://evil.example.com set a session cookie")
+		t.Errorf("sign in from %s set a session cookie", evilOrigin)
 	}
 }
 
@@ -596,10 +591,10 @@ func TestEnrollmentCodeRegistersOnlyOnePasskeyEvenWhenBegunTwice(t *testing.T) {
 	phone, mac := n.newDevice("iPhone"), n.newDevice("Mac")
 	phoneOptions := phone.do(http.MethodPost, "/auth/register/begin", code)
 	macOptions := mac.do(http.MethodPost, "/auth/register/begin", code)
-	phone.passkey, mac.passkey = testpasskey.New(webOrigin), testpasskey.New(webOrigin)
+	phone.passkey, mac.passkey = testpasskey.New(), testpasskey.New()
 
-	first := phone.do(http.MethodPost, "/auth/register/finish", phone.passkey.Create(t, phoneOptions.Body.Bytes()))
-	second := mac.do(http.MethodPost, "/auth/register/finish", mac.passkey.Create(t, macOptions.Body.Bytes()))
+	first := phone.do(http.MethodPost, "/auth/register/finish", phone.passkey.Create(t, phone.origin, phoneOptions.Body.Bytes()))
+	second := mac.do(http.MethodPost, "/auth/register/finish", mac.passkey.Create(t, mac.origin, macOptions.Body.Bytes()))
 
 	if first.Code != http.StatusNoContent {
 		t.Fatalf("first finish: status = %d, body %q", first.Code, first.Body)
