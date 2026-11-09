@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// EnrollmentCode lets the Owner register a new passkey once, before it expires.
+// EnrollmentCode lets the Owner register a new Passkey once, before it expires.
 // Only the code's hash is stored.
 type EnrollmentCode struct {
 	Hash      []byte    `bson:"_id"`

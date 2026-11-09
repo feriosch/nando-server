@@ -7,7 +7,7 @@ Nando runs as two Cloud Run services in `asia-northeast1`: `nando-web` (nginx se
 - **e2-micro VM + Caddy + domain**: compute is free-tier, but the static external IP is billed while the VM runs, the free tier is US-only (~120 ms from Japan), and certificates, OS and restarts become our job.
 - **Scheduled VM shutdowns** to cut the IP charge: rejected because the server must be reachable at any hour to deliver Notifications and to serve the app.
 - **A `nando` database in the existing US-East Atlas cluster** (shared with benkyo): rejected because every query from a Tokyo server would cross the Pacific (~150 ms each), and it would share benkyo's 512 MB quota.
-- **Single origin** (`<domain>/api`): simpler (no CORS), but separate subdomains keep the two repos independently deployable; `web.` and `api.` are same-site, so the session cookie still works under Safari's cross-site cookie blocking.
+- **Single origin** (`<domain>/api`): simpler (no CORS), but separate subdomains keep the two repos independently deployable; `web.` and `api.` are same-site, so the Session cookie still works under Safari's cross-site cookie blocking.
 
 ## Consequences
 

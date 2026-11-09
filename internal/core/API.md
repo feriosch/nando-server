@@ -1,6 +1,6 @@
 # Core API
 
-Identity: passkeys, Enrollment Codes and sessions ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)).
+Identity: Passkeys, Enrollment Codes and Sessions ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)).
 Settings and body measurements: the Owner Time Zone, height and Weigh-ins ([ADR 0003](../../docs/adr/0003-body-measurements-in-core.md)).
 Notifications: Push Subscriptions, the push messages Core sends, and the scheduler's tick ([ADR 0001](../../docs/adr/0001-cloud-run-hosting.md)).
 
@@ -8,9 +8,9 @@ The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors
 
 ## Signing in
 
-These routes need no session. Passkeys belong to the relying party `<DOMAIN>` and work from every origin in `ALLOWED_ORIGINS`; a `finish` whose answer comes from any other origin is refused. The server doesn't check that those origins are under `<DOMAIN>`, but browsers use a passkey only on pages under its relying party ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)). Each ceremony is a `begin` that returns the options for the browser, then a `finish` that takes what the browser returned. A ceremony can finish only once, within 5 minutes of its `begin`.
+These routes need no Session. Passkeys belong to the relying party `<DOMAIN>` and work from every origin in `ALLOWED_ORIGINS`; a `finish` whose answer comes from any other origin is refused. The server doesn't check that those origins are under `<DOMAIN>`, but browsers use a Passkey only on pages under its relying party ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)). Each ceremony is a `begin` that returns the options for the browser, then a `finish` that takes what the browser returned. A ceremony can finish only once, within 5 minutes of its `begin`.
 
-Both `finish` routes answer `204` and set the session cookie, which signs the device in:
+Both `finish` routes answer `204`, start a Session and set its cookie:
 
 | Cookie          | Value                                                                                                  |
 | --------------- | ------------------------------------------------------------------------------------------------------ |
@@ -18,7 +18,7 @@ Both `finish` routes answer `204` and set the session cookie, which signs the de
 
 ### `POST /auth/register/begin`
 
-Registers a new passkey. This is the only way in without an existing passkey.
+Registers a new Passkey. This is the only way in without an existing Passkey.
 
 ```json
 { "code": "BY95P-1SQMF" }
@@ -26,38 +26,38 @@ Registers a new passkey. This is the only way in without an existing passkey.
 
 `code` is an Enrollment Code from `nando-server enroll`. It must be typed exactly as printed, dash and all.
 
-- `200`: `{ "publicKey": PublicKeyCredentialCreationOptionsJSON }`. Pass `publicKey` to `PublicKeyCredential.parseCreationOptionsFromJSON` and then to `navigator.credentials.create({ publicKey })`. The passkey is discoverable and needs user verification (Face ID). The options exclude the Owner's existing passkeys, so a device that already has one refuses with `InvalidStateError` instead of silently replacing it.
+- `200`: `{ "publicKey": PublicKeyCredentialCreationOptionsJSON }`. Pass `publicKey` to `PublicKeyCredential.parseCreationOptionsFromJSON` and then to `navigator.credentials.create({ publicKey })`. The Passkey is discoverable and needs user verification (Face ID). The options exclude the Owner's existing Passkeys, so a device that already has one refuses with `InvalidStateError` instead of silently replacing it.
 - `401`: the code is unknown, used or expired.
 
 ### `POST /auth/register/finish`
 
 Body: the `PublicKeyCredential` from `navigator.credentials.create`, as `credential.toJSON()`.
 
-- `204`: the passkey is stored and the device is signed in. The Enrollment Code is used up only now, so a cancelled Face ID prompt doesn't waste it.
+- `204`: the Passkey is stored and a Session started. The Enrollment Code is used up only now, so a cancelled Face ID prompt doesn't waste it.
 - `400`: the body isn't a `PublicKeyCredential`, or its challenge was for a sign-in.
-- `401`: the challenge is unknown, used or expired; the passkey couldn't be verified, for example because it answered from an origin not in `ALLOWED_ORIGINS`; or the Enrollment Code expired or was used in the meantime.
+- `401`: the challenge is unknown, used or expired; the Passkey couldn't be verified, for example because it answered from an origin not in `ALLOWED_ORIGINS`; or the Enrollment Code expired or was used in the meantime.
 
 ### `POST /auth/signin/begin`
 
 No body.
 
-- `200`: `{ "publicKey": PublicKeyCredentialRequestOptionsJSON }`. It lists no credentials, so the Owner picks any of their passkeys. Pass `publicKey` to `PublicKeyCredential.parseRequestOptionsFromJSON` and then to `navigator.credentials.get({ publicKey })`.
+- `200`: `{ "publicKey": PublicKeyCredentialRequestOptionsJSON }`. It lists no credentials, so the Owner picks any of their Passkeys. Pass `publicKey` to `PublicKeyCredential.parseRequestOptionsFromJSON` and then to `navigator.credentials.get({ publicKey })`.
 
 ### `POST /auth/signin/finish`
 
 Body: the `PublicKeyCredential` from `navigator.credentials.get`, as `credential.toJSON()`.
 
-- `204`: the device is signed in.
+- `204`: a Session is started.
 - `400`: the body isn't a `PublicKeyCredential`, or its challenge was for a registration.
-- `401`: the challenge is unknown, used or expired; the passkey is unknown (for example, deleted) or couldn't be verified, for example because it answered from an origin not in `ALLOWED_ORIGINS`; its sign count didn't go up since its last sign-in, which suggests it was copied; or another sign-in with the same passkey finished first. Synced passkeys always report a sign count of 0, which is never rejected; this mainly protects hardware security keys. Every refused passkey gets the same message, so a copied one isn't told why; the server logs the reason.
+- `401`: the challenge is unknown, used or expired; the Passkey is unknown (for example, deleted) or couldn't be verified, for example because it answered from an origin not in `ALLOWED_ORIGINS`; its sign count didn't go up since its last sign-in, which suggests it was copied; or another sign-in with the same Passkey finished first. Synced Passkeys always report a sign count of 0, which is never rejected; this mainly protects hardware security keys. Every refused Passkey gets the same message, so a copied one isn't told why; the server logs the reason.
 
 ## Everything under `/api/`
 
-Every `/api/...` route, Core's and every Module's, needs a valid session cookie and answers `401` without one. A session lasts 90 days from its last renewal. A session in use is renewed for another 90 days at most once a day, and the response that renews it sets the cookie again with a fresh `Max-Age`.
+Every `/api/...` route, Core's and every Module's, needs a valid Session cookie and answers `401` without one. A Session lasts 90 days from its last renewal. A Session in use is renewed for another 90 days at most once a day, and the response that renews it sets the cookie again with a fresh `Max-Age`.
 
 ### `GET /api/sessions`
 
-`200`: every signed-in device, oldest first.
+`200`: every Session, oldest first.
 
 ```json
 [
@@ -71,15 +71,15 @@ Every `/api/...` route, Core's and every Module's, needs a valid session cookie 
 ]
 ```
 
-`userAgent` is the browser's from when it signed in. `current` marks the session making this request.
+`userAgent` is the browser's from when it signed in. `current` marks the Session making this request.
 
 ### `DELETE /api/sessions/{id}`
 
-`204`: signs that device out; its next request gets `401`. Deleting the `current` session signs this device out, and the response also deletes its cookie (`Max-Age=0`). Deleting a session that doesn't exist also answers `204`.
+`204`: signs that Session out; its browser's next request gets `401`. Deleting the `current` Session also deletes this browser's cookie (`Max-Age=0`). Deleting a Session that doesn't exist also answers `204`.
 
 ### `GET /api/passkeys`
 
-`200`: the Owner's passkeys, oldest first.
+`200`: the Owner's Passkeys, oldest first.
 
 ```json
 [{ "id": "q1w2…", "createdAt": "2026-10-22T10:00:00Z" }]
@@ -89,7 +89,7 @@ Every `/api/...` route, Core's and every Module's, needs a valid session cookie 
 
 ### `DELETE /api/passkeys/{id}`
 
-`204`: that passkey can no longer sign in. Devices already signed in with it stay signed in until their sessions are deleted. Deleting the last passkey is allowed; `nando-server enroll` is the way back in.
+`204`: that Passkey can no longer sign in. Sessions it already started last until they end or are deleted. Deleting the last Passkey is allowed; `nando-server enroll` is the way back in.
 
 `400`: `id` isn't base64url.
 
@@ -227,7 +227,7 @@ Core's own Notification is the Weigh-in reminder: `{ "title": "Weigh-in", "body"
 
 ### `POST /internal/tick`
 
-Called only by Cloud Scheduler, every 30 minutes at :00 and :30. It needs no session, but its `Authorization: Bearer` token must be a Google-signed OIDC token for `TICK_AUDIENCE` issued to `SCHEDULER_SERVICE_ACCOUNT`.
+Called only by Cloud Scheduler, every 30 minutes at :00 and :30. It needs no Session, but its `Authorization: Bearer` token must be a Google-signed OIDC token for `TICK_AUDIENCE` issued to `SCHEDULER_SERVICE_ACCOUNT`.
 
 At each tick Core asks every Notification provider (Core's own and every Module's) which Notifications are due in the current half hour, the one starting at :00 or :30 in the Owner Time Zone, and sends each one that hasn't been sent before. Every Notification has an ID, such as `calories:evening-summary:2026-10-20`, that Core remembers for 30 days in `sent_notifications`.
 

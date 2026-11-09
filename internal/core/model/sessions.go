@@ -11,7 +11,7 @@ type Session struct {
 	ID        string `bson:"_id"`
 	TokenHash []byte `bson:"tokenHash"`
 	// UserAgent is the browser's, from when it signed in, so the Owner can tell
-	// sessions apart.
+	// Sessions apart.
 	UserAgent string    `bson:"userAgent"`
 	CreatedAt time.Time `bson:"createdAt"`
 	// RenewedAt is when ExpiresAt was last pushed back.
@@ -22,9 +22,9 @@ type Session struct {
 // SessionsRepository reads and writes the sessions collection.
 type SessionsRepository interface {
 	Insert(ctx context.Context, session Session) error
-	// Find returns the session with this token hash that is unexpired at now.
+	// Find returns the Session with this token hash that is unexpired at now.
 	Find(ctx context.Context, tokenHash []byte, now time.Time) (Session, error)
-	// List returns the sessions unexpired at now, oldest first.
+	// List returns the Sessions unexpired at now, oldest first.
 	List(ctx context.Context, now time.Time) ([]Session, error)
 	Renew(ctx context.Context, id string, renewedAt, expiresAt time.Time) error
 	Delete(ctx context.Context, id string) error

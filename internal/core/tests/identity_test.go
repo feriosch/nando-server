@@ -93,7 +93,7 @@ func (n *nando) issueEnrollmentCode() string {
 }
 
 // device is one browser (or Home Screen app) using Nando, with its own cookies
-// and, once it has one, a passkey.
+// and, once it has one, a Passkey.
 type device struct {
 	nando     *nando
 	origin    string
@@ -111,7 +111,7 @@ func (n *nando) newDeviceAt(origin, userAgent string) *device {
 	return &device{nando: n, origin: origin, userAgent: userAgent}
 }
 
-// do sends a request from the web app, carrying and keeping the session cookie
+// do sends a request from the web app, carrying and keeping the Session cookie
 // the way a browser would.
 func (d *device) do(method, path string, body []byte) *httptest.ResponseRecorder {
 	d.nando.t.Helper()
@@ -135,9 +135,9 @@ func (d *device) do(method, path string, body []byte) *httptest.ResponseRecorder
 	return rec
 }
 
-// enroll registers a new passkey on this device with code, returning the
+// enroll registers a new Passkey on this device with code, returning the
 // response that ends the ceremony (or the first one that fails). If the
-// server excludes the passkey this device already has, the browser refuses
+// server excludes the Passkey this device already has, the browser refuses
 // and enroll returns the begin response, as no finish request is sent.
 func (d *device) enroll(code string) *httptest.ResponseRecorder {
 	d.nando.t.Helper()
@@ -161,7 +161,7 @@ func (d *device) mustEnroll() {
 	}
 }
 
-// signIn signs this device in with its passkey, returning the response that
+// signIn signs this device in with its Passkey, returning the response that
 // ends the ceremony (or the first one that fails).
 func (d *device) signIn() *httptest.ResponseRecorder {
 	d.nando.t.Helper()
@@ -180,7 +180,7 @@ func (d *device) mustSignIn() {
 	}
 }
 
-// syncedFrom gives this device the passkey on other, as iCloud Keychain does.
+// syncedFrom gives this device the Passkey on other, as iCloud Keychain does.
 func (d *device) syncedFrom(other *device) *device {
 	d.passkey = other.passkey
 	return d
@@ -439,7 +439,7 @@ func TestSessionRenewsAtMostOnceADay(t *testing.T) {
 	}
 }
 
-// sessionCookieIn returns the session cookie rec sets, if any.
+// sessionCookieIn returns the Session cookie rec sets, if any.
 func sessionCookieIn(rec *httptest.ResponseRecorder) *http.Cookie {
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == sessionCookie {
@@ -449,7 +449,7 @@ func sessionCookieIn(rec *httptest.ResponseRecorder) *http.Cookie {
 	return nil
 }
 
-// sessionJSON is one session as GET /api/sessions lists it.
+// sessionJSON is one Session as GET /api/sessions lists it.
 type sessionJSON struct {
 	ID        string `json:"id"`
 	UserAgent string `json:"userAgent"`
@@ -469,7 +469,7 @@ func (d *device) listSessions() []sessionJSON {
 	return sessions
 }
 
-func TestOwnerSeesEachSignedInDevice(t *testing.T) {
+func TestOwnerSeesEachSession(t *testing.T) {
 	n := newNando(t)
 	phone := n.newDevice("iPhone")
 	phone.mustEnroll()
@@ -492,7 +492,7 @@ func TestOwnerSeesEachSignedInDevice(t *testing.T) {
 	}
 }
 
-func TestDeletingASessionSignsThatDeviceOut(t *testing.T) {
+func TestDeletingASessionSignsItOut(t *testing.T) {
 	n := newNando(t)
 	phone := n.newDevice("iPhone")
 	phone.mustEnroll()
@@ -513,7 +513,7 @@ func TestDeletingASessionSignsThatDeviceOut(t *testing.T) {
 	}
 }
 
-// passkeyJSON is one passkey as GET /api/passkeys lists it.
+// passkeyJSON is one Passkey as GET /api/passkeys lists it.
 type passkeyJSON struct {
 	ID string `json:"id"`
 }
@@ -533,7 +533,7 @@ func (d *device) listPasskeys() []passkeyJSON {
 
 func TestOwnerSeesEachPasskey(t *testing.T) {
 	n := newNando(t)
-	// One passkey in iCloud Keychain, one in Google Password Manager.
+	// One Passkey in iCloud Keychain, one in Google Password Manager.
 	phone := n.newDevice("iPhone")
 	phone.mustEnroll()
 	n.clock.Advance(time.Minute)
@@ -577,7 +577,7 @@ func TestReEnrollingADeviceKeepsItsPasskey(t *testing.T) {
 	phone.mustEnroll()
 
 	// Without the server excluding it, the authenticator would silently replace
-	// this passkey with a new one, leaving the old one listed but unusable.
+	// this Passkey with a new one, leaving the old one listed but unusable.
 	phone.enroll(n.issueEnrollmentCode())
 
 	if got := phone.listPasskeys(); len(got) != 1 || got[0].ID != phone.passkey.ID() {

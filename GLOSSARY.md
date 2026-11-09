@@ -82,9 +82,21 @@ _Avoid_: Weight log, measurement, entry
 
 ## Identity
 
+**Passkey**:
+A secret on the Owner's devices, unlocked by the device's own check such as Face ID, that proves it is the Owner. It counts as one Passkey however many devices it is synced to, and it is the only way to sign in.
+_Avoid_: Password, key, login
+
 **Enrollment Code**:
-A single-use, short-lived code, issued only from the server's command line, that lets the Owner register a new passkey; it is the only way into Nando without an existing passkey.
+A single-use, short-lived code, issued only from the server's command line, that lets the Owner register a new Passkey; it is the only way into Nando without an existing Passkey.
 _Avoid_: Invite, setup token, recovery code, password
+
+**Sign in**:
+Proving it is the Owner with a Passkey, either an existing one or one just registered with an Enrollment Code, which starts a Session. Deleting that Session signs it out.
+_Avoid_: Log in, login, authenticate
+
+**Session**:
+One browser or Home Screen app in which the Owner is signed in, so one iPhone can have two. It ends after 90 days unused or when the Owner deletes it, and is separate from any Push Subscription on the same device.
+_Avoid_: Login, token, device
 
 ## Notifications
 

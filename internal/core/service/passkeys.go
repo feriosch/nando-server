@@ -9,7 +9,7 @@ import (
 	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
-// PasskeysService handles requests about the Owner's passkeys. Registering
+// PasskeysService handles requests about the Owner's Passkeys. Registering
 // one and signing in with one are the IdentityService's.
 type PasskeysService struct {
 	passkeys model.PasskeysRepository
@@ -20,13 +20,13 @@ func NewPasskeys(passkeys model.PasskeysRepository) *PasskeysService {
 	return &PasskeysService{passkeys: passkeys}
 }
 
-// Routes adds the passkey routes to mux, under /api/passkeys.
+// Routes adds the Passkey routes to mux, under /api/passkeys.
 func (s *PasskeysService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/passkeys", s.listPasskeys)
 	mux.HandleFunc("DELETE /api/passkeys/{id}", s.deletePasskey)
 }
 
-// listPasskeys lists the Owner's passkeys.
+// listPasskeys lists the Owner's Passkeys.
 func (s *PasskeysService) listPasskeys(w http.ResponseWriter, r *http.Request) {
 	passkeys, err := s.passkeys.List(r.Context())
 	if err != nil {
@@ -44,8 +44,8 @@ func (s *PasskeysService) listPasskeys(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, list)
 }
 
-// deletePasskey stops a passkey signing in. Devices already signed in with it
-// stay signed in until their sessions are deleted.
+// deletePasskey stops a Passkey signing in. Sessions it already started last
+// until they end or are deleted.
 func (s *PasskeysService) deletePasskey(w http.ResponseWriter, r *http.Request) {
 	id, err := base64.RawURLEncoding.DecodeString(r.PathValue("id"))
 	if err != nil {

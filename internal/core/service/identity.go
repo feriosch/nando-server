@@ -25,14 +25,14 @@ const (
 	// enrollmentCodeAlphabet has 32 symbols, leaving out I, L, O and U, which
 	// are easily misread.
 	enrollmentCodeAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-	// signInRefused is the answer to every refused passkey, so a copied key
+	// signInRefused is the answer to every refused Passkey, so a copied Passkey
 	// isn't told what gave it away.
 	signInRefused = "that passkey is unknown or could not be verified"
 )
 
-// IdentityService signs the Owner in under /auth/: registering a passkey
-// with an Enrollment Code, and signing in with a passkey. Both end by having
-// the SessionsService start a session.
+// IdentityService signs the Owner in under /auth/: registering a Passkey
+// with an Enrollment Code, and signing in with a Passkey. Both end by having
+// the SessionsService start a Session.
 type IdentityService struct {
 	enrollmentCodes model.EnrollmentCodesRepository
 	ceremonies      model.CeremoniesRepository
@@ -42,7 +42,7 @@ type IdentityService struct {
 	now             func() time.Time
 }
 
-// NewIdentity returns the IdentityService for passkeys of domain, used from
+// NewIdentity returns the IdentityService for Passkeys of domain, used from
 // origins, with now as its clock.
 func NewIdentity(
 	enrollmentCodes model.EnrollmentCodesRepository,
@@ -132,7 +132,7 @@ func (s *IdentityService) beginRegistration(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Excluding the Owner's passkeys stops a device that already has one from
+	// Excluding the Owner's Passkeys stops a device that already has one from
 	// silently replacing it, which would leave the old one listed but unusable.
 	o, err := s.loadOwner(r.Context())
 	if err != nil {
@@ -152,8 +152,8 @@ func (s *IdentityService) beginRegistration(w http.ResponseWriter, r *http.Reque
 	utils.WriteJSON(w, http.StatusOK, creation)
 }
 
-// finishRegistration stores the new passkey from navigator.credentials.create,
-// uses up the Enrollment Code and signs this device in.
+// finishRegistration stores the new Passkey from navigator.credentials.create,
+// uses up the Enrollment Code and starts a Session.
 func (s *IdentityService) finishRegistration(w http.ResponseWriter, r *http.Request) {
 	parsed, err := protocol.ParseCredentialCreationResponseBody(r.Body)
 	if err != nil {
@@ -185,9 +185,9 @@ func (s *IdentityService) finishRegistration(w http.ResponseWriter, r *http.Requ
 		utils.ServerError(w, err)
 		return
 	}
-	// The code is used up only once the passkey is stored, so a cancelled
+	// The code is used up only once the Passkey is stored, so a cancelled
 	// Face ID prompt or a failed insert doesn't waste it. If another
-	// registration used it first, this passkey is taken back out.
+	// registration used it first, this Passkey is taken back out.
 	if err := s.enrollmentCodes.Use(r.Context(), ceremony.EnrollmentCodeHash, s.now()); err != nil {
 		if deleteErr := s.passkeys.Delete(r.Context(), credential.ID); deleteErr != nil {
 			utils.ServerError(w, errors.Join(err, deleteErr))
@@ -204,7 +204,7 @@ func (s *IdentityService) finishRegistration(w http.ResponseWriter, r *http.Requ
 }
 
 // beginSignIn answers with the options for navigator.credentials.get, letting
-// the Owner pick any of their passkeys.
+// the Owner pick any of their Passkeys.
 func (s *IdentityService) beginSignIn(w http.ResponseWriter, r *http.Request) {
 	assertion, sessionData, err := s.webauthn.BeginDiscoverableLogin()
 	if err != nil {
@@ -218,8 +218,8 @@ func (s *IdentityService) beginSignIn(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, assertion)
 }
 
-// finishSignIn checks the passkey's answer from navigator.credentials.get,
-// saves its new sign count and signs this device in.
+// finishSignIn checks the Passkey's answer from navigator.credentials.get,
+// saves its new sign count and starts a Session.
 func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 	parsed, err := protocol.ParseCredentialRequestResponseBody(r.Body)
 	if err != nil {
@@ -241,8 +241,8 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, signInRefused, http.StatusUnauthorized)
 		return
 	}
-	// A sign count that didn't go up means another copy of the passkey may
-	// exist. Synced passkeys always report 0, which never sets this, so it
+	// A sign count that didn't go up means another copy of the Passkey may
+	// exist. Synced Passkeys always report 0, which never sets this, so it
 	// guards hardware security keys.
 	if credential.Authenticator.CloneWarning {
 		log.Printf("sign-in refused: passkey %x reported sign count %d, not above the stored %d; it may have been copied",
@@ -256,7 +256,7 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Saved only if unchanged since it was read: of two sign-ins checked
-	// against the same sign count, only the first counts, and a passkey
+	// against the same sign count, only the first counts, and a Passkey
 	// deleted meanwhile can't sign in.
 	err = s.passkeys.Update(r.Context(), passkey.ID, passkey.Credential, stored)
 	if errors.Is(err, utils.ErrNotFound) {
@@ -275,8 +275,8 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// findOwner finds the Owner by the passkey they signed in with, keeping that
-// passkey as it was stored in found.
+// findOwner finds the Owner by the Passkey they signed in with, keeping that
+// Passkey as it was stored in found.
 func (s *IdentityService) findOwner(ctx context.Context, found *model.Passkey) webauthn.DiscoverableUserHandler {
 	return func(rawID, userHandle []byte) (webauthn.User, error) {
 		passkey, err := s.passkeys.Find(ctx, rawID)
@@ -292,7 +292,7 @@ func (s *IdentityService) findOwner(ctx context.Context, found *model.Passkey) w
 	}
 }
 
-// loadOwner returns the Owner with all their passkeys.
+// loadOwner returns the Owner with all their Passkeys.
 func (s *IdentityService) loadOwner(ctx context.Context) (owner, error) {
 	passkeys, err := s.passkeys.List(ctx)
 	if err != nil {
@@ -366,7 +366,7 @@ func ceremonyError(w http.ResponseWriter, err error) {
 	utils.ServerError(w, err)
 }
 
-// sha256Of hashes a secret (an Enrollment Code or a session token) for storing.
+// sha256Of hashes a secret (an Enrollment Code or a Session token) for storing.
 func sha256Of(s string) []byte {
 	h := sha256.Sum256([]byte(s))
 	return h[:]

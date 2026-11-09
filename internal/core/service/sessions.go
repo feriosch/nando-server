@@ -14,13 +14,13 @@ import (
 const (
 	sessionCookieName = "nando_session"
 	sessionLifetime   = 90 * 24 * time.Hour
-	// renewalInterval is the least time between renewals, so a session in use
+	// renewalInterval is the least time between renewals, so a Session in use
 	// isn't written to on every request.
 	renewalInterval = 24 * time.Hour
 )
 
-// SessionsService handles requests about sessions, and guards every /api/
-// route with RequireSession. Signing in ends by starting a session here.
+// SessionsService handles requests about Sessions, and guards every /api/
+// route with RequireSession. Signing in ends by starting a Session here.
 type SessionsService struct {
 	sessions model.SessionsRepository
 	domain   string
@@ -33,14 +33,14 @@ func NewSessions(sessions model.SessionsRepository, domain string, now func() ti
 	return &SessionsService{sessions: sessions, domain: domain, now: now}
 }
 
-// Routes adds the session routes to mux, under /api/sessions.
+// Routes adds the Session routes to mux, under /api/sessions.
 func (s *SessionsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/sessions", s.listSessions)
 	mux.HandleFunc("DELETE /api/sessions/{id}", s.deleteSession)
 }
 
-// startSession signs the device that sent r in: it stores a new session and
-// sets its cookie.
+// startSession starts a Session for the browser that sent r: it stores the
+// Session and sets its cookie.
 func (s *SessionsService) startSession(w http.ResponseWriter, r *http.Request) error {
 	token := rand.Text()
 	now := s.now()
@@ -64,7 +64,7 @@ func (s *SessionsService) setSessionCookie(w http.ResponseWriter, token string) 
 	http.SetCookie(w, s.sessionCookie(token, int(sessionLifetime/time.Second)))
 }
 
-// clearSessionCookie has the browser delete its session cookie.
+// clearSessionCookie has the browser delete its Session cookie.
 func (s *SessionsService) clearSessionCookie(w http.ResponseWriter) {
 	http.SetCookie(w, s.sessionCookie("", -1)) // sent as Max-Age=0
 }
@@ -85,7 +85,7 @@ func (s *SessionsService) sessionCookie(value string, maxAge int) *http.Cookie {
 }
 
 // RequireSession lets a request through to next only if it carries a valid
-// session; otherwise it answers 401. A session in use is renewed for another
+// Session; otherwise it answers 401. A Session in use is renewed for another
 // 90 days, at most once a day.
 func (s *SessionsService) RequireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -115,7 +115,7 @@ func (s *SessionsService) RequireSession(next http.Handler) http.Handler {
 	})
 }
 
-// currentSessionKey holds, in a request's context, the ID of the session
+// currentSessionKey holds, in a request's context, the ID of the Session
 // RequireSession let it through with.
 type currentSessionKey struct{}
 
@@ -124,7 +124,7 @@ func currentSession(r *http.Request) string {
 	return id
 }
 
-// listSessions lists every signed-in device, marking the one asking.
+// listSessions lists every Session, marking the one asking.
 func (s *SessionsService) listSessions(w http.ResponseWriter, r *http.Request) {
 	sessions, err := s.sessions.List(r.Context(), s.now())
 	if err != nil {
@@ -151,8 +151,8 @@ func (s *SessionsService) listSessions(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, list)
 }
 
-// deleteSession signs a device out. Deleting the current session signs out
-// the device asking, and has its browser delete the cookie too.
+// deleteSession deletes a Session, which signs it out. Deleting the current
+// Session also has the browser asking delete its cookie.
 func (s *SessionsService) deleteSession(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.sessions.Delete(r.Context(), id); err != nil {

@@ -1,6 +1,6 @@
 # Calories API
 
-The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, the Calories Home Card and Settings Section, and the Calories Notifications. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
+The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, the Calories Home Card and Settings Section, and the Calories Notifications. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
 
 A Day is a date in the Owner Time Zone, written `YYYY-MM-DD`.
 

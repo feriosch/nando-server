@@ -105,7 +105,7 @@ func signedInPhone(t *testing.T, now time.Time) (*nando, *device) {
 	return n, phone
 }
 
-// do sends a request from the web app with this device's session cookie;
+// do sends a request from the web app with this device's Session cookie;
 // body, unless nil, is sent as JSON.
 func (d *device) do(method, path string, body any) *httptest.ResponseRecorder {
 	t := d.nando.t
