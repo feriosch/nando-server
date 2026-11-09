@@ -36,6 +36,10 @@ _Avoid_: Widget, tile, panel
 The part of the single Settings screen that a Module (or Core itself) supplies for its own preferences, such as the Daily Limit for Calories.
 _Avoid_: Preferences page, module settings, config
 
+**Appearance**:
+Whether Nando shows its light or dark colours: Light, Dark, or System (following the device's own setting). It is chosen and kept on each device separately, not stored with the Owner's settings on the server.
+_Avoid_: Dark mode, color scheme, theme
+
 **Editable Window**:
 Today plus the previous 7 Days. Only Days inside it can be changed; older Days are read-only.
 _Avoid_: Grace period, edit range
