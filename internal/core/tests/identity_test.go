@@ -92,9 +92,9 @@ func (n *nando) issueEnrollmentCode() string {
 	return code
 }
 
-// device is one browser (or Home Screen app) using Nando, with its own cookies
-// and, once it has one, a passkey.
-type device struct {
+// browser is one browser or Home Screen app using Nando, with its own cookies
+// and, once it has one, a Passkey on its device.
+type browser struct {
 	nando     *nando
 	origin    string
 	userAgent string
@@ -102,18 +102,18 @@ type device struct {
 	passkey   *testpasskey.Passkey
 }
 
-func (n *nando) newDevice(userAgent string) *device {
-	return n.newDeviceAt(webOrigin, userAgent)
+func (n *nando) newBrowser(userAgent string) *browser {
+	return n.newBrowserAt(webOrigin, userAgent)
 }
 
-// newDeviceAt is newDevice using the web app served from origin.
-func (n *nando) newDeviceAt(origin, userAgent string) *device {
-	return &device{nando: n, origin: origin, userAgent: userAgent}
+// newBrowserAt is newBrowser using the web app served from origin.
+func (n *nando) newBrowserAt(origin, userAgent string) *browser {
+	return &browser{nando: n, origin: origin, userAgent: userAgent}
 }
 
-// do sends a request from the web app, carrying and keeping the session cookie
+// do sends a request from the web app, carrying and keeping the Session cookie
 // the way a browser would.
-func (d *device) do(method, path string, body []byte) *httptest.ResponseRecorder {
+func (d *browser) do(method, path string, body []byte) *httptest.ResponseRecorder {
 	d.nando.t.Helper()
 	req := httptest.NewRequest(method, path, bytes.NewReader(body))
 	req.Header.Set("Origin", d.origin)
@@ -135,11 +135,11 @@ func (d *device) do(method, path string, body []byte) *httptest.ResponseRecorder
 	return rec
 }
 
-// enroll registers a new passkey on this device with code, returning the
+// enroll registers a new Passkey from this browser with code, returning the
 // response that ends the ceremony (or the first one that fails). If the
-// server excludes the passkey this device already has, the browser refuses
+// server excludes the Passkey this browser already has, the browser refuses
 // and enroll returns the begin response, as no finish request is sent.
-func (d *device) enroll(code string) *httptest.ResponseRecorder {
+func (d *browser) enroll(code string) *httptest.ResponseRecorder {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodPost, "/auth/register/begin", mustJSON(d.nando.t, map[string]string{"code": code}))
 	if rec.Code != http.StatusOK {
@@ -154,16 +154,16 @@ func (d *device) enroll(code string) *httptest.ResponseRecorder {
 
 // mustEnroll enrolls with a fresh Enrollment Code and fails the test if that
 // doesn't work.
-func (d *device) mustEnroll() {
+func (d *browser) mustEnroll() {
 	d.nando.t.Helper()
 	if rec := d.enroll(d.nando.issueEnrollmentCode()); rec.Code != http.StatusNoContent {
 		d.nando.t.Fatalf("enroll: status = %d, body %q", rec.Code, rec.Body)
 	}
 }
 
-// signIn signs this device in with its passkey, returning the response that
-// ends the ceremony (or the first one that fails).
-func (d *device) signIn() *httptest.ResponseRecorder {
+// signIn signs in from this browser with its Passkey, starting a Session, and
+// returns the response that ends the ceremony (or the first one that fails).
+func (d *browser) signIn() *httptest.ResponseRecorder {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodPost, "/auth/signin/begin", nil)
 	if rec.Code != http.StatusOK {
@@ -173,15 +173,15 @@ func (d *device) signIn() *httptest.ResponseRecorder {
 }
 
 // mustSignIn signs in and fails the test if that doesn't work.
-func (d *device) mustSignIn() {
+func (d *browser) mustSignIn() {
 	d.nando.t.Helper()
 	if rec := d.signIn(); rec.Code != http.StatusNoContent {
 		d.nando.t.Fatalf("sign in: status = %d, body %q", rec.Code, rec.Body)
 	}
 }
 
-// syncedFrom gives this device the passkey on other, as iCloud Keychain does.
-func (d *device) syncedFrom(other *device) *device {
+// syncedFrom gives this browser the Passkey of other, as iCloud Keychain does.
+func (d *browser) syncedFrom(other *browser) *browser {
 	d.passkey = other.passkey
 	return d
 }
@@ -189,16 +189,16 @@ func (d *device) syncedFrom(other *device) *device {
 func TestAPIWithoutASessionIsUnauthorized(t *testing.T) {
 	n := newNando(t)
 
-	rec := n.newDevice("iPhone").do(http.MethodGet, "/api/sessions", nil)
+	rec := n.newBrowser("iPhone").do(http.MethodGet, "/api/sessions", nil)
 
 	if rec.Code != http.StatusUnauthorized {
-		t.Fatalf("GET /api/sessions without a session: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		t.Fatalf("GET /api/sessions without a Session: status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
 
 func TestOwnerEnrollsAPasskeyWithAnEnrollmentCode(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 
 	if rec := phone.enroll(n.issueEnrollmentCode()); rec.Code != http.StatusNoContent {
 		t.Fatalf("enroll: status = %d, body %q", rec.Code, rec.Body)
@@ -211,9 +211,9 @@ func TestOwnerEnrollsAPasskeyWithAnEnrollmentCode(t *testing.T) {
 
 func TestOwnerSignsInWithTheirPasskey(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
-	mac := n.newDevice("Mac").syncedFrom(phone)
+	mac := n.newBrowser("Mac").syncedFrom(phone)
 
 	if rec := mac.signIn(); rec.Code != http.StatusNoContent {
 		t.Fatalf("sign in: status = %d, body %q", rec.Code, rec.Body)
@@ -227,7 +227,7 @@ func TestOwnerSignsInWithTheirPasskey(t *testing.T) {
 func TestPasskeyWhoseSignCountGoesUpSignsInRepeatedly(t *testing.T) {
 	n := newNando(t)
 	// A hardware security key, which counts its uses.
-	laptop := n.newDevice("Laptop")
+	laptop := n.newBrowser("Laptop")
 	laptop.mustEnroll()
 
 	for count := uint32(1); count <= 3; count++ {
@@ -240,7 +240,7 @@ func TestPasskeyWhoseSignCountGoesUpSignsInRepeatedly(t *testing.T) {
 
 func TestSyncedPasskeyThatAlwaysReportsZeroKeepsSigningIn(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone") // iCloud Keychain: sign count always 0
+	phone := n.newBrowser("iPhone") // iCloud Keychain: sign count always 0
 	phone.mustEnroll()
 
 	for i := 1; i <= 3; i++ {
@@ -253,13 +253,13 @@ func TestSyncedPasskeyThatAlwaysReportsZeroKeepsSigningIn(t *testing.T) {
 func TestSignInWithALowerSignCountIsRejected(t *testing.T) {
 	n := newNando(t)
 	// A hardware security key, which counts its uses.
-	laptop := n.newDevice("Laptop")
+	laptop := n.newBrowser("Laptop")
 	laptop.mustEnroll()
 	laptop.passkey.SetSignCount(5)
 	laptop.mustSignIn()
 
 	// A copy of the key that is behind the original: a sign of cloning.
-	clone := n.newDevice("Unknown")
+	clone := n.newBrowser("Unknown")
 	clone.passkey = laptop.passkey.Copy()
 	clone.passkey.SetSignCount(3)
 
@@ -278,7 +278,7 @@ func TestSignInWithALowerSignCountIsRejected(t *testing.T) {
 
 func TestSimultaneousSignInsNeverLowerTheSignCount(t *testing.T) {
 	n := newNando(t)
-	laptop := n.newDevice("Laptop")
+	laptop := n.newBrowser("Laptop")
 	laptop.mustEnroll()
 
 	// Each round, two copies of the key finish signing in at once, one count
@@ -289,7 +289,7 @@ func TestSimultaneousSignInsNeverLowerTheSignCount(t *testing.T) {
 		base := 10 * round
 		laptop.passkey.SetSignCount(base)
 		laptop.mustSignIn()
-		behind, ahead := n.newDevice("Behind"), n.newDevice("Ahead")
+		behind, ahead := n.newBrowser("Behind"), n.newBrowser("Ahead")
 		behind.passkey, ahead.passkey = laptop.passkey.Copy(), laptop.passkey.Copy()
 		behind.passkey.SetSignCount(base + 1)
 		ahead.passkey.SetSignCount(base + 2)
@@ -312,7 +312,7 @@ func TestSimultaneousSignInsNeverLowerTheSignCount(t *testing.T) {
 		if behindCode != http.StatusNoContent || aheadCode != http.StatusNoContent {
 			continue // one was refused, so nothing can have been stored out of order
 		}
-		replay := n.newDevice("Replay")
+		replay := n.newBrowser("Replay")
 		replay.passkey = laptop.passkey.Copy()
 		replay.passkey.SetSignCount(base + 2)
 		if rec := replay.signIn(); rec.Code != http.StatusUnauthorized {
@@ -324,35 +324,35 @@ func TestSimultaneousSignInsNeverLowerTheSignCount(t *testing.T) {
 
 func TestPasskeySignsInFromEveryAllowedOrigin(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 
-	n.newDeviceAt(betaOrigin, "iPhone").syncedFrom(phone).mustSignIn()
+	n.newBrowserAt(betaOrigin, "iPhone").syncedFrom(phone).mustSignIn()
 }
 
 func TestPasskeyFromAnOriginNotAllowedIsRejected(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 
-	evil := n.newDeviceAt(evilOrigin, "iPhone").syncedFrom(phone)
+	evil := n.newBrowserAt(evilOrigin, "iPhone").syncedFrom(phone)
 
 	if rec := evil.signIn(); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("sign in from %s: status = %d, want %d", evilOrigin, rec.Code, http.StatusUnauthorized)
 	}
 	if evil.session != nil {
-		t.Errorf("sign in from %s set a session cookie", evilOrigin)
+		t.Errorf("sign in from %s set a Session cookie", evilOrigin)
 	}
 }
 
 func TestUsedEnrollmentCodeIsRejected(t *testing.T) {
 	n := newNando(t)
 	code := n.issueEnrollmentCode()
-	if rec := n.newDevice("iPhone").enroll(code); rec.Code != http.StatusNoContent {
+	if rec := n.newBrowser("iPhone").enroll(code); rec.Code != http.StatusNoContent {
 		t.Fatalf("first enroll: status = %d, body %q", rec.Code, rec.Body)
 	}
 
-	if rec := n.newDevice("iPhone").enroll(code); rec.Code != http.StatusUnauthorized {
+	if rec := n.newBrowser("iPhone").enroll(code); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("enroll again with the same code: status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
@@ -364,22 +364,22 @@ func TestEnrollmentCodeExpiresAfter15Minutes(t *testing.T) {
 	fresh := n.issueEnrollmentCode()
 	n.clock.Advance(2 * time.Minute)
 
-	if rec := n.newDevice("iPhone").enroll(stale); rec.Code != http.StatusUnauthorized {
+	if rec := n.newBrowser("iPhone").enroll(stale); rec.Code != http.StatusUnauthorized {
 		t.Errorf("enroll with a 16-minute-old code: status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
-	if rec := n.newDevice("iPhone").enroll(fresh); rec.Code != http.StatusNoContent {
+	if rec := n.newBrowser("iPhone").enroll(fresh); rec.Code != http.StatusNoContent {
 		t.Errorf("enroll with a 2-minute-old code: status = %d, body %q", rec.Code, rec.Body)
 	}
 }
 
 func TestSessionCookieCoversWebAndAPIButNoScripts(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 
 	c := phone.session
 	if c == nil {
-		t.Fatal("enroll set no session cookie")
+		t.Fatal("enroll set no Session cookie")
 	}
 	if c.Domain != "example.com" || c.Path != "/" {
 		t.Errorf("cookie scope = %s%s, want example.com/ (both web. and api.)", c.Domain, c.Path)
@@ -394,7 +394,7 @@ func TestSessionCookieCoversWebAndAPIButNoScripts(t *testing.T) {
 
 func TestUnusedSessionEndsAfter90Days(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 
 	n.clock.Advance(90*24*time.Hour + time.Minute)
@@ -406,7 +406,7 @@ func TestUnusedSessionEndsAfter90Days(t *testing.T) {
 
 func TestSessionInUseStaysSignedIn(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 
 	for day := 60; day <= 180; day += 60 {
@@ -419,7 +419,7 @@ func TestSessionInUseStaysSignedIn(t *testing.T) {
 
 func TestSessionRenewsAtMostOnceADay(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 
 	n.clock.Advance(23 * time.Hour)
@@ -432,14 +432,14 @@ func TestSessionRenewsAtMostOnceADay(t *testing.T) {
 	rec = phone.do(http.MethodGet, "/api/sessions", nil)
 	renewed := sessionCookieIn(rec)
 	if renewed == nil {
-		t.Fatal("25 hours after signing in: no session cookie set, want it renewed")
+		t.Fatal("25 hours after signing in: no Session cookie set, want it renewed")
 	}
 	if want := 90 * 24 * 60 * 60; renewed.MaxAge != want {
 		t.Errorf("renewed cookie Max-Age = %d, want %d (90 days)", renewed.MaxAge, want)
 	}
 }
 
-// sessionCookieIn returns the session cookie rec sets, if any.
+// sessionCookieIn returns the Session cookie rec sets, if any.
 func sessionCookieIn(rec *httptest.ResponseRecorder) *http.Cookie {
 	for _, c := range rec.Result().Cookies() {
 		if c.Name == sessionCookie {
@@ -449,14 +449,14 @@ func sessionCookieIn(rec *httptest.ResponseRecorder) *http.Cookie {
 	return nil
 }
 
-// sessionJSON is one session as GET /api/sessions lists it.
+// sessionJSON is one Session as GET /api/sessions lists it.
 type sessionJSON struct {
 	ID        string `json:"id"`
 	UserAgent string `json:"userAgent"`
 	Current   bool   `json:"current"`
 }
 
-func (d *device) listSessions() []sessionJSON {
+func (d *browser) listSessions() []sessionJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/sessions", nil)
 	if rec.Code != http.StatusOK {
@@ -469,56 +469,56 @@ func (d *device) listSessions() []sessionJSON {
 	return sessions
 }
 
-func TestOwnerSeesEachSignedInDevice(t *testing.T) {
+func TestOwnerSeesEachSession(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 	n.clock.Advance(time.Minute)
-	mac := n.newDevice("Mac").syncedFrom(phone)
+	mac := n.newBrowser("Mac").syncedFrom(phone)
 	mac.mustSignIn()
 
 	got := mac.listSessions()
 
 	if len(got) != 2 {
-		t.Fatalf("sessions = %+v, want the iPhone's and the Mac's", got)
+		t.Fatalf("Sessions = %+v, want the iPhone's and the Mac's", got)
 	}
 	for i, want := range []sessionJSON{{UserAgent: "iPhone", Current: false}, {UserAgent: "Mac", Current: true}} {
 		if got[i].UserAgent != want.UserAgent || got[i].Current != want.Current {
-			t.Errorf("session %d = %+v, want userAgent %q, current %t", i, got[i], want.UserAgent, want.Current)
+			t.Errorf("Session %d = %+v, want userAgent %q, current %t", i, got[i], want.UserAgent, want.Current)
 		}
 		if got[i].ID == "" {
-			t.Errorf("session %d has no id", i)
+			t.Errorf("Session %d has no id", i)
 		}
 	}
 }
 
-func TestDeletingASessionSignsThatDeviceOut(t *testing.T) {
+func TestDeletingASessionSignsItsBrowserOut(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 	n.clock.Advance(time.Minute)
-	mac := n.newDevice("Mac").syncedFrom(phone)
+	mac := n.newBrowser("Mac").syncedFrom(phone)
 	mac.mustSignIn()
 	phoneSession := mac.listSessions()[0]
 
 	if rec := mac.do(http.MethodDelete, "/api/sessions/"+phoneSession.ID, nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("DELETE the iPhone's session: status = %d, body %q", rec.Code, rec.Body)
+		t.Fatalf("DELETE the iPhone's Session: status = %d, body %q", rec.Code, rec.Body)
 	}
 
 	if rec := phone.do(http.MethodGet, "/api/sessions", nil); rec.Code != http.StatusUnauthorized {
-		t.Errorf("iPhone after its session was deleted: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+		t.Errorf("iPhone after its Session was deleted: status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 	if rec := mac.do(http.MethodGet, "/api/sessions", nil); rec.Code != http.StatusOK {
-		t.Errorf("Mac after deleting the iPhone's session: status = %d, want %d", rec.Code, http.StatusOK)
+		t.Errorf("Mac after deleting the iPhone's Session: status = %d, want %d", rec.Code, http.StatusOK)
 	}
 }
 
-// passkeyJSON is one passkey as GET /api/passkeys lists it.
+// passkeyJSON is one Passkey as GET /api/passkeys lists it.
 type passkeyJSON struct {
 	ID string `json:"id"`
 }
 
-func (d *device) listPasskeys() []passkeyJSON {
+func (d *browser) listPasskeys() []passkeyJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/passkeys", nil)
 	if rec.Code != http.StatusOK {
@@ -533,62 +533,62 @@ func (d *device) listPasskeys() []passkeyJSON {
 
 func TestOwnerSeesEachPasskey(t *testing.T) {
 	n := newNando(t)
-	// One passkey in iCloud Keychain, one in Google Password Manager.
-	phone := n.newDevice("iPhone")
+	// One Passkey in iCloud Keychain, one in Google Password Manager.
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 	n.clock.Advance(time.Minute)
-	pixel := n.newDevice("Pixel")
+	pixel := n.newBrowser("Pixel")
 	pixel.mustEnroll()
 
 	got := phone.listPasskeys()
 
 	want := []string{phone.passkey.ID(), pixel.passkey.ID()}
 	if len(got) != len(want) {
-		t.Fatalf("passkeys = %+v, want ids %q", got, want)
+		t.Fatalf("Passkeys = %+v, want ids %q", got, want)
 	}
 	for i := range want {
 		if got[i].ID != want[i] {
-			t.Errorf("passkey %d id = %q, want %q", i, got[i].ID, want[i])
+			t.Errorf("Passkey %d id = %q, want %q", i, got[i].ID, want[i])
 		}
 	}
 }
 
 func TestDeletedPasskeyCanNoLongerSignIn(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 	id := phone.listPasskeys()[0].ID
 
 	if rec := phone.do(http.MethodDelete, "/api/passkeys/"+id, nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("DELETE the passkey: status = %d, body %q", rec.Code, rec.Body)
+		t.Fatalf("DELETE the Passkey: status = %d, body %q", rec.Code, rec.Body)
 	}
 
-	if rec := n.newDevice("Mac").syncedFrom(phone).signIn(); rec.Code != http.StatusUnauthorized {
-		t.Errorf("sign in with the deleted passkey: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	if rec := n.newBrowser("Mac").syncedFrom(phone).signIn(); rec.Code != http.StatusUnauthorized {
+		t.Errorf("sign in with the deleted Passkey: status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 	if got := phone.listPasskeys(); len(got) != 0 {
-		t.Errorf("passkeys after deleting the only one = %+v, want none", got)
+		t.Errorf("Passkeys after deleting the only one = %+v, want none", got)
 	}
 }
 
 func TestReEnrollingADeviceKeepsItsPasskey(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 
 	// Without the server excluding it, the authenticator would silently replace
-	// this passkey with a new one, leaving the old one listed but unusable.
+	// this Passkey with a new one, leaving the old one listed but unusable.
 	phone.enroll(n.issueEnrollmentCode())
 
 	if got := phone.listPasskeys(); len(got) != 1 || got[0].ID != phone.passkey.ID() {
-		t.Errorf("passkeys after enrolling the iPhone again = %+v, want only %q", got, phone.passkey.ID())
+		t.Errorf("Passkeys after enrolling the iPhone again = %+v, want only %q", got, phone.passkey.ID())
 	}
 }
 
 func TestEnrollmentCodeRegistersOnlyOnePasskeyEvenWhenBegunTwice(t *testing.T) {
 	n := newNando(t)
 	code := mustJSON(t, map[string]string{"code": n.issueEnrollmentCode()})
-	phone, mac := n.newDevice("iPhone"), n.newDevice("Mac")
+	phone, mac := n.newBrowser("iPhone"), n.newBrowser("Mac")
 	phoneOptions := phone.do(http.MethodPost, "/auth/register/begin", code)
 	macOptions := mac.do(http.MethodPost, "/auth/register/begin", code)
 	phone.passkey, mac.passkey = testpasskey.New(), testpasskey.New()
@@ -603,24 +603,24 @@ func TestEnrollmentCodeRegistersOnlyOnePasskeyEvenWhenBegunTwice(t *testing.T) {
 		t.Errorf("second finish with the same code: status = %d, want %d", second.Code, http.StatusUnauthorized)
 	}
 	if got := phone.listPasskeys(); len(got) != 1 || got[0].ID != phone.passkey.ID() {
-		t.Errorf("passkeys = %+v, want only the iPhone's %q", got, phone.passkey.ID())
+		t.Errorf("Passkeys = %+v, want only the iPhone's %q", got, phone.passkey.ID())
 	}
 }
 
 func TestDeletingTheCurrentSessionClearsItsCookie(t *testing.T) {
 	n := newNando(t)
-	phone := n.newDevice("iPhone")
+	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 	current := phone.listSessions()[0]
 
 	rec := phone.do(http.MethodDelete, "/api/sessions/"+current.ID, nil)
 
 	if rec.Code != http.StatusNoContent {
-		t.Fatalf("DELETE the current session: status = %d, body %q", rec.Code, rec.Body)
+		t.Fatalf("DELETE the current Session: status = %d, body %q", rec.Code, rec.Body)
 	}
 	c := sessionCookieIn(rec)
 	if c == nil || c.MaxAge >= 0 {
-		t.Fatalf("DELETE the current session: session cookie = %v, want one with Max-Age=0", c)
+		t.Fatalf("DELETE the current Session: Session cookie = %v, want one with Max-Age=0", c)
 	}
 	// A browser deletes a cookie only if the deleting one has the same scope.
 	if c.Domain != "example.com" || c.Path != "/" {

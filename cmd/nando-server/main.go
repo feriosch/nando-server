@@ -1,7 +1,7 @@
 // Command nando-server runs Nando's HTTP API.
 //
 //	nando-server          serve the API
-//	nando-server enroll   print an Enrollment Code for registering a passkey
+//	nando-server enroll   print an Enrollment Code for registering a Passkey
 package main
 
 import (
@@ -28,10 +28,10 @@ import (
 type config struct {
 	mongoURI string // MONGO_URI, required
 	// DOMAIN, required: the parent domain of web. and api., such as
-	// "nanders.app", which passkeys and the session cookie belong to.
+	// "nanders.app", which Passkeys and the Session cookie belong to.
 	domain string
 	// ALLOWED_ORIGINS, required: comma-separated web app origins, which may
-	// call the API with credentials and use passkeys.
+	// call the API with credentials and use Passkeys.
 	allowedOrigins []string
 	port           string // PORT, set by Cloud Run; defaults to 8080
 
@@ -168,7 +168,7 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Enrollment Code: %s\nValid for one passkey, for the next 15 minutes.\n", code)
+		fmt.Printf("Enrollment Code: %s\nValid for one Passkey, for the next 15 minutes.\n", code)
 		return nil
 	case len(args) > 0:
 		return fmt.Errorf("unknown arguments %q; the only command is enroll", args)

@@ -1,4 +1,4 @@
-// Package testpasskey gives tests a passkey without a browser or Face ID.
+// Package testpasskey gives tests a Passkey without a browser or Face ID.
 package testpasskey
 
 import (
@@ -24,7 +24,7 @@ type Passkey struct {
 	signCount  uint32
 }
 
-// New returns a passkey not yet created.
+// New returns a Passkey not yet created.
 func New() *Passkey {
 	return &Passkey{}
 }
@@ -34,7 +34,7 @@ func (p *Passkey) ID() string {
 	return b64.EncodeToString(p.id)
 }
 
-// Authenticator data flags (WebAuthn §6.1). Synced passkeys are backup
+// Authenticator data flags (WebAuthn §6.1). Synced Passkeys are backup
 // eligible and backed up.
 const (
 	flagUserPresent        = 0x01
@@ -47,23 +47,23 @@ const (
 
 var b64 = base64.RawURLEncoding
 
-// Copy returns a second copy of this passkey, as cloning a hardware security
-// key would make: it signs in as the same passkey but counts its uses
+// Copy returns a second copy of this Passkey, as cloning a hardware security
+// key would make: it signs in as the same Passkey but counts its uses
 // separately.
 func (p *Passkey) Copy() *Passkey {
 	c := *p
 	return &c
 }
 
-// SetSignCount makes the passkey report n as its sign count from now on, as a
+// SetSignCount makes the Passkey report n as its sign count from now on, as a
 // hardware security key counts its uses. Left alone it reports 0, as synced
-// passkeys such as iCloud Keychain do.
+// Passkeys such as iCloud Keychain do.
 func (p *Passkey) SetSignCount(n uint32) {
 	p.signCount = n
 }
 
 // ExcludedBy reports whether the options from /auth/register/begin exclude
-// this passkey, in which case the browser refuses with InvalidStateError.
+// this Passkey, in which case the browser refuses with InvalidStateError.
 func (p *Passkey) ExcludedBy(t *testing.T, options []byte) bool {
 	t.Helper()
 	var opts struct {
@@ -84,7 +84,7 @@ func (p *Passkey) ExcludedBy(t *testing.T, options []byte) bool {
 	return false
 }
 
-// Create answers the options from /auth/register/begin with a new passkey,
+// Create answers the options from /auth/register/begin with a new Passkey,
 // from a browser on the web app at origin, and returns the body for
 // /auth/register/finish.
 func (p *Passkey) Create(t *testing.T, origin string, options []byte) []byte {
@@ -148,7 +148,7 @@ func (p *Passkey) Create(t *testing.T, origin string, options []byte) []byte {
 }
 
 // Get answers the options from /auth/signin/begin by signing in with this
-// passkey, from a browser on the web app at origin, and returns the body for
+// Passkey, from a browser on the web app at origin, and returns the body for
 // /auth/signin/finish.
 func (p *Passkey) Get(t *testing.T, origin string, options []byte) []byte {
 	t.Helper()

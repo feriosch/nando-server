@@ -16,7 +16,7 @@ type Config struct {
 	// Core signs the Owner in and guards every /api/ route. Nil serves only
 	// /health, for tests of the API's plumbing.
 	Core *core.Core
-	// Modules add their routes under /api/<module>/, behind Core's session.
+	// Modules add their routes under /api/<module>/, behind Core's Session.
 	Modules []Module
 }
 
@@ -42,8 +42,8 @@ func New(cfg Config) http.Handler {
 	return cors(cfg.AllowedOrigins, requireSessionForAPI(cfg.Core, mux))
 }
 
-// requireSessionForAPI puts every /api/ path behind a session, whoever
-// registered it, so no route there can be served to a signed-out device.
+// requireSessionForAPI puts every /api/ path behind a Session, whoever
+// registered it, so no route there can be served without one.
 func requireSessionForAPI(c *core.Core, next http.Handler) http.Handler {
 	guarded := c.RequireSession(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +55,7 @@ func requireSessionForAPI(c *core.Core, next http.Handler) http.Handler {
 	})
 }
 
-// cors lets the web app call the API with the session cookie.
+// cors lets the web app call the API with the Session cookie.
 func cors(allowedOrigins []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Vary", "Origin")

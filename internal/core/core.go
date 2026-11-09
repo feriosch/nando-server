@@ -24,9 +24,9 @@ import (
 // Config is what Core needs to know about where Nando is served.
 type Config struct {
 	// Domain is the parent domain of the web app and the API, such as
-	// "nanders.app": the passkeys' relying-party ID and the session cookie's domain.
+	// "nanders.app": the Passkeys' relying-party ID and the Session cookie's domain.
 	Domain string
-	// Origins are the web app origins passkeys are used from.
+	// Origins are the web app origins Passkeys are used from.
 	Origins []string
 	// Now is the clock; nil means time.Now.
 	Now func() time.Time
@@ -173,7 +173,7 @@ func (c *Core) AddNotificationProvider(p model.NotificationProvider) {
 }
 
 // RequireSession lets a request through to next only if it carries a valid
-// session; otherwise it answers 401.
+// Session; otherwise it answers 401.
 func (c *Core) RequireSession(next http.Handler) http.Handler {
 	return c.sessions.RequireSession(next)
 }

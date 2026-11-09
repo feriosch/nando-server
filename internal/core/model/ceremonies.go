@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// Ceremony is a passkey registration or sign-in between its begin and finish
+// Ceremony is a Passkey registration or sign-in between its begin and finish
 // requests, which Cloud Run may send to different instances.
 type Ceremony struct {
 	Challenge string `bson:"_id"`

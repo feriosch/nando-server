@@ -23,7 +23,7 @@ func equalInts(a, b *int) bool {
 }
 
 func TestDayViewSumsTheDaysEntriesAgainstTheDailyLimit(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	phone.setDailyLimit(2000)
 	mealID := phone.createMeal(onigiri)
 	onigiriID := phone.mustLogEntry("2026-10-21", map[string]any{"mealId": mealID, "servings": 2})
@@ -67,7 +67,7 @@ func show(i *int) any {
 }
 
 func TestAnUnloggedDayIsNotZeroKcal(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	phone.setDailyLimit(2000)
 
 	got := get[dayJSON](phone, "/api/calories/days/2026-10-21")
@@ -88,7 +88,7 @@ type previewJSON struct {
 }
 
 func TestPreviewTellsWhetherAnEntryWouldTakeTheDayOverTheDailyLimit(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	phone.setDailyLimit(2000)
 	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Ramen", "kcalPerServing": 1000, "servings": 1})
 
@@ -110,7 +110,7 @@ func TestPreviewTellsWhetherAnEntryWouldTakeTheDayOverTheDailyLimit(t *testing.T
 }
 
 func TestWithoutADailyLimitNothingIsOverIt(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	got := get[previewJSON](phone, "/api/calories/days/2026-10-21/preview?kcal=9000")
 	if got.Day != "2026-10-21" || got.ConsumedCalories != 9000 || got.DailyLimit != nil || got.Remaining != nil || got.OverLimit {
@@ -119,7 +119,7 @@ func TestWithoutADailyLimitNothingIsOverIt(t *testing.T) {
 }
 
 func TestInvalidPreviewsAreRejected(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	for _, path := range []string{
 		"/api/calories/days/2026-10-21/preview",
@@ -135,7 +135,7 @@ func TestInvalidPreviewsAreRejected(t *testing.T) {
 }
 
 func TestPreviewIsOnlyForDaysThatCanBeLoggedOn(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	for _, day := range []string{"2026-10-13", "2026-10-22"} {
 		if rec := phone.do(http.MethodGet, "/api/calories/days/"+day+"/preview?kcal=100", nil); rec.Code != http.StatusConflict {
@@ -145,7 +145,7 @@ func TestPreviewIsOnlyForDaysThatCanBeLoggedOn(t *testing.T) {
 }
 
 func TestPreviewOfAnEditLeavesOutTheEntryItReplaces(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	phone.setDailyLimit(2000)
 	ramenID := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Ramen", "kcalPerServing": 1000, "servings": 1})
 	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Gyoza", "kcalPerServing": 50, "servings": 10})

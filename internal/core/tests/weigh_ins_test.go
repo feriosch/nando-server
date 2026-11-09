@@ -19,19 +19,19 @@ type weighInJSON struct {
 var wednesday = time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 
 // putWeighIn logs kg as the Weigh-in for the week starting on Monday week.
-func (d *device) putWeighIn(week string, kg float64) *httptest.ResponseRecorder {
+func (d *browser) putWeighIn(week string, kg float64) *httptest.ResponseRecorder {
 	d.nando.t.Helper()
 	return d.do(http.MethodPut, "/api/weigh-ins/"+week, []byte(fmt.Sprintf(`{"kg": %v}`, kg)))
 }
 
-func (d *device) mustPutWeighIn(week string, kg float64) {
+func (d *browser) mustPutWeighIn(week string, kg float64) {
 	d.nando.t.Helper()
 	if rec := d.putWeighIn(week, kg); rec.Code != http.StatusNoContent {
 		d.nando.t.Fatalf("PUT /api/weigh-ins/%s: status = %d, body %q", week, rec.Code, rec.Body)
 	}
 }
 
-func (d *device) listWeighIns() []weighInJSON {
+func (d *browser) listWeighIns() []weighInJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/weigh-ins", nil)
 	if rec.Code != http.StatusOK {
@@ -45,7 +45,7 @@ func (d *device) listWeighIns() []weighInJSON {
 }
 
 func TestOwnerLogsThisWeeksWeighIn(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	phone.mustPutWeighIn("2026-10-19", 72.4)
 
@@ -56,7 +56,7 @@ func TestOwnerLogsThisWeeksWeighIn(t *testing.T) {
 }
 
 func TestALaterWeighInReplacesTheWeeksEarlierOne(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	phone.mustPutWeighIn("2026-10-19", 72.4)
 
 	phone.mustPutWeighIn("2026-10-19", 71.9)
@@ -68,7 +68,7 @@ func TestALaterWeighInReplacesTheWeeksEarlierOne(t *testing.T) {
 }
 
 func TestOnlyThisAndLastWeekCanBeLogged(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	for week, want := range map[string]int{
 		"2026-10-26": http.StatusConflict,  // next week
@@ -88,7 +88,7 @@ func TestOnlyThisAndLastWeekCanBeLogged(t *testing.T) {
 }
 
 func TestInvalidWeighInsAreRejected(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	for name, req := range map[string]struct{ week, body string }{
 		"week not starting on a Monday": {"2026-10-20", `{"kg": 72.4}`},
@@ -112,7 +112,7 @@ func TestInvalidWeighInsAreRejected(t *testing.T) {
 }
 
 func TestOwnerDeletesAWeighIn(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	phone.mustPutWeighIn("2026-10-12", 72.8)
 	phone.mustPutWeighIn("2026-10-19", 72.4)
 
@@ -127,7 +127,7 @@ func TestOwnerDeletesAWeighIn(t *testing.T) {
 }
 
 func TestWeighInsBeforeLastWeekCanNoLongerBeChanged(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	phone.mustPutWeighIn("2026-10-19", 72.4)
 	n.clock.Set(wednesday.AddDate(0, 0, 14))
 
@@ -146,7 +146,7 @@ func TestWeighInsBeforeLastWeekCanNoLongerBeChanged(t *testing.T) {
 
 func TestChangingTheTimeZoneDoesNotMoveWeighIns(t *testing.T) {
 	// Sunday evening in UTC, already Monday morning of the next week in Tokyo.
-	_, phone := signedInPhone(t, time.Date(2026, 10, 25, 20, 0, 0, 0, time.UTC))
+	_, phone := signedInBrowser(t, time.Date(2026, 10, 25, 20, 0, 0, 0, time.UTC))
 	phone.mustPutWeighIn("2026-10-19", 72.4)
 	if rec := phone.putWeighIn("2026-10-26", 72.0); rec.Code != http.StatusConflict {
 		t.Fatalf("PUT next week's Weigh-in in UTC: status = %d, want %d", rec.Code, http.StatusConflict)

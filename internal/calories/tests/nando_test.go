@@ -82,18 +82,18 @@ func newNando(t *testing.T) *nando {
 	}
 }
 
-// device is the Owner's signed-in iPhone.
-type device struct {
+// browser is Nando on the Owner's iPhone, with a Session.
+type browser struct {
 	nando   *nando
 	session *http.Cookie
 }
 
-// signedInPhone returns Nando with an enrolled, signed-in iPhone, its clock
-// set to now.
-func signedInPhone(t *testing.T, now time.Time) (*nando, *device) {
+// signedInBrowser returns Nando with a browser on the Owner's iPhone that has
+// enrolled a Passkey and has a Session, its clock set to now.
+func signedInBrowser(t *testing.T, now time.Time) (*nando, *browser) {
 	t.Helper()
 	n := newNando(t)
-	phone := &device{nando: n}
+	phone := &browser{nando: n}
 	code, err := n.core.IssueEnrollmentCode(context.Background())
 	if err != nil {
 		t.Fatalf("IssueEnrollmentCode: %v", err)
@@ -105,9 +105,9 @@ func signedInPhone(t *testing.T, now time.Time) (*nando, *device) {
 	return n, phone
 }
 
-// do sends a request from the web app with this device's session cookie;
+// do sends a request from the web app with this browser's Session cookie;
 // body, unless nil, is sent as JSON.
-func (d *device) do(method, path string, body any) *httptest.ResponseRecorder {
+func (d *browser) do(method, path string, body any) *httptest.ResponseRecorder {
 	t := d.nando.t
 	t.Helper()
 	var reader *bytes.Reader
@@ -139,7 +139,7 @@ func (d *device) do(method, path string, body any) *httptest.ResponseRecorder {
 }
 
 // must sends the request and fails the test unless it is answered with status.
-func (d *device) must(method, path string, body any, status int) *httptest.ResponseRecorder {
+func (d *browser) must(method, path string, body any, status int) *httptest.ResponseRecorder {
 	t := d.nando.t
 	t.Helper()
 	rec := d.do(method, path, body)
@@ -150,7 +150,7 @@ func (d *device) must(method, path string, body any, status int) *httptest.Respo
 }
 
 // get GETs path, which must answer 200, and decodes its JSON into a T.
-func get[T any](d *device, path string) T {
+func get[T any](d *browser, path string) T {
 	t := d.nando.t
 	t.Helper()
 	rec := d.must(http.MethodGet, path, nil, http.StatusOK)

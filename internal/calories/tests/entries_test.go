@@ -20,13 +20,13 @@ type entryJSON struct {
 }
 
 // logEntry logs entry on day and returns the response.
-func (d *device) logEntry(day string, entry any) *httptest.ResponseRecorder {
+func (d *browser) logEntry(day string, entry any) *httptest.ResponseRecorder {
 	d.nando.t.Helper()
 	return d.do(http.MethodPost, "/api/calories/days/"+day+"/entries", entry)
 }
 
 // mustLogEntry logs entry on day and returns the new Entry's ID.
-func (d *device) mustLogEntry(day string, entry any) string {
+func (d *browser) mustLogEntry(day string, entry any) string {
 	d.nando.t.Helper()
 	rec := d.must(http.MethodPost, "/api/calories/days/"+day+"/entries", entry, http.StatusCreated)
 	var created struct {
@@ -38,13 +38,13 @@ func (d *device) mustLogEntry(day string, entry any) string {
 	return created.ID
 }
 
-func (d *device) entries(day string) []entryJSON {
+func (d *browser) entries(day string) []entryJSON {
 	d.nando.t.Helper()
 	return get[[]entryJSON](d, "/api/calories/days/"+day+"/entries")
 }
 
 func TestEditingAMealNeverChangesItsEntries(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	mealID := phone.createMeal(onigiri)
 	entryID := phone.mustLogEntry("2026-10-21", map[string]any{"mealId": mealID, "servings": 2})
 
@@ -80,7 +80,7 @@ func equalEntries(a, b []entryJSON) bool {
 }
 
 // saveTimeZone sets the Owner Time Zone through Core's settings API.
-func (d *device) saveTimeZone(name string) {
+func (d *browser) saveTimeZone(name string) {
 	d.nando.t.Helper()
 	d.must(http.MethodPut, "/api/settings", map[string]any{
 		"timeZone":        name,
@@ -92,7 +92,7 @@ func (d *device) saveTimeZone(name string) {
 func TestEntriesCanBeLoggedOnlyInTheEditableWindow(t *testing.T) {
 	// 16:00 UTC on Wednesday is already 01:00 on Thursday 2026-10-22 in Tokyo,
 	// so the Editable Window is 2026-10-15 to 2026-10-22.
-	_, phone := signedInPhone(t, wednesday.Add(4*time.Hour))
+	_, phone := signedInBrowser(t, wednesday.Add(4*time.Hour))
 	phone.saveTimeZone("Asia/Tokyo")
 	meal := map[string]any{"mealId": phone.createMeal(onigiri), "servings": 1}
 
@@ -109,7 +109,7 @@ func TestEntriesCanBeLoggedOnlyInTheEditableWindow(t *testing.T) {
 }
 
 func TestOwnerLogsAOneOffEntryWithServings(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	id := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
 
@@ -123,7 +123,7 @@ func TestOwnerLogsAOneOffEntryWithServings(t *testing.T) {
 }
 
 func TestAOneOffEntryCanBeSavedAsAMeal(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	id := phone.mustLogEntry("2026-10-21", map[string]any{
 		"name": "Salmon nigiri", "kcalPerServing": 60, "servings": 2, "saveAsMeal": true,
@@ -140,7 +140,7 @@ func TestAOneOffEntryCanBeSavedAsAMeal(t *testing.T) {
 }
 
 func TestInvalidEntriesAreRejected(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	mealID := phone.createMeal(onigiri)
 
 	for name, tc := range map[string]struct {
@@ -171,7 +171,7 @@ func TestInvalidEntriesAreRejected(t *testing.T) {
 }
 
 func TestOwnerEditsAnEntryOnlyInTheEditableWindow(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	id := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
 
 	phone.must(http.MethodPut, "/api/calories/entries/"+id,
@@ -193,7 +193,7 @@ func TestOwnerEditsAnEntryOnlyInTheEditableWindow(t *testing.T) {
 }
 
 func TestOwnerDeletesAnEntryOnlyInTheEditableWindow(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	mistake := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Ramen", "kcalPerServing": 600, "servings": 1})
 	kept := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
 
@@ -214,7 +214,7 @@ func TestOwnerDeletesAnEntryOnlyInTheEditableWindow(t *testing.T) {
 }
 
 func TestInvalidEntryEditsAreRejected(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	id := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
 
 	for name, body := range map[string]any{
@@ -236,7 +236,7 @@ func TestInvalidEntryEditsAreRejected(t *testing.T) {
 }
 
 func TestAnEntryRecordsWhenItWasLogged(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 1})
 

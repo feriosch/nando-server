@@ -29,7 +29,7 @@ type mealJSON struct {
 func ptr(s string) *string { return &s }
 
 // createMeal saves meal and returns its ID.
-func (d *device) createMeal(meal mealJSON) string {
+func (d *browser) createMeal(meal mealJSON) string {
 	d.nando.t.Helper()
 	rec := d.must(http.MethodPost, "/api/calories/meals", meal, http.StatusCreated)
 	var created struct {
@@ -50,7 +50,7 @@ var onigiri = mealJSON{
 }
 
 func TestOwnerSavesAMeal(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	id := phone.createMeal(onigiri)
 
@@ -63,7 +63,7 @@ func TestOwnerSavesAMeal(t *testing.T) {
 }
 
 func TestDeletingAMealArchivesItUntilRestored(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	id := phone.createMeal(onigiri)
 	phone.mustLogEntry("2026-10-21", map[string]any{"mealId": id, "servings": 1})
 
@@ -90,7 +90,7 @@ func TestDeletingAMealArchivesItUntilRestored(t *testing.T) {
 }
 
 func TestQuickListIsPinnedThenMostLoggedInTheLast30Days(t *testing.T) {
-	n, phone := signedInPhone(t, wednesday)
+	n, phone := signedInBrowser(t, wednesday)
 	meal := func(name string, pinned bool) string {
 		return phone.createMeal(mealJSON{Name: name, Kcal: 100, Pinned: pinned})
 	}
@@ -124,7 +124,7 @@ func TestQuickListIsPinnedThenMostLoggedInTheLast30Days(t *testing.T) {
 }
 
 func TestInvalidMealsAreRejected(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	id := phone.createMeal(onigiri)
 	with := func(change func(m *mealJSON)) mealJSON {
 		m := onigiri
@@ -159,7 +159,7 @@ func TestInvalidMealsAreRejected(t *testing.T) {
 }
 
 func TestChangingAMealOrEntryThatDoesNotExistIsNotFound(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	const missing = "6af05d493ea403a78bf5997b"
 
 	for _, req := range []struct {
@@ -180,7 +180,7 @@ func TestChangingAMealOrEntryThatDoesNotExistIsNotFound(t *testing.T) {
 }
 
 func TestEditingAnArchivedMealKeepsItArchived(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	id := phone.createMeal(onigiri)
 	phone.must(http.MethodDelete, "/api/calories/meals/"+id, nil, http.StatusNoContent)
 

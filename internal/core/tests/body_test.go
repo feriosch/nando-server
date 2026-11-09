@@ -13,7 +13,7 @@ type bodyJSON struct {
 	Change *float64     `json:"change"`
 }
 
-func (d *device) getBody() bodyJSON {
+func (d *browser) getBody() bodyJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/body", nil)
 	if rec.Code != http.StatusOK {
@@ -27,7 +27,7 @@ func (d *device) getBody() bodyJSON {
 }
 
 // saveHeight sets the Owner's height, keeping the other settings.
-func (d *device) saveHeight(cm int) {
+func (d *browser) saveHeight(cm int) {
 	d.nando.t.Helper()
 	s := d.getSettings()
 	s.HeightCm = &cm
@@ -37,7 +37,7 @@ func (d *device) saveHeight(cm int) {
 }
 
 func TestBodyCardShowsTheLatestWeighInWithBMIAndChange(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 	phone.saveHeight(175)
 	phone.mustPutWeighIn("2026-10-12", 72.8)
 	phone.mustPutWeighIn("2026-10-19", 72.4)
@@ -64,7 +64,7 @@ func fmtPtr(f *float64) any {
 }
 
 func TestBodyCardLeavesOutWhatItCannotDerive(t *testing.T) {
-	_, phone := signedInPhone(t, wednesday)
+	_, phone := signedInBrowser(t, wednesday)
 
 	if got := phone.getBody(); got.Latest != nil || got.BMI != nil || got.Change != nil {
 		t.Errorf("Body card before any Weigh-in = %+v, want all null", got)

@@ -16,7 +16,7 @@ type homeCardJSON struct {
 
 func TestHomeCardShowsTodaysConsumedCaloriesAgainstTheDailyLimit(t *testing.T) {
 	// 01:00 on Thursday in Tokyo, still Wednesday in UTC.
-	_, phone := signedInPhone(t, time.Date(2026, 10, 21, 16, 0, 0, 0, time.UTC))
+	_, phone := signedInBrowser(t, time.Date(2026, 10, 21, 16, 0, 0, 0, time.UTC))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.setDailyLimit(2000)
 

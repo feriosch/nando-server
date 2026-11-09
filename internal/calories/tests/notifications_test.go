@@ -24,7 +24,7 @@ func mustLoadLocation(name string) *time.Location {
 
 // subscribe registers push's Push Subscription, as the web app does once the
 // Owner allows Notifications on this device.
-func (d *device) subscribe(push *testpush.Service) {
+func (d *browser) subscribe(push *testpush.Service) {
 	d.nando.t.Helper()
 	d.must(http.MethodPost, "/api/push-subscriptions", push.SubscriptionJSON(), http.StatusNoContent)
 }
@@ -47,7 +47,7 @@ func (n *nando) tickAt(now time.Time) {
 }
 
 // saveCaloriesSettings saves when the Calories Notifications are sent.
-func (d *device) saveCaloriesSettings(noEntriesReminder, eveningSummary notificationSettingJSON) {
+func (d *browser) saveCaloriesSettings(noEntriesReminder, eveningSummary notificationSettingJSON) {
 	d.nando.t.Helper()
 	d.must(http.MethodPut, "/api/calories/settings",
 		settingsJSON{NoEntriesReminder: noEntriesReminder, EveningSummary: eveningSummary}, http.StatusNoContent)
@@ -69,7 +69,7 @@ func tokyoTime(hh, mm int) time.Time {
 }
 
 func TestTheNoEntriesReminderIsSentAtItsTimeWhenTodayHasNoEntries(t *testing.T) {
-	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.saveCaloriesSettings(on("14:00"), off("21:00"))
 	push := testpush.New(t)
@@ -86,7 +86,7 @@ func TestTheNoEntriesReminderIsSentAtItsTimeWhenTodayHasNoEntries(t *testing.T) 
 }
 
 func TestTheNoEntriesReminderIsNotSentOnceTodayHasAnEntry(t *testing.T) {
-	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.saveCaloriesSettings(on("08:00"), off("21:00"))
 	push := testpush.New(t)
@@ -113,7 +113,7 @@ func TestTheNoEntriesReminderIsNotSentOnceTodayHasAnEntry(t *testing.T) {
 }
 
 func TestTheNoEntriesReminderIsNotSentWhileSwitchedOff(t *testing.T) {
-	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.saveCaloriesSettings(off("14:00"), off("21:00"))
 	push := testpush.New(t)
@@ -127,7 +127,7 @@ func TestTheNoEntriesReminderIsNotSentWhileSwitchedOff(t *testing.T) {
 }
 
 func TestTheEveningSummaryTellsTheOwnerTodaysConsumedCaloriesAgainstTheDailyLimit(t *testing.T) {
-	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.setDailyLimit(2000)
 	phone.saveCaloriesSettings(off("14:00"), on("21:30"))
@@ -148,7 +148,7 @@ func TestTheEveningSummaryTellsTheOwnerTodaysConsumedCaloriesAgainstTheDailyLimi
 }
 
 func TestTheEveningSummaryWithoutADailyLimitTellsOnlyTodaysConsumedCalories(t *testing.T) {
-	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.saveCaloriesSettings(off("14:00"), on("21:00"))
 	push := testpush.New(t)
@@ -164,7 +164,7 @@ func TestTheEveningSummaryWithoutADailyLimitTellsOnlyTodaysConsumedCalories(t *t
 }
 
 func TestTheEveningSummaryOfAnUnloggedDaySaysNothingWasLogged(t *testing.T) {
-	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.setDailyLimit(2000)
 	phone.saveCaloriesSettings(off("14:00"), on("21:00"))
@@ -180,7 +180,7 @@ func TestTheEveningSummaryOfAnUnloggedDaySaysNothingWasLogged(t *testing.T) {
 }
 
 func TestTheEveningSummaryIsNotSentWhileSwitchedOff(t *testing.T) {
-	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.saveCaloriesSettings(off("14:00"), off("21:00"))
 	push := testpush.New(t)
@@ -195,7 +195,7 @@ func TestTheEveningSummaryIsNotSentWhileSwitchedOff(t *testing.T) {
 }
 
 func TestOnlyTheEveningSummaryIsSentWhenTheNoEntriesReminderIsSetForTheSameTime(t *testing.T) {
-	n, phone := signedInPhone(t, tokyoTime(9, 0))
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.saveCaloriesSettings(on("21:00"), on("21:00"))
 	push := testpush.New(t)
