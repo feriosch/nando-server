@@ -25,6 +25,10 @@ const (
 	sessionCookie = "nando_session"
 )
 
+// allowedOrigins is ALLOWED_ORIGINS: the web app at webOrigin and a second
+// copy of it, both under the Domain example.com.
+var allowedOrigins = []string{webOrigin, "https://beta.example.com"}
+
 // clock is the time Core sees; tests set it and move it forward by hand.
 type clock struct{ now time.Time }
 
@@ -57,7 +61,7 @@ func newNando(t *testing.T) *nando {
 	clk := &clock{now: time.Now()}
 	c, err := core.New(ctx, client.Database("core"), core.Config{
 		Domain:               "example.com",
-		Origins:              []string{webOrigin},
+		Origins:              allowedOrigins,
 		Now:                  clk.Now,
 		VerifySchedulerToken: verifySchedulerToken,
 		VAPID: core.VAPID{
@@ -72,7 +76,7 @@ func newNando(t *testing.T) *nando {
 	return &nando{
 		t:       t,
 		core:    c,
-		handler: server.New(server.Config{AllowedOrigins: []string{webOrigin}, Core: c}),
+		handler: server.New(server.Config{AllowedOrigins: allowedOrigins, Core: c}),
 		clock:   clk,
 	}
 }
@@ -91,13 +95,19 @@ func (n *nando) issueEnrollmentCode() string {
 // and, once it has one, a passkey.
 type device struct {
 	nando     *nando
+	origin    string // the web app's origin this device uses
 	userAgent string
 	session   *http.Cookie
 	passkey   *testpasskey.Passkey
 }
 
 func (n *nando) newDevice(userAgent string) *device {
-	return &device{nando: n, userAgent: userAgent}
+	return n.newDeviceAt(webOrigin, userAgent)
+}
+
+// newDeviceAt is newDevice using the web app served from origin.
+func (n *nando) newDeviceAt(origin, userAgent string) *device {
+	return &device{nando: n, origin: origin, userAgent: userAgent}
 }
 
 // do sends a request from the web app, carrying and keeping the session cookie
@@ -105,7 +115,7 @@ func (n *nando) newDevice(userAgent string) *device {
 func (d *device) do(method, path string, body []byte) *httptest.ResponseRecorder {
 	d.nando.t.Helper()
 	req := httptest.NewRequest(method, path, bytes.NewReader(body))
-	req.Header.Set("Origin", webOrigin)
+	req.Header.Set("Origin", d.origin)
 	req.Header.Set("User-Agent", d.userAgent)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -137,7 +147,7 @@ func (d *device) enroll(code string) *httptest.ResponseRecorder {
 	if d.passkey != nil && d.passkey.ExcludedBy(d.nando.t, rec.Body.Bytes()) {
 		return rec
 	}
-	d.passkey = testpasskey.New(webOrigin)
+	d.passkey = testpasskey.New(d.origin)
 	return d.do(http.MethodPost, "/auth/register/finish", d.passkey.Create(d.nando.t, rec.Body.Bytes()))
 }
 
@@ -308,6 +318,35 @@ func TestSimultaneousSignInsNeverLowerTheSignCount(t *testing.T) {
 			t.Fatalf("round %d: both sign-ins at %d and %d succeeded, then sign count %d again: status = %d, want %d (the stored count went down)",
 				round, base+1, base+2, base+2, rec.Code, http.StatusUnauthorized)
 		}
+	}
+}
+
+func TestPasskeySignsInFromEveryAllowedOrigin(t *testing.T) {
+	n := newNando(t)
+	phone := n.newDevice("iPhone")
+	phone.mustEnroll()
+
+	beta := n.newDeviceAt("https://beta.example.com", "iPhone")
+	beta.passkey = phone.passkey.UsedFrom("https://beta.example.com")
+
+	beta.mustSignIn()
+}
+
+func TestPasskeyFromAnOriginNotAllowedIsRejected(t *testing.T) {
+	n := newNando(t)
+	phone := n.newDevice("iPhone")
+	phone.mustEnroll()
+
+	// Under the Domain, so a browser would let it use the passkey, but not in
+	// ALLOWED_ORIGINS.
+	evil := n.newDeviceAt("https://evil.example.com", "iPhone")
+	evil.passkey = phone.passkey.UsedFrom("https://evil.example.com")
+
+	if rec := evil.signIn(); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("sign in from https://evil.example.com: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if evil.session != nil {
+		t.Error("sign in from https://evil.example.com set a session cookie")
 	}
 }
 

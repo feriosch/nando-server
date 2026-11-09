@@ -52,7 +52,7 @@ curl localhost:8080/health
 | ----------------- | --- |
 | `MONGO_URI`       | MongoDB connection string (required)                             |
 | `DOMAIN`          | Parent domain of `web.` and `api.`, such as `nanders.app` (required): the passkeys' relying-party ID and the session cookie's domain. Changing it means enrolling again. |
-| `ALLOWED_ORIGINS` | Comma-separated web app origins (required), each exactly `scheme://host[:port]` (no trailing slash, no `*`). They may call the API with credentials and use passkeys. |
+| `ALLOWED_ORIGINS` | Comma-separated web app origins (required), each exactly `scheme://host[:port]` (no trailing slash, no `*`). They may call the API with credentials and are the only origins passkeys work from ([ADR 0002](docs/adr/0002-passkey-only-identity.md)), so adding one also lets it sign in. |
 | `PORT`            | Port to listen on (default `8080`; Cloud Run sets it)            |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | The key pair that signs push messages (required to serve), base64url. Generate one with `webpush.GenerateVAPIDKeys`. Changing it invalidates every Push Subscription. In production the private key comes from Secret Manager. |
 | `PUSH_CONTACT`    | A `mailto:` or `https:` URL where a push service can reach Nando's operator (required to serve; Apple rejects push messages without one). |

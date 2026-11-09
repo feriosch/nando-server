@@ -56,6 +56,14 @@ func (p *Passkey) Copy() *Passkey {
 	return &c
 }
 
+// UsedFrom returns this passkey as synced to a browser on the web app at
+// origin, which the browser then puts in each answer.
+func (p *Passkey) UsedFrom(origin string) *Passkey {
+	c := p.Copy()
+	c.origin = origin
+	return c
+}
+
 // SetSignCount makes the passkey report n as its sign count from now on, as a
 // hardware security key counts its uses. Left alone it reports 0, as synced
 // passkeys such as iCloud Keychain do.

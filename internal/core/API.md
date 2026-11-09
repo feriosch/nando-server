@@ -8,7 +8,7 @@ The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors
 
 ## Signing in
 
-These routes need no session. Each ceremony is a `begin` that returns the options for the browser, then a `finish` that takes what the browser returned. A ceremony can finish only once, within 5 minutes of its `begin`.
+These routes need no session. Passkeys belong to the relying party `<DOMAIN>` and work from every origin in `ALLOWED_ORIGINS` that is under it ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)); a `finish` whose answer comes from any other origin is refused with `401`. Each ceremony is a `begin` that returns the options for the browser, then a `finish` that takes what the browser returned. A ceremony can finish only once, within 5 minutes of its `begin`.
 
 Both `finish` routes answer `204` and set the session cookie, which signs the device in:
 
