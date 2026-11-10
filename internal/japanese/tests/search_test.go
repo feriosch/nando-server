@@ -9,32 +9,13 @@ import (
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/feriosch/nando-server/internal/japanese/model"
 )
 
-// wordRowJSON is a Word as a search result row shows it.
-type wordRowJSON struct {
-	ID       string  `json:"id"`
-	Word     string  `json:"word"`
-	Hiragana *string `json:"hiragana"`
-	Spanish  string  `json:"spanish"`
-	Group    string  `json:"group"`
-}
-
-// kanjiRowJSON is a Kanji as a search result row shows it.
-type kanjiRowJSON struct {
-	ID      string `json:"id"`
-	Kanji   string `json:"kanji"`
-	Spanish string `json:"spanish"`
-}
-
-type searchJSON struct {
-	Words []wordRowJSON  `json:"words"`
-	Kanji []kanjiRowJSON `json:"kanji"`
-}
-
-func search(d *browser, q string) searchJSON {
+func search(d *browser, q string) model.SearchJSON {
 	d.nando.t.Helper()
-	return get[searchJSON](d, "/api/japanese/search?q="+url.QueryEscape(q))
+	return get[model.SearchJSON](d, "/api/japanese/search?q="+url.QueryEscape(q))
 }
 
 // word is a Word as benkyo stored it, under a new ObjectId.
@@ -67,7 +48,7 @@ func kanji(character, spanish string, v1 int) bson.M {
 func id(doc bson.M) string { return doc["_id"].(bson.ObjectID).Hex() }
 
 // spellings is the spelling of each Word, in order.
-func spellings(rows []wordRowJSON) []string {
+func spellings(rows []model.WordRowJSON) []string {
 	list := []string{}
 	for _, r := range rows {
 		list = append(list, r.Word)
@@ -76,7 +57,7 @@ func spellings(rows []wordRowJSON) []string {
 }
 
 // characters is the character of each Kanji, in order.
-func characters(rows []kanjiRowJSON) []string {
+func characters(rows []model.KanjiRowJSON) []string {
 	list := []string{}
 	for _, r := range rows {
 		list = append(list, r.Kanji)
@@ -92,7 +73,7 @@ func TestSearchByKanjiFindsWordsSpelledWithIt(t *testing.T) {
 
 	got := search(phone, "足")
 
-	want := []wordRowJSON{
+	want := []model.WordRowJSON{
 		{ID: id(foot), Word: "足", Hiragana: ptr("あし"), Spanish: "pie, pierna", Group: "basic"},
 		{ID: id(footprint), Word: "足跡", Hiragana: ptr("あしあと"), Spanish: "huella", Group: "jlpt_n2"},
 	}
@@ -111,7 +92,7 @@ func TestSearchByWordFindsTheKanjiInIt(t *testing.T) {
 
 	got := search(phone, "足跡")
 
-	want := []kanjiRowJSON{
+	want := []model.KanjiRowJSON{
 		{ID: id(foot), Kanji: "足", Spanish: "pie"},
 		{ID: id(trace), Kanji: "跡", Spanish: "huellas"},
 	}

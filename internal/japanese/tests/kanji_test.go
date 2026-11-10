@@ -6,26 +6,9 @@ import (
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
+
+	"github.com/feriosch/nando-server/internal/japanese/model"
 )
-
-type componentJSON struct {
-	Name  string        `json:"name"`
-	Kanji *kanjiRowJSON `json:"kanji"`
-}
-
-// kanjiJSON is a Kanji as its page shows it.
-type kanjiJSON struct {
-	ID         string          `json:"id"`
-	Kanji      string          `json:"kanji"`
-	Spanish    string          `json:"spanish"`
-	On         *string         `json:"on"`
-	Kun        *string         `json:"kun"`
-	V1         int             `json:"v1"`
-	V2         *int            `json:"v2"`
-	Story      *string         `json:"story"`
-	Components []componentJSON `json:"components"`
-	Words      []wordRowJSON   `json:"words"`
-}
 
 // irregularComponent is an irregular shape as benkyo stored it.
 func irregularComponent(name string) bson.M {
@@ -48,10 +31,10 @@ func TestAKanjiPageShowsTheKanjiItsComponentsAndWords(t *testing.T) {
 	japanSea := word("日本海", "にほんかい", "mar de Japón", "miscellaneous")
 	n.store("words", japanSea, overseas, seaWord, word("山", "やま", "montaña", "basic"))
 
-	got := get[kanjiJSON](phone, "/api/japanese/kanji/"+id(sea))
+	got := get[model.KanjiJSON](phone, "/api/japanese/kanji/"+id(sea))
 
 	v2 := 1520
-	want := kanjiJSON{
+	want := model.KanjiJSON{
 		ID:      id(sea),
 		Kanji:   "海",
 		Spanish: "mar",
@@ -60,11 +43,11 @@ func TestAKanjiPageShowsTheKanjiItsComponentsAndWords(t *testing.T) {
 		V1:      491,
 		V2:      &v2,
 		Story:   ptr("Las gotas de agua de cada río acaban en el mar."),
-		Components: []componentJSON{
+		Components: []model.ComponentJSON{
 			{Name: "gotas de agua"},
-			{Name: "cada", Kanji: &kanjiRowJSON{ID: id(every), Kanji: "毎", Spanish: "cada"}},
+			{Name: "cada", Kanji: &model.KanjiRowJSON{ID: id(every), Kanji: "毎", Spanish: "cada"}},
 		},
-		Words: []wordRowJSON{
+		Words: []model.WordRowJSON{
 			{ID: id(seaWord), Word: "海", Hiragana: ptr("うみ"), Spanish: "mar", Group: "basic"},
 			{ID: id(overseas), Word: "海外", Hiragana: ptr("かいがい"), Spanish: "extranjero", Group: "basic"},
 			{ID: id(japanSea), Word: "日本海", Hiragana: ptr("にほんかい"), Spanish: "mar de Japón", Group: "miscellaneous"},
@@ -80,7 +63,7 @@ func TestAKanjiWithoutReadingsOrComponents(t *testing.T) {
 	one := kanji("一", "uno", 1)
 	n.store("kanji", one)
 
-	got := get[kanjiJSON](phone, "/api/japanese/kanji/"+id(one))
+	got := get[model.KanjiJSON](phone, "/api/japanese/kanji/"+id(one))
 
 	if got.On != nil || got.Kun != nil || got.V2 != nil || got.Story != nil || got.Components == nil || len(got.Components) != 0 || got.Words == nil {
 		t.Errorf("Kanji = %+v, want on, kun, v2 and story null, components and words []", got)
@@ -97,11 +80,11 @@ func TestAnIrregularComponentWinsOverAKanjiOfTheSameKeyword(t *testing.T) {
 	n.store("kanji", swim, eternal, kanji("水", "agua", 137))
 	n.store("irregular_components", irregularComponent("agua"))
 
-	got := get[kanjiJSON](phone, "/api/japanese/kanji/"+id(swim))
+	got := get[model.KanjiJSON](phone, "/api/japanese/kanji/"+id(swim))
 
-	want := []componentJSON{
+	want := []model.ComponentJSON{
 		{Name: "agua"},
-		{Name: "eterno", Kanji: &kanjiRowJSON{ID: id(eternal), Kanji: "永", Spanish: "eterno"}},
+		{Name: "eterno", Kanji: &model.KanjiRowJSON{ID: id(eternal), Kanji: "永", Spanish: "eterno"}},
 	}
 	if !reflect.DeepEqual(got.Components, want) {
 		t.Errorf("Components = %+v, want %+v", got.Components, want)
@@ -118,7 +101,7 @@ func TestAKanjiPageShowsAtMost50Words(t *testing.T) {
 	}
 	n.store("words", words...)
 
-	if got := get[kanjiJSON](phone, "/api/japanese/kanji/"+id(day)); len(got.Words) != 50 {
+	if got := get[model.KanjiJSON](phone, "/api/japanese/kanji/"+id(day)); len(got.Words) != 50 {
 		t.Errorf("Words with 日: %d, want 50", len(got.Words))
 	}
 }
