@@ -21,6 +21,7 @@ import (
 
 	"github.com/feriosch/nando-server/internal/calories"
 	"github.com/feriosch/nando-server/internal/core"
+	"github.com/feriosch/nando-server/internal/japanese"
 	"github.com/feriosch/nando-server/internal/server"
 )
 
@@ -161,6 +162,7 @@ func run() error {
 		return err
 	}
 	nandoCore.AddNotificationProvider(caloriesModule.NotificationProvider())
+	japaneseModule := japanese.NewJapaneseModule(dbs.Japanese)
 
 	switch args := os.Args[1:]; {
 	case len(args) == 1 && args[0] == "enroll":
@@ -182,7 +184,7 @@ func run() error {
 		Handler: server.New(server.Config{
 			AllowedOrigins: cfg.allowedOrigins,
 			Core:           nandoCore,
-			Modules:        []server.Module{caloriesModule},
+			Modules:        []server.Module{caloriesModule, japaneseModule},
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
