@@ -76,6 +76,10 @@ _Avoid_: Empty day, zero day, fasting day
 The most kcal the Owner intends to consume in a Day; a ceiling to stay under, not a goal to reach. It is set once and stays in force until the Owner changes it, and each change applies from the Day it is made, so past Days are judged against the limit they had. The very first Daily Limit also covers every Day before it.
 _Avoid_: Target, goal, budget, allowance
 
+## Japanese
+
+The Module for the Owner's Japanese vocabulary and kanji study: Claude adds and improves what is stored, and the Owner searches it and takes it to Anki.
+
 ## Body
 
 Measurements of the Owner, kept in Core so that any Module can read them.
