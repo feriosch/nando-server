@@ -12,7 +12,8 @@ import (
 	"github.com/feriosch/nando-server/internal/japanese/utils"
 )
 
-// SearchService answers the search screen from Words and Kanji.
+// SearchService answers the search screen from Words and Kanji. It serves no
+// single collection, so it is neither the Words nor the Kanji service.
 type SearchService struct {
 	words model.WordsRepository
 	kanji model.KanjiRepository
