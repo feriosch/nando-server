@@ -364,16 +364,27 @@ func (s *OAuthService) token(w http.ResponseWriter, r *http.Request) {
 // exchangeCode gives an approved Connector its first tokens for its
 // authorization code (RFC 6749 section 4.1.3, with PKCE). Any attempt uses
 // the code up, even a refused one, so a wrong code_verifier can't be retried.
+// A code exchanged again may have been stolen, so its Connector is removed,
+// with any tokens it got (RFC 6749 section 4.1.2).
 func (s *OAuthService) exchangeCode(w http.ResponseWriter, r *http.Request) {
 	form := r.PostForm
 	now := s.now()
-	code, err := s.codes.Take(r.Context(), sha256Of(form.Get("code")), now)
+	code, err := s.codes.Use(r.Context(), sha256Of(form.Get("code")), now)
 	if errors.Is(err, utils.ErrNotFound) {
-		oauthError(w, http.StatusBadRequest, "invalid_grant", "the code is unknown, used or expired")
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "the code is unknown or expired")
 		return
 	}
 	if err != nil {
 		utils.ServerError(w, err)
+		return
+	}
+	if code.UsedAt != nil {
+		log.Printf("Connector %s removed: its authorization code was exchanged twice", code.ConnectorID)
+		if err := s.connectors.Delete(r.Context(), code.ConnectorID); err != nil {
+			utils.ServerError(w, err)
+			return
+		}
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "the code was already used, so the Connector is removed; connect the app again")
 		return
 	}
 	if form.Get("client_id") != code.ClientID || form.Get("redirect_uri") != code.RedirectURI {

@@ -958,3 +958,16 @@ func TestAnApprovalCeremonyCannotSignIn(t *testing.T) {
 			rec.Code, rec.Body, mac.session != nil, http.StatusBadRequest)
 	}
 }
+
+func TestReusingACodeRemovesItsConnector(t *testing.T) {
+	n := newNando(t)
+	client, code := approvedConnector(t, n)
+	tokens := tokensIn(t, n.token(codeExchange(client, code, verifier)))
+
+	refusedAsInvalidGrant(t, "exchange the code again", n.token(codeExchange(client, code, verifier)))
+
+	if rec := n.mcpWithToken(tokens.AccessToken); rec.Code != http.StatusUnauthorized {
+		t.Errorf("tools/list with the tokens from the reused code: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	refusedAsInvalidGrant(t, "refresh with the tokens from the reused code", n.token(refresh(client, tokens.RefreshToken)))
+}

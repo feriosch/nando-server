@@ -248,7 +248,7 @@ Every secret Nando issues is random and stored only as a SHA-256 hash, like a Se
 | ------------------ | ------------------------------------------------------------------------------ |
 | Registration       | a day, unless a Connector is approved for it; then until it is removed         |
 | Pending request    | 10 minutes, and it is approved or denied only once                             |
-| Authorization code | 1 minute, and any exchange uses it up, even a refused one                      |
+| Authorization code | 1 minute; any exchange uses it up, even a refused one                          |
 | Access token       | 1 hour                                                                         |
 | Refresh token      | 90 days unused, like a Session; each refresh replaces it                       |
 
@@ -350,7 +350,7 @@ Form-encoded (`application/x-www-form-urlencoded`). Every answer has `Cache-Cont
 { "access_token": "…", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "…" }
 ```
 
-- `400` `invalid_grant`: the code or refresh token is unknown, used, expired, another client's, or its Connector was removed. A refresh token that was already replaced, used again, removes its Connector, since it may have been stolen; the Owner then approves the app again.
+- `400` `invalid_grant`: the code or refresh token is unknown, used, expired, another client's, or its Connector was removed. A code exchanged again, or a refresh token used again after it was replaced, removes its Connector and every token it got, since it may have been stolen; the Owner then approves the app again.
 - `400` `invalid_request`: no `grant_type`, or the body isn't a form.
 - `400` `unsupported_grant_type`: any other `grant_type`.
 

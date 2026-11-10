@@ -31,8 +31,11 @@ func (r authorizationCodes) Insert(ctx context.Context, code model.Authorization
 	return err
 }
 
-func (r authorizationCodes) Take(ctx context.Context, hash []byte, now time.Time) (model.AuthorizationCode, error) {
+func (r authorizationCodes) Use(ctx context.Context, hash []byte, now time.Time) (model.AuthorizationCode, error) {
 	var code model.AuthorizationCode
-	err := r.collection.FindOneAndDelete(ctx, bson.D{{Key: "_id", Value: hash}, utils.Unexpired(now)}).Decode(&code)
+	filter := bson.D{{Key: "_id", Value: hash}, utils.Unexpired(now)}
+	// Only the first use sets usedAt, so the answer shows whether it is a reuse.
+	update := bson.D{{Key: "$min", Value: bson.D{{Key: "usedAt", Value: now}}}}
+	err := r.collection.FindOneAndUpdate(ctx, filter, update).Decode(&code)
 	return code, utils.NotFound(err)
 }
