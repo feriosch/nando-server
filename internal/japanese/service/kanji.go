@@ -48,7 +48,7 @@ func (s *KanjiService) getKanji(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	words, err := s.words.GetManyByCharacter(ctx, kanji.Kanji, maxKanjiWords)
+	words, err := s.words.GetManyByKanji(ctx, kanji.Kanji, maxKanjiWords)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return

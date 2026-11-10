@@ -214,3 +214,22 @@ func TestATooLongSearchIsRejected(t *testing.T) {
 	phone.must(http.MethodGet, "/api/japanese/search?q="+strings.Repeat("a", 101), nil, http.StatusBadRequest)
 	phone.must(http.MethodGet, "/api/japanese/search?q="+url.QueryEscape(strings.Repeat("足", 100)), nil, http.StatusOK)
 }
+
+func TestSearchTakesDollarSignsLiterally(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("words", word("足", "あし", "pie", "basic"))
+	n.store("kanji", kanji("足", "pie", 1308))
+
+	// MongoDB reads a string starting with $ as a field path, unless it's
+	// taken literally.
+	for _, q := range []string{"$", "a$b", "$kanji", "足$spanish"} {
+		got := search(phone, q)
+		if q == "足$spanish" {
+			if want := []string{"足"}; !reflect.DeepEqual(characters(got.Kanji), want) {
+				t.Errorf("Kanji for %s = %v, want %v", q, characters(got.Kanji), want)
+			}
+		} else if len(got.Kanji) != 0 {
+			t.Errorf("Kanji for %s = %v, want none", q, characters(got.Kanji))
+		}
+	}
+}

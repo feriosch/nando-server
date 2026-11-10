@@ -21,9 +21,9 @@ type Word struct {
 	// Notes is "" when there are none.
 	Notes     string
 	Sentences []Sentence
-	// Links are its sides of its Word Links.
-	Links []WordLink
-	Hints []Hint
+	// WordLinks are its sides of its Word Links.
+	WordLinks []WordLink
+	Hints     []Hint
 }
 
 // WordLink is a Word's side of a Word Link to another Word.
@@ -63,9 +63,9 @@ type WordsRepository interface {
 	// GetManyByIDs returns the Words with these IDs that are stored, in no
 	// particular order, filled in as by GetManyBySearch.
 	GetManyByIDs(ctx context.Context, ids []string) ([]Word, error)
-	// GetManyByCharacter returns up to limit Words whose spelling contains
-	// character, shorter ones first, filled in as by GetManyBySearch.
-	GetManyByCharacter(ctx context.Context, character string, limit int) ([]Word, error)
+	// GetManyByKanji returns up to limit Words whose spelling contains
+	// kanji (a Kanji's character), shorter ones first, filled in as by GetManyBySearch.
+	GetManyByKanji(ctx context.Context, kanji string, limit int) ([]Word, error)
 }
 
 // The JSON shapes below are what the API answers with.

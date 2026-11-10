@@ -88,7 +88,7 @@ func TestAWordPageShowsItsWordLinksAndHints(t *testing.T) {
 
 	got := get[model.WordJSON](phone, "/api/japanese/words/"+id(expect))
 
-	wantLinks := []model.WordLinkJSON{
+	wantWordLinks := []model.WordLinkJSON{
 		{Kind: "synonym", Note: ptr("Más intenso y escrito."), NuanceTags: []string{"written", "literary"},
 			Word: model.WordRowJSON{ID: id(longFor), Word: "待ち望む", Hiragana: ptr("まちのぞむ"), Spanish: "esperar con ansia", Group: "jlpt_n1"}},
 		{Kind: "related", NuanceTags: []string{},
@@ -96,8 +96,8 @@ func TestAWordPageShowsItsWordLinksAndHints(t *testing.T) {
 		{Kind: "antonym", NuanceTags: []string{},
 			Word: model.WordRowJSON{ID: id(despair), Word: "絶望", Hiragana: ptr("ぜつぼう"), Spanish: "desesperación", Group: "jlpt_n2"}},
 	}
-	if !reflect.DeepEqual(got.WordLinks, wantLinks) {
-		t.Errorf("Word Links = %+v,\nwant %+v", got.WordLinks, wantLinks)
+	if !reflect.DeepEqual(got.WordLinks, wantWordLinks) {
+		t.Errorf("Word Links = %+v,\nwant %+v", got.WordLinks, wantWordLinks)
 	}
 	wantHints := []model.HintJSON{{Text: "天気", Note: ptr("Se espera buen tiempo.")}, {Text: "楽しみ"}}
 	if !reflect.DeepEqual(got.Hints, wantHints) {

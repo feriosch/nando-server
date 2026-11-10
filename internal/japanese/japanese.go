@@ -1,5 +1,5 @@
-// Package japanese is the Module for the Owner's Japanese vocabulary and kanji
-// study.
+// Package japanese is the Module for the Owner's Japanese study: their Words
+// and Kanji.
 //
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests

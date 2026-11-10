@@ -65,14 +65,14 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 	for _, sentence := range word.Sentences {
 		j.Sentences = append(j.Sentences, model.SentenceJSON(sentence))
 	}
-	if j.WordLinks, err = s.wordLinks(ctx, word.Links); err != nil {
+	if j.WordLinks, err = s.wordLinkJSONs(ctx, word.WordLinks); err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
 	for _, hint := range word.Hints {
 		j.Hints = append(j.Hints, model.HintJSON{Text: hint.Text, Note: utils.OrNull(hint.Note)})
 	}
-	kanji, err := s.kanji.GetManyByCharactersIn(ctx, word.Word)
+	kanji, err := s.kanji.GetManyBySpelling(ctx, word.Word)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
@@ -81,16 +81,16 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 	coreutils.WriteJSON(w, http.StatusOK, j)
 }
 
-// wordLinks returns links as the Word page shows them, each with the other
+// wordLinkJSONs returns wordLinks as the Word page shows them, each with the other
 // Word, leaving out any to a Word that isn't stored.
-func (s *WordsService) wordLinks(ctx context.Context, links []model.WordLink) ([]model.WordLinkJSON, error) {
+func (s *WordsService) wordLinkJSONs(ctx context.Context, wordLinks []model.WordLink) ([]model.WordLinkJSON, error) {
 	list := []model.WordLinkJSON{}
-	if len(links) == 0 {
+	if len(wordLinks) == 0 {
 		return list, nil
 	}
-	ids := make([]string, len(links))
-	for i, l := range links {
-		ids[i] = l.WordID
+	ids := make([]string, len(wordLinks))
+	for i, wordLink := range wordLinks {
+		ids[i] = wordLink.WordID
 	}
 	others, err := s.words.GetManyByIDs(ctx, ids)
 	if err != nil {
@@ -100,15 +100,15 @@ func (s *WordsService) wordLinks(ctx context.Context, links []model.WordLink) ([
 	for _, row := range utils.ToWordRowJSONs(others) {
 		byID[row.ID] = row
 	}
-	for _, l := range links {
-		other, ok := byID[l.WordID]
+	for _, wordLink := range wordLinks {
+		other, ok := byID[wordLink.WordID]
 		if !ok {
 			continue
 		}
 		list = append(list, model.WordLinkJSON{
-			Kind:       l.Kind,
-			Note:       utils.OrNull(l.Note),
-			NuanceTags: utils.OrEmptyList(l.NuanceTags),
+			Kind:       wordLink.Kind,
+			Note:       utils.OrNull(wordLink.Note),
+			NuanceTags: utils.OrEmptyList(wordLink.NuanceTags),
 			Word:       other,
 		})
 	}

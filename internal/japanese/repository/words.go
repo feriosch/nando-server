@@ -67,7 +67,7 @@ func (d wordDocument) toWord() model.Word {
 			w.Hints = append(w.Hints, model.Hint{Text: rel.Word, Note: rel.Note})
 			continue
 		}
-		w.Links = append(w.Links, model.WordLink{WordID: rel.WordID.Hex(), Kind: rel.Type, Note: rel.Note, NuanceTags: rel.Tags})
+		w.WordLinks = append(w.WordLinks, model.WordLink{WordID: rel.WordID.Hex(), Kind: rel.Type, Note: rel.Note, NuanceTags: rel.Tags})
 	}
 	return w
 }
@@ -133,9 +133,9 @@ func (r words) GetManyByIDs(ctx context.Context, ids []string) ([]model.Word, er
 	return toWords(ctx, cursor)
 }
 
-func (r words) GetManyByCharacter(ctx context.Context, character string, limit int) ([]model.Word, error) {
+func (r words) GetManyByKanji(ctx context.Context, kanji string, limit int) ([]model.Word, error) {
 	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
-		{{Key: "$match", Value: bson.D{{Key: "word", Value: bson.D{{Key: "$regex", Value: regexp.QuoteMeta(character)}}}}}},
+		{{Key: "$match", Value: bson.D{{Key: "word", Value: bson.D{{Key: "$regex", Value: regexp.QuoteMeta(kanji)}}}}}},
 		{{Key: "$addFields", Value: bson.D{{Key: "_length", Value: bson.D{{Key: "$strLenCP", Value: "$word"}}}}}},
 		{{Key: "$sort", Value: bson.D{{Key: "_length", Value: 1}, {Key: "word", Value: 1}, {Key: "_id", Value: 1}}}},
 		{{Key: "$limit", Value: limit}},

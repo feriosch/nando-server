@@ -57,7 +57,7 @@ func (r kanji) GetManyBySearch(ctx context.Context, q string, limit int) ([]mode
 	pattern := utils.SearchPattern(q)
 	characters := strings.Split(q, "")
 	// A Kanji whose character is in q matches it exactly.
-	inQ := bson.D{{Key: "$in", Value: bson.A{"$kanji", characters}}}
+	inQ := bson.D{{Key: "$in", Value: bson.A{"$kanji", literal(characters)}}}
 	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: bson.D{{Key: "$or", Value: bson.A{
 			bson.D{{Key: "kanji", Value: bson.D{{Key: "$in", Value: characters}}}},
@@ -67,7 +67,7 @@ func (r kanji) GetManyBySearch(ctx context.Context, q string, limit int) ([]mode
 			{Key: "_exact", Value: bson.D{{Key: "$or", Value: bson.A{inQ, utils.IsExact(pattern, "spanish")}}}},
 			{Key: "_length", Value: bson.D{{Key: "$cond", Value: bson.A{inQ, 1, utils.MatchedLength(pattern, "spanish")}}}},
 			// The Kanji of a Word come in the order it is spelled.
-			{Key: "_position", Value: bson.D{{Key: "$indexOfCP", Value: bson.A{q, "$kanji"}}}},
+			{Key: "_position", Value: positionIn(q)},
 		}}},
 		{{Key: "$sort", Value: bson.D{{Key: "_exact", Value: -1}, {Key: "_length", Value: 1}, {Key: "_position", Value: 1}, {Key: "v1", Value: 1}, {Key: "_id", Value: 1}}}},
 		{{Key: "$limit", Value: limit}},
@@ -79,10 +79,10 @@ func (r kanji) GetManyBySearch(ctx context.Context, q string, limit int) ([]mode
 	return toKanji(ctx, cursor)
 }
 
-func (r kanji) GetManyByCharactersIn(ctx context.Context, text string) ([]model.Kanji, error) {
+func (r kanji) GetManyBySpelling(ctx context.Context, spelling string) ([]model.Kanji, error) {
 	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
-		{{Key: "$match", Value: bson.D{{Key: "kanji", Value: bson.D{{Key: "$in", Value: strings.Split(text, "")}}}}}},
-		{{Key: "$addFields", Value: bson.D{{Key: "_position", Value: bson.D{{Key: "$indexOfCP", Value: bson.A{text, "$kanji"}}}}}}},
+		{{Key: "$match", Value: bson.D{{Key: "kanji", Value: bson.D{{Key: "$in", Value: strings.Split(spelling, "")}}}}}},
+		{{Key: "$addFields", Value: bson.D{{Key: "_position", Value: positionIn(spelling)}}}},
 		{{Key: "$sort", Value: bson.D{{Key: "_position", Value: 1}, {Key: "_id", Value: 1}}}},
 		{{Key: "$project", Value: kanjiRowFields}},
 	})
@@ -110,6 +110,19 @@ func (r kanji) GetManyByKeywords(ctx context.Context, keywords []string) ([]mode
 		return nil, err
 	}
 	return toKanji(ctx, cursor)
+}
+
+// positionIn is an expression: where the Kanji's character first appears in
+// text, or -1.
+func positionIn(text string) bson.D {
+	return bson.D{{Key: "$indexOfCP", Value: bson.A{literal(text), "$kanji"}}}
+}
+
+// literal is an expression: v as it is. Without it, MongoDB reads a string
+// starting with "$" in an expression as a field path, so text the Owner typed
+// could fail the query or match the wrong thing.
+func literal(v any) bson.D {
+	return bson.D{{Key: "$literal", Value: v}}
 }
 
 // toKanji reads every Kanji from cursor.

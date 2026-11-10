@@ -28,9 +28,9 @@ type KanjiRepository interface {
 	// GetManyBySearch returns up to limit Kanji that match q, best first. Only what a
 	// search result shows is filled in: ID, Kanji and Spanish.
 	GetManyBySearch(ctx context.Context, q string, limit int) ([]Kanji, error)
-	// GetManyByCharactersIn returns the stored Kanji whose character is in text, in the
+	// GetManyBySpelling returns the stored Kanji in a Word's spelling, in the
 	// order they first appear there, filled in as by GetManyBySearch.
-	GetManyByCharactersIn(ctx context.Context, text string) ([]Kanji, error)
+	GetManyBySpelling(ctx context.Context, spelling string) ([]Kanji, error)
 	// GetOneByID returns the Kanji with this ID, or Core's utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (Kanji, error)
 	// GetManyByKeywords returns the stored Kanji whose Spanish is one of keywords,
