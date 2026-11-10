@@ -7,17 +7,9 @@ import (
 	"strings"
 	"testing"
 	"time"
-)
 
-// entryJSON is an Entry as the API lists it.
-type entryJSON struct {
-	ID             string  `json:"id"`
-	MealID         *string `json:"mealId"`
-	Name           string  `json:"name"`
-	KcalPerServing int     `json:"kcalPerServing"`
-	Servings       int     `json:"servings"`
-	Kcal           int     `json:"kcal"`
-}
+	"github.com/feriosch/nando-server/internal/calories/model"
+)
 
 // logEntry logs entry on day and returns the response.
 func (d *browser) logEntry(day string, entry any) *httptest.ResponseRecorder {
@@ -38,9 +30,9 @@ func (d *browser) mustLogEntry(day string, entry any) string {
 	return created.ID
 }
 
-func (d *browser) entries(day string) []entryJSON {
+func (d *browser) entries(day string) []model.EntryJSON {
 	d.nando.t.Helper()
-	return get[[]entryJSON](d, "/api/calories/days/"+day+"/entries")
+	return get[[]model.EntryJSON](d, "/api/calories/days/"+day+"/entries")
 }
 
 func TestEditingAMealNeverChangesItsEntries(t *testing.T) {
@@ -49,20 +41,21 @@ func TestEditingAMealNeverChangesItsEntries(t *testing.T) {
 	entryID := phone.mustLogEntry("2026-10-21", map[string]any{"mealId": mealID, "servings": 2})
 
 	bigger := onigiri
-	bigger.Name, bigger.Kcal = "Tuna mayo onigiri (large)", 310
+	bigger.Name, bigger.Kcal = "Tuna mayo onigiri (large)", iptr(310)
 	phone.must(http.MethodPut, "/api/calories/meals/"+mealID, bigger, http.StatusNoContent)
 
-	want := []entryJSON{{ID: entryID, MealID: &mealID, Name: "Tuna mayo onigiri", KcalPerServing: 230, Servings: 2, Kcal: 460}}
+	want := []model.EntryJSON{{ID: entryID, Day: "2026-10-21", MealID: &mealID, Name: "Tuna mayo onigiri", KcalPerServing: 230, Servings: 2, Kcal: 460}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
 		t.Errorf("entries after editing the Meal = %+v, want %+v", got, want)
 	}
-	if got := get[[]mealJSON](phone, "/api/calories/meals"); len(got) != 1 || got[0].Name != bigger.Name || got[0].Kcal != 310 {
+	if got := get[[]model.MealJSON](phone, "/api/calories/meals"); len(got) != 1 || got[0].Name != bigger.Name || got[0].Kcal != 310 {
 		t.Errorf("meals after editing = %+v, want the edited Meal", got)
 	}
 }
 
-// equalEntries compares Entries by value, following MealID.
-func equalEntries(a, b []entryJSON) bool {
+// equalEntries compares Entries by value, following MealID. It leaves out
+// LoggedAt, which TestAnEntryRecordsWhenItWasLogged checks.
+func equalEntries(a, b []model.EntryJSON) bool {
 	if len(a) != len(b) {
 		return false
 	}
@@ -72,6 +65,7 @@ func equalEntries(a, b []entryJSON) bool {
 			return false
 		}
 		x.MealID, y.MealID = nil, nil
+		x.LoggedAt, y.LoggedAt = "", ""
 		if x != y {
 			return false
 		}
@@ -113,11 +107,11 @@ func TestOwnerLogsAOneOffEntryWithServings(t *testing.T) {
 
 	id := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
 
-	want := []entryJSON{{ID: id, Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
+	want := []model.EntryJSON{{ID: id, Day: "2026-10-21", Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
 		t.Errorf("entries = %+v, want %+v", got, want)
 	}
-	if got := get[[]mealJSON](phone, "/api/calories/meals"); len(got) != 0 {
+	if got := get[[]model.MealJSON](phone, "/api/calories/meals"); len(got) != 0 {
 		t.Errorf("meals = %+v, want none: a one-off Entry isn't a Meal", got)
 	}
 }
@@ -129,11 +123,11 @@ func TestAOneOffEntryCanBeSavedAsAMeal(t *testing.T) {
 		"name": "Salmon nigiri", "kcalPerServing": 60, "servings": 2, "saveAsMeal": true,
 	})
 
-	meals := get[[]mealJSON](phone, "/api/calories/meals")
+	meals := get[[]model.MealJSON](phone, "/api/calories/meals")
 	if len(meals) != 1 || meals[0].Name != "Salmon nigiri" || meals[0].Kcal != 60 {
 		t.Fatalf("meals = %+v, want the saved Salmon nigiri at 60 kcal", meals)
 	}
-	want := []entryJSON{{ID: id, MealID: &meals[0].ID, Name: "Salmon nigiri", KcalPerServing: 60, Servings: 2, Kcal: 120}}
+	want := []model.EntryJSON{{ID: id, Day: "2026-10-21", MealID: &meals[0].ID, Name: "Salmon nigiri", KcalPerServing: 60, Servings: 2, Kcal: 120}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
 		t.Errorf("entries = %+v, want %+v", got, want)
 	}
@@ -175,15 +169,15 @@ func TestOwnerEditsAnEntryOnlyInTheEditableWindow(t *testing.T) {
 	id := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
 
 	phone.must(http.MethodPut, "/api/calories/entries/"+id,
-		map[string]any{"name": "Sushi (salmon)", "kcalPerServing": 50, "servings": 10}, http.StatusNoContent)
+		model.EntryValues{Name: "Sushi (salmon)", KcalPerServing: iptr(50), Servings: 10}, http.StatusNoContent)
 
-	want := []entryJSON{{ID: id, Name: "Sushi (salmon)", KcalPerServing: 50, Servings: 10, Kcal: 500}}
+	want := []model.EntryJSON{{ID: id, Day: "2026-10-21", Name: "Sushi (salmon)", KcalPerServing: 50, Servings: 10, Kcal: 500}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
 		t.Errorf("entries after editing = %+v, want %+v", got, want)
 	}
 
 	n.clock.Set(wednesday.AddDate(0, 0, 8)) // 2026-10-21 has left the Editable Window
-	rec := phone.do(http.MethodPut, "/api/calories/entries/"+id, map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 1})
+	rec := phone.do(http.MethodPut, "/api/calories/entries/"+id, model.EntryValues{Name: "Sushi", KcalPerServing: iptr(45), Servings: 1})
 	if rec.Code != http.StatusConflict {
 		t.Errorf("edit an Entry 8 Days ago: status = %d, want %d", rec.Code, http.StatusConflict)
 	}
@@ -199,7 +193,7 @@ func TestOwnerDeletesAnEntryOnlyInTheEditableWindow(t *testing.T) {
 
 	phone.must(http.MethodDelete, "/api/calories/entries/"+mistake, nil, http.StatusNoContent)
 
-	want := []entryJSON{{ID: kept, Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
+	want := []model.EntryJSON{{ID: kept, Day: "2026-10-21", Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
 		t.Errorf("entries after deleting = %+v, want %+v", got, want)
 	}
@@ -229,7 +223,7 @@ func TestInvalidEntryEditsAreRejected(t *testing.T) {
 			t.Errorf("%s: status = %d, body %q; want %d", name, rec.Code, rec.Body, http.StatusBadRequest)
 		}
 	}
-	want := []entryJSON{{ID: id, Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
+	want := []model.EntryJSON{{ID: id, Day: "2026-10-21", Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
 		t.Errorf("entries after rejected edits = %+v, want %+v", got, want)
 	}
@@ -240,9 +234,7 @@ func TestAnEntryRecordsWhenItWasLogged(t *testing.T) {
 
 	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 1})
 
-	got := get[[]struct {
-		LoggedAt string `json:"loggedAt"`
-	}](phone, "/api/calories/days/2026-10-21/entries")
+	got := phone.entries("2026-10-21")
 	if len(got) != 1 || got[0].LoggedAt != "2026-10-21T12:00:00Z" {
 		t.Errorf("loggedAt = %+v, want [2026-10-21T12:00:00Z], the clock's time", got)
 	}

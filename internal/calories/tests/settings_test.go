@@ -2,43 +2,28 @@ package tests
 
 import (
 	"net/http"
+	"reflect"
 	"testing"
+
+	"github.com/feriosch/nando-server/internal/calories/model"
 )
-
-// notificationSettingJSON is when one of the Calories Notifications is sent.
-type notificationSettingJSON struct {
-	Enabled bool   `json:"enabled"`
-	Time    string `json:"time"`
-}
-
-// settingsJSON is what the Calories Settings Section saves, as the API reads and writes it.
-type settingsJSON struct {
-	NoEntriesReminder notificationSettingJSON `json:"noEntriesReminder"`
-	EveningSummary    notificationSettingJSON `json:"eveningSummary"`
-}
 
 func TestCaloriesNotificationsAreOffUntilTheOwnerTurnsThemOn(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 
-	want := settingsJSON{
-		NoEntriesReminder: notificationSettingJSON{Enabled: false, Time: "14:00"},
-		EveningSummary:    notificationSettingJSON{Enabled: false, Time: "21:00"},
-	}
-	if got := get[settingsJSON](phone, "/api/calories/settings"); got != want {
+	want := model.SettingsJSON{NoEntriesReminder: off("14:00"), EveningSummary: off("21:00")}
+	if got := get[model.SettingsJSON](phone, "/api/calories/settings"); !reflect.DeepEqual(got, want) {
 		t.Errorf("settings = %+v, want %+v", got, want)
 	}
 }
 
 func TestOwnerSavesWhenCaloriesNotificationsAreSent(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
-	saved := settingsJSON{
-		NoEntriesReminder: notificationSettingJSON{Enabled: true, Time: "13:30"},
-		EveningSummary:    notificationSettingJSON{Enabled: true, Time: "22:00"},
-	}
+	saved := model.SettingsJSON{NoEntriesReminder: on("13:30"), EveningSummary: on("22:00")}
 
 	phone.must(http.MethodPut, "/api/calories/settings", saved, http.StatusNoContent)
 
-	if got := get[settingsJSON](phone, "/api/calories/settings"); got != saved {
+	if got := get[model.SettingsJSON](phone, "/api/calories/settings"); !reflect.DeepEqual(got, saved) {
 		t.Errorf("settings = %+v, want %+v", got, saved)
 	}
 }
