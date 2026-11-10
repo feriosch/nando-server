@@ -13,9 +13,9 @@ type Word struct {
 	Spanish string
 	// Group is the key of the Group the Word is filed in, such as "jlpt_n2".
 	Group string
-	// Type is the Word's parts of speech as benkyo stored them, in their
-	// stored order, such as noun 1 then suru 1.
-	Type []PartOfSpeech
+	// Type is the Word's parts of speech as benkyo stored them, such as
+	// {"noun": 1, "suru": 1}.
+	Type map[string]int
 	// Tags are its Word Tags, snake_case.
 	Tags []string
 	// Notes is "" when there are none.
@@ -24,16 +24,6 @@ type Word struct {
 	// WordLinks are its sides of its Word Links.
 	WordLinks []WordLink
 	Hints     []Hint
-}
-
-// PartOfSpeech is one of a Word's parts of speech as benkyo stored it.
-type PartOfSpeech struct {
-	// Key is "noun", "suru", "no_adj", "na_adj", "i_adj", "adv", "verb",
-	// "adj_noun", "adv_noun" or "counter".
-	Key string
-	// Form is 1 for the part of speech itself, 4 for its と form or 5 for its
-	// 的 form.
-	Form int
 }
 
 // WordLink is a Word's side of a Word Link to another Word.
@@ -46,8 +36,6 @@ type WordLink struct {
 	Note string
 	// NuanceTags say how the other Word differs from this one, snake_case.
 	NuanceTags []string
-	// Position is its place among the Word's Word Links and Hints, as stored.
-	Position int
 }
 
 // Hint is a one-way, text-only pointer from a Word to an everyday word that
@@ -56,12 +44,6 @@ type Hint struct {
 	Text string
 	// Note is "" when there's none.
 	Note string
-	// Kind and NuanceTags are as benkyo stored them on a Hint, like a Word
-	// Link's. Only the Anki export shows them.
-	Kind       string
-	NuanceTags []string
-	// Position is its place among the Word's Word Links and Hints, as stored.
-	Position int
 }
 
 // Sentence is an example sentence using a Word, with its Spanish translation.
@@ -79,15 +61,15 @@ type WordsRepository interface {
 	// GetOneByID returns the Word with this ID, or Core's utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (Word, error)
 	// GetManyByIDs returns the Words with these IDs that are stored, in no
-	// particular order, filled in as by GetManyBySearch and with their Tags.
+	// particular order, filled in as by GetManyBySearch.
 	GetManyByIDs(ctx context.Context, ids []string) ([]Word, error)
 	// GetManyByKanji returns up to limit Words whose spelling contains
 	// kanji (a Kanji's character), shorter ones first, filled in as by GetManyBySearch.
 	GetManyByKanji(ctx context.Context, kanji string, limit int) ([]Word, error)
-	// GetManyForJLPTDeck returns, oldest first, every Word studied for the JLPT:
-	// those in the JLPT N3, N2 and N1 Groups, and any other Word with the
-	// jlpt_n1 Word Tag.
-	GetManyForJLPTDeck(ctx context.Context) ([]Word, error)
+	// GetManyForJLPTDeck returns, oldest first, every Word studied for the JLPT,
+	// as the JLPT deck file exports it: those in the JLPT Groups, and any other
+	// Word with the jlpt_n1 Word Tag.
+	GetManyForJLPTDeck(ctx context.Context) ([]AnkiWord, error)
 }
 
 // The JSON shapes below are what the API answers with.

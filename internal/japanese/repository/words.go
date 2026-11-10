@@ -25,16 +25,14 @@ type words struct {
 
 // wordDocument is a Word as it is stored.
 type wordDocument struct {
-	ID       bson.ObjectID `bson:"_id"`
-	Word     string        `bson:"word"`
-	Hiragana string        `bson:"hiragana"`
-	Spanish  string        `bson:"spanish"`
-	Group    string        `bson:"group"`
-	// Type is a document, decoded in order: the order of a Word's parts of
-	// speech is the order Anki lists them in.
-	Type      bson.D   `bson:"type"`
-	Tags      []string `bson:"tags"`
-	Notes     string   `bson:"notes"`
+	ID        bson.ObjectID  `bson:"_id"`
+	Word      string         `bson:"word"`
+	Hiragana  string         `bson:"hiragana"`
+	Spanish   string         `bson:"spanish"`
+	Group     string         `bson:"group"`
+	Type      map[string]int `bson:"type"`
+	Tags      []string       `bson:"tags"`
+	Notes     string         `bson:"notes"`
 	Sentences []struct {
 		Sentence    string `bson:"sentence"`
 		Translation string `bson:"translation"`
@@ -57,37 +55,21 @@ func (d wordDocument) toWord() model.Word {
 		Hiragana: d.Hiragana,
 		Spanish:  d.Spanish,
 		Group:    d.Group,
+		Type:     d.Type,
 		Tags:     d.Tags,
 		Notes:    d.Notes,
-	}
-	for _, e := range d.Type {
-		w.Type = append(w.Type, model.PartOfSpeech{Key: e.Key, Form: toInt(e.Value)})
 	}
 	for _, s := range d.Sentences {
 		w.Sentences = append(w.Sentences, model.Sentence(s))
 	}
-	for i, rel := range d.Related {
+	for _, rel := range d.Related {
 		if rel.WordID == nil {
-			w.Hints = append(w.Hints, model.Hint{Text: rel.Word, Note: rel.Note, Kind: rel.Type, NuanceTags: rel.Tags, Position: i})
+			w.Hints = append(w.Hints, model.Hint{Text: rel.Word, Note: rel.Note})
 			continue
 		}
-		w.WordLinks = append(w.WordLinks, model.WordLink{WordID: rel.WordID.Hex(), Kind: rel.Type, Note: rel.Note, NuanceTags: rel.Tags, Position: i})
+		w.WordLinks = append(w.WordLinks, model.WordLink{WordID: rel.WordID.Hex(), Kind: rel.Type, Note: rel.Note, NuanceTags: rel.Tags})
 	}
 	return w
-}
-
-// toInt is v as an int, whichever number type it was stored as, or 0 if it
-// isn't a number.
-func toInt(v any) int {
-	switch n := v.(type) {
-	case int32:
-		return int(n)
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	}
-	return 0
 }
 
 func (r words) GetManyBySearch(ctx context.Context, q string, limit int) ([]model.Word, error) {
@@ -144,8 +126,7 @@ func (r words) GetManyByIDs(ctx context.Context, ids []string) ([]model.Word, er
 			oids = append(oids, oid)
 		}
 	}
-	projection := append(bson.D{{Key: "tags", Value: 1}}, rowFields...)
-	cursor, err := r.collection.Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: oids}}}}, options.Find().SetProjection(projection))
+	cursor, err := r.collection.Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: oids}}}}, options.Find().SetProjection(rowFields))
 	if err != nil {
 		return nil, err
 	}
@@ -166,14 +147,146 @@ func (r words) GetManyByKanji(ctx context.Context, kanji string, limit int) ([]m
 	return toWords(ctx, cursor)
 }
 
-func (r words) GetManyForJLPTDeck(ctx context.Context) ([]model.Word, error) {
-	filter := bson.D{{Key: "$or", Value: bson.A{
-		bson.D{{Key: "group", Value: bson.D{{Key: "$in", Value: bson.A{"jlpt_n3", "jlpt_n2", "jlpt_n1"}}}}},
-		bson.D{{Key: "tags", Value: "jlpt_n1"}},
-	}}}
-	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))
+// ankiWordDocument is a Word as the JLPT deck reads it: projected as benkyo's
+// export projected it, with the Words it has Word Links to looked up.
+type ankiWordDocument struct {
+	ID       bson.ObjectID `bson:"_id"`
+	Word     string        `bson:"word"`
+	Hiragana string        `bson:"hiragana"`
+	Spanish  string        `bson:"spanish"`
+	// Type is decoded in order, and its values as stored, which aren't always
+	// whole numbers.
+	Type        bson.D   `bson:"type"`
+	Tags        []string `bson:"tags"`
+	Notes       string   `bson:"notes"`
+	Sentence    string   `bson:"sentence"`
+	Translation string   `bson:"translation"`
+	// Related holds both the Word's sides of its Word Links and its Hints.
+	Related []struct {
+		WordID *bson.ObjectID `bson:"wordId"`
+		Word   string         `bson:"word"`
+		// Type is nil when none is stored.
+		Type *string  `bson:"type"`
+		Note string   `bson:"note"`
+		Tags []string `bson:"tags"`
+	} `bson:"related"`
+	Linked []struct {
+		ID bson.ObjectID `bson:"_id"`
+		// Word and Hiragana are nil when not stored, which benkyo told apart
+		// from stored empty.
+		Word     *string  `bson:"word"`
+		Hiragana *string  `bson:"hiragana"`
+		Group    string   `bson:"group"`
+		Tags     []string `bson:"tags"`
+	} `bson:"_linked"`
+}
+
+func (d ankiWordDocument) toAnkiWord() model.AnkiWord {
+	w := model.AnkiWord{
+		ID:          d.ID.Hex(),
+		Word:        d.Word,
+		Hiragana:    d.Hiragana,
+		Spanish:     d.Spanish,
+		Tags:        d.Tags,
+		Notes:       d.Notes,
+		Sentence:    d.Sentence,
+		Translation: d.Translation,
+	}
+	for _, e := range d.Type {
+		w.PartsOfSpeech = append(w.PartsOfSpeech, model.PartOfSpeech{Key: e.Key, Form: formOf(e.Value)})
+	}
+	others := map[bson.ObjectID]*model.AnkiOtherWord{}
+	for _, l := range d.Linked {
+		// A Word with no kanji spelling is shown by its kana, and one with
+		// neither stored by "?", as benkyo did.
+		spelling := "?"
+		if l.Word != nil && *l.Word != "" {
+			spelling = *l.Word
+		} else if l.Hiragana != nil {
+			spelling = *l.Hiragana
+		}
+		others[l.ID] = &model.AnkiOtherWord{Spelling: spelling, Group: l.Group, Tags: l.Tags}
+	}
+	for _, rel := range d.Related {
+		related := model.AnkiRelated{Text: rel.Word, Kind: "related", Note: rel.Note, NuanceTags: rel.Tags}
+		if rel.Type != nil {
+			related.Kind = *rel.Type
+		}
+		if rel.WordID != nil {
+			related.Other = others[*rel.WordID]
+		}
+		w.Related = append(w.Related, related)
+	}
+	return w
+}
+
+// formOf is the Form a stored part of speech's value is, compared as benkyo
+// compared it, with Python's ==: true is 1, and a number that isn't whole,
+// such as 1.5, is no form.
+func formOf(v any) model.Form {
+	var n float64
+	switch v := v.(type) {
+	case int32:
+		n = float64(v)
+	case int64:
+		n = float64(v)
+	case float64:
+		n = v
+	case bool:
+		if v {
+			n = 1
+		}
+	}
+	switch form := model.Form(n); form {
+	case model.PlainForm, model.ToForm, model.TekiForm:
+		if float64(form) == n {
+			return form
+		}
+	}
+	return model.NoForm
+}
+
+func (r words) GetManyForJLPTDeck(ctx context.Context) ([]model.AnkiWord, error) {
+	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
+		{{Key: "$match", Value: bson.D{{Key: "$or", Value: bson.A{
+			bson.D{{Key: "group", Value: bson.D{{Key: "$in", Value: model.JLPTGroups()}}}},
+			bson.D{{Key: "tags", Value: "jlpt_n1"}},
+		}}}}},
+		{{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}}},
+		{{Key: "$lookup", Value: bson.D{
+			{Key: "from", Value: "words"},
+			{Key: "localField", Value: "related.wordId"},
+			{Key: "foreignField", Value: "_id"},
+			{Key: "as", Value: "_linked"},
+			{Key: "pipeline", Value: mongo.Pipeline{{{Key: "$project", Value: bson.D{
+				{Key: "word", Value: 1}, {Key: "hiragana", Value: 1}, {Key: "group", Value: 1}, {Key: "tags", Value: 1},
+			}}}}},
+		}}},
+		{{Key: "$project", Value: bson.D{
+			{Key: "word", Value: 1},
+			{Key: "hiragana", Value: 1},
+			{Key: "spanish", Value: 1},
+			{Key: "type", Value: 1},
+			{Key: "tags", Value: 1},
+			{Key: "notes", Value: 1},
+			// The first stored sentence and the first stored translation, each
+			// skipping example sentences without one, as benkyo took them.
+			{Key: "sentence", Value: bson.D{{Key: "$first", Value: "$sentences.sentence"}}},
+			{Key: "translation", Value: bson.D{{Key: "$first", Value: "$sentences.translation"}}},
+			{Key: "related", Value: 1},
+			{Key: "_linked", Value: 1},
+		}}},
+	})
 	if err != nil {
 		return nil, err
 	}
-	return toWords(ctx, cursor)
+	var docs []ankiWordDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	list := make([]model.AnkiWord, len(docs))
+	for i, d := range docs {
+		list[i] = d.toAnkiWord()
+	}
+	return list, nil
 }

@@ -185,7 +185,9 @@ func TestANotesTypeListsThePartsOfSpeechInTheOrderTheyAreStored(t *testing.T) {
 		"な形的":  {{Key: "na_adj", Value: 5}},
 		"動":    {{Key: "noun", Value: 0}, {Key: "unknown", Value: 1}, {Key: "verb", Value: 1}},
 		"名形、回": {{Key: "adj_noun", Value: int64(1)}, {Key: "counter", Value: 1.0}},
-		"":     {},
+		// benkyo compared with Python's ==: true is 1, and 1.5 is no form at all.
+		"名": {{Key: "noun", Value: true}, {Key: "verb", Value: 1.5}, {Key: "adv", Value: false}},
+		"":  {},
 	}
 	ids := map[string]string{}
 	for want, partsOfSpeech := range cases {
@@ -256,7 +258,7 @@ func TestANotesUsageHasEveryOtherWordTag(t *testing.T) {
 	}
 }
 
-func TestANotesNotesLeaveOutLegacyRelationText(t *testing.T) {
+func TestANotesNotesLeaveOutLegacyWordLinkText(t *testing.T) {
 	n, phone := signedInBrowser(t)
 	cases := map[string]string{
 		"rel: なおさら; Más formal que もっと": "Más formal que もっと",
@@ -547,5 +549,68 @@ func TestAWordWithoutSentencesTagsOrNotesStillFillsEveryField(t *testing.T) {
 		if note[field] != "" {
 			t.Errorf("%s = %q, want empty", field, note[field])
 		}
+	}
+}
+
+func TestTheFirstSentenceSkipsExampleSentencesWithoutOne(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	w := ichisou()
+	// benkyo took the first stored sentence and, separately, the first stored translation.
+	w["sentences"] = bson.A{
+		bson.M{"translation": "Solo la traducción."},
+		bson.M{"sentence": "雨が一層強くなった。", "translation": "La lluvia se hizo aún más fuerte."},
+	}
+	n.store("words", w)
+
+	note := onlyNote(phone)
+
+	if note["Japanese Sentence"] != "雨が一層強くなった。" || note["Translation Sentence"] != "Solo la traducción." {
+		t.Errorf("Japanese Sentence, Translation Sentence = %q, %q; want 雨が一層強くなった。 and Solo la traducción.", note["Japanese Sentence"], note["Translation Sentence"])
+	}
+}
+
+func TestAWordLinkToAWordWithNeitherSpellingNorReadingShowsAQuestionMark(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	nameless := bson.M{"_id": bson.NewObjectID(), "spanish": "?", "group": "basic"}
+	w := ichisou()
+	w["related"] = bson.A{bson.M{"wordId": nameless["_id"], "type": "related"}}
+	n.store("words", w, nameless)
+
+	back := onlyNoteOf(phone, w)["Related Back"]
+
+	if want := `<span class="rel-word">?</span>`; !strings.Contains(back, want) {
+		t.Errorf("Related Back = %q, want it to hold %q", back, want)
+	}
+}
+
+func TestAWordLinkWithoutAKindIsRelatedAndOneWithAnEmptyKindKeepsIt(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	more := word("もっと", "", "más", "basic")
+	w := ichisou()
+	w["related"] = bson.A{
+		bson.M{"wordId": more["_id"]},
+		bson.M{"word": "層", "type": ""},
+	}
+	n.store("words", w, more)
+
+	back := relatedItems(onlyNoteOf(phone, w)["Related Back"])
+
+	want := []string{
+		`<li class="rel rel-related"><span class="rel-head"><span class="rel-type">~</span><span class="rel-word">もっと</span></span></li>`,
+		`<li class="rel rel-"><span class="rel-head"><span class="rel-type">~</span><span class="rel-word">層</span></span></li>`,
+	}
+	if !slices.Equal(back, want) {
+		t.Errorf("Related Back = %q,\nwant %q", back, want)
+	}
+}
+
+func TestAnEmptyJLPTDeckIsJustTheHeader(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("words", word("もっと", "", "más", "basic"))
+
+	file := exportJLPTDeck(phone)
+
+	if len(file.header) != 5 || len(file.notes) != 0 || file.raw != strings.Join(file.header, "\n")+"\n" {
+		t.Errorf("deck = %q, want only its 5 header lines", file.raw)
 	}
 }
