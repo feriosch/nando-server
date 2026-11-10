@@ -15,7 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/core"
-	"github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/server"
 	"github.com/feriosch/nando-server/internal/testmongo"
 	"github.com/feriosch/nando-server/internal/testpasskey"
@@ -450,13 +449,20 @@ func sessionCookieIn(rec *httptest.ResponseRecorder) *http.Cookie {
 	return nil
 }
 
-func (d *browser) listSessions() []model.SessionJSON {
+// sessionJSON is one Session as GET /api/sessions lists it.
+type sessionJSON struct {
+	ID        string `json:"id"`
+	UserAgent string `json:"userAgent"`
+	Current   bool   `json:"current"`
+}
+
+func (d *browser) listSessions() []sessionJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/sessions", nil)
 	if rec.Code != http.StatusOK {
 		d.nando.t.Fatalf("GET /api/sessions: status = %d, body %q", rec.Code, rec.Body)
 	}
-	var sessions []model.SessionJSON
+	var sessions []sessionJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &sessions); err != nil {
 		d.nando.t.Fatalf("GET /api/sessions: %v in %q", err, rec.Body)
 	}
@@ -476,7 +482,7 @@ func TestOwnerSeesEachSession(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("Sessions = %+v, want the iPhone's and the Mac's", got)
 	}
-	for i, want := range []model.SessionJSON{{UserAgent: "iPhone", Current: false}, {UserAgent: "Mac", Current: true}} {
+	for i, want := range []sessionJSON{{UserAgent: "iPhone", Current: false}, {UserAgent: "Mac", Current: true}} {
 		if got[i].UserAgent != want.UserAgent || got[i].Current != want.Current {
 			t.Errorf("Session %d = %+v, want userAgent %q, current %t", i, got[i], want.UserAgent, want.Current)
 		}
@@ -507,13 +513,18 @@ func TestDeletingASessionSignsItsBrowserOut(t *testing.T) {
 	}
 }
 
-func (d *browser) listPasskeys() []model.PasskeyJSON {
+// passkeyJSON is one Passkey as GET /api/passkeys lists it.
+type passkeyJSON struct {
+	ID string `json:"id"`
+}
+
+func (d *browser) listPasskeys() []passkeyJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/passkeys", nil)
 	if rec.Code != http.StatusOK {
 		d.nando.t.Fatalf("GET /api/passkeys: status = %d, body %q", rec.Code, rec.Body)
 	}
-	var passkeys []model.PasskeyJSON
+	var passkeys []passkeyJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &passkeys); err != nil {
 		d.nando.t.Fatalf("GET /api/passkeys: %v in %q", err, rec.Body)
 	}

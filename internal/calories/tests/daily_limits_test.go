@@ -3,14 +3,18 @@ package tests
 import (
 	"net/http"
 	"testing"
-
-	"github.com/feriosch/nando-server/internal/calories/model"
 )
 
 // dailyLimitOn is the Daily Limit the Day view shows for day, or nil.
 func (d *browser) dailyLimitOn(day string) *int {
 	d.nando.t.Helper()
-	return get[model.DayJSON](d, "/api/calories/days/"+day).DailyLimit
+	return get[dayJSON](d, "/api/calories/days/"+day).DailyLimit
+}
+
+// dailyLimitJSON is the Daily Limit as the API answers it.
+type dailyLimitJSON struct {
+	Kcal          int    `json:"kcal"`
+	EffectiveFrom string `json:"effectiveFrom"`
 }
 
 // setDailyLimit sets the Daily Limit to kcal from today.
@@ -24,8 +28,8 @@ func TestOwnerSetsTheDailyLimitFromToday(t *testing.T) {
 
 	phone.setDailyLimit(2000)
 
-	want := model.DailyLimitJSON{Kcal: 2000, EffectiveFrom: "2026-10-21"}
-	if got := get[*model.DailyLimitJSON](phone, "/api/calories/daily-limit"); got == nil || *got != want {
+	want := dailyLimitJSON{Kcal: 2000, EffectiveFrom: "2026-10-21"}
+	if got := get[*dailyLimitJSON](phone, "/api/calories/daily-limit"); got == nil || *got != want {
 		t.Errorf("daily limit = %+v, want %+v", got, want)
 	}
 }
@@ -45,7 +49,7 @@ func TestInvalidDailyLimitsAreRejected(t *testing.T) {
 			t.Errorf("PUT daily-limit %v: status = %d, want 400", body, rec.Code)
 		}
 	}
-	if got := get[*model.DailyLimitJSON](phone, "/api/calories/daily-limit"); got == nil || got.Kcal != 2000 {
+	if got := get[*dailyLimitJSON](phone, "/api/calories/daily-limit"); got == nil || got.Kcal != 2000 {
 		t.Errorf("daily limit after rejected changes = %+v, want still 2000", got)
 	}
 }
@@ -57,8 +61,8 @@ func TestEachDayIsJudgedAgainstTheDailyLimitItHad(t *testing.T) {
 	phone.setDailyLimit(1500)
 	phone.setDailyLimit(1800) // replaces Friday's first change
 
-	want := model.DailyLimitJSON{Kcal: 1800, EffectiveFrom: "2026-10-23"}
-	if got := get[*model.DailyLimitJSON](phone, "/api/calories/daily-limit"); got == nil || *got != want {
+	want := dailyLimitJSON{Kcal: 1800, EffectiveFrom: "2026-10-23"}
+	if got := get[*dailyLimitJSON](phone, "/api/calories/daily-limit"); got == nil || *got != want {
 		t.Errorf("daily limit = %+v, want %+v", got, want)
 	}
 	for day, want := range map[string]int{
@@ -77,7 +81,7 @@ func TestEachDayIsJudgedAgainstTheDailyLimitItHad(t *testing.T) {
 func TestThereIsNoDailyLimitUntilOneIsSet(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 
-	if got := get[*model.DailyLimitJSON](phone, "/api/calories/daily-limit"); got != nil {
+	if got := get[*dailyLimitJSON](phone, "/api/calories/daily-limit"); got != nil {
 		t.Errorf("daily limit = %+v, want null", got)
 	}
 	if got := phone.dailyLimitOn("2026-10-21"); got != nil {

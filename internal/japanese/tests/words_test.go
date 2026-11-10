@@ -5,9 +5,50 @@ import (
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
-
-	"github.com/feriosch/nando-server/internal/japanese/model"
 )
+
+// wordJSON is a Word as GET /api/japanese/words/{id} answers it.
+type wordJSON struct {
+	ID        string         `json:"id"`
+	Word      string         `json:"word"`
+	Hiragana  *string        `json:"hiragana"`
+	Spanish   string         `json:"spanish"`
+	Type      map[string]int `json:"type"`
+	Group     groupJSON      `json:"group"`
+	Tags      []string       `json:"tags"`
+	Notes     *string        `json:"notes"`
+	Sentences []sentenceJSON `json:"sentences"`
+	WordLinks []wordLinkJSON `json:"wordLinks"`
+	Hints     []hintJSON     `json:"hints"`
+	Kanji     []kanjiRowJSON `json:"kanji"`
+}
+
+// groupJSON is a Word's Group as the Word page shows it.
+type groupJSON struct {
+	Key      string  `json:"key"`
+	Name     string  `json:"name"`
+	ImageURL *string `json:"imageUrl"`
+}
+
+// sentenceJSON is an example sentence as the Word page shows it.
+type sentenceJSON struct {
+	Sentence    string `json:"sentence"`
+	Translation string `json:"translation"`
+}
+
+// wordLinkJSON is a Word's side of a Word Link as the Word page shows it.
+type wordLinkJSON struct {
+	Kind       string      `json:"kind"`
+	Note       *string     `json:"note"`
+	NuanceTags []string    `json:"nuanceTags"`
+	Word       wordRowJSON `json:"word"`
+}
+
+// hintJSON is a Hint as the Word page shows it.
+type hintJSON struct {
+	Text string  `json:"text"`
+	Note *string `json:"note"`
+}
 
 // group is a Group as benkyo stored it.
 func group(key, name, imageURL string) bson.M {
@@ -34,21 +75,21 @@ func TestAWordPageShowsEverythingAboutTheWord(t *testing.T) {
 	}
 	n.store("words", footprint)
 
-	got := get[model.WordJSON](phone, "/api/japanese/words/"+id(footprint))
+	got := get[wordJSON](phone, "/api/japanese/words/"+id(footprint))
 
-	want := model.WordJSON{
+	want := wordJSON{
 		ID:        id(footprint),
 		Word:      "足跡",
 		Hiragana:  ptr("あしあと"),
 		Spanish:   "huella, pisada",
 		Type:      map[string]int{"noun": 1, "suru": 4},
-		Group:     model.GroupJSON{Key: "jlpt_n2", Name: "JLPT N2", ImageURL: ptr(n2Picture)},
+		Group:     groupJSON{Key: "jlpt_n2", Name: "JLPT N2", ImageURL: ptr(n2Picture)},
 		Tags:      []string{"common", "usually_kana"},
 		Notes:     ptr("También figurado: el rastro que deja alguien."),
-		Sentences: []model.SentenceJSON{{Sentence: "雪に足跡が残っていた。", Translation: "Quedaban huellas en la nieve."}},
-		WordLinks: []model.WordLinkJSON{},
-		Hints:     []model.HintJSON{},
-		Kanji:     []model.KanjiRowJSON{},
+		Sentences: []sentenceJSON{{Sentence: "雪に足跡が残っていた。", Translation: "Quedaban huellas en la nieve."}},
+		WordLinks: []wordLinkJSON{},
+		Hints:     []hintJSON{},
+		Kanji:     []kanjiRowJSON{},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Word = %+v,\nwant %+v", got, want)
@@ -61,7 +102,7 @@ func TestAWordWithoutReadingTagsOrNotes(t *testing.T) {
 	sorry := word("あしからず", "", "no lo tomes a mal", "miscellaneous")
 	n.store("words", sorry)
 
-	got := get[model.WordJSON](phone, "/api/japanese/words/"+id(sorry))
+	got := get[wordJSON](phone, "/api/japanese/words/"+id(sorry))
 
 	if got.Hiragana != nil || got.Notes != nil || got.Tags == nil || len(got.Tags) != 0 || got.Sentences == nil {
 		t.Errorf("Word = %+v, want hiragana and notes null, tags and sentences []", got)
@@ -86,20 +127,20 @@ func TestAWordPageShowsItsWordLinksAndHints(t *testing.T) {
 	}
 	n.store("words", expect, longFor, hope, despair)
 
-	got := get[model.WordJSON](phone, "/api/japanese/words/"+id(expect))
+	got := get[wordJSON](phone, "/api/japanese/words/"+id(expect))
 
-	wantWordLinks := []model.WordLinkJSON{
+	wantWordLinks := []wordLinkJSON{
 		{Kind: "synonym", Note: ptr("Más intenso y escrito."), NuanceTags: []string{"written", "literary"},
-			Word: model.WordRowJSON{ID: id(longFor), Word: "待ち望む", Hiragana: ptr("まちのぞむ"), Spanish: "esperar con ansia", Group: "jlpt_n1"}},
+			Word: wordRowJSON{ID: id(longFor), Word: "待ち望む", Hiragana: ptr("まちのぞむ"), Spanish: "esperar con ansia", Group: "jlpt_n1"}},
 		{Kind: "related", NuanceTags: []string{},
-			Word: model.WordRowJSON{ID: id(hope), Word: "希望", Hiragana: ptr("きぼう"), Spanish: "esperanza", Group: "basic"}},
+			Word: wordRowJSON{ID: id(hope), Word: "希望", Hiragana: ptr("きぼう"), Spanish: "esperanza", Group: "basic"}},
 		{Kind: "antonym", NuanceTags: []string{},
-			Word: model.WordRowJSON{ID: id(despair), Word: "絶望", Hiragana: ptr("ぜつぼう"), Spanish: "desesperación", Group: "jlpt_n2"}},
+			Word: wordRowJSON{ID: id(despair), Word: "絶望", Hiragana: ptr("ぜつぼう"), Spanish: "desesperación", Group: "jlpt_n2"}},
 	}
 	if !reflect.DeepEqual(got.WordLinks, wantWordLinks) {
 		t.Errorf("Word Links = %+v,\nwant %+v", got.WordLinks, wantWordLinks)
 	}
-	wantHints := []model.HintJSON{{Text: "天気", Note: ptr("Se espera buen tiempo.")}, {Text: "楽しみ"}}
+	wantHints := []hintJSON{{Text: "天気", Note: ptr("Se espera buen tiempo.")}, {Text: "楽しみ"}}
 	if !reflect.DeepEqual(got.Hints, wantHints) {
 		t.Errorf("Hints = %+v, want %+v", got.Hints, wantHints)
 	}
@@ -116,8 +157,8 @@ func TestAWordPageShowsTheStoredKanjiInItsSpelling(t *testing.T) {
 	turn := kanji("回", "vez", 600)
 	n.store("kanji", turn, weekday, day, kanji("月", "mes", 13))
 
-	got := get[model.WordJSON](phone, "/api/japanese/words/"+id(sunday))
-	want := []model.KanjiRowJSON{
+	got := get[wordJSON](phone, "/api/japanese/words/"+id(sunday))
+	want := []kanjiRowJSON{
 		{ID: id(day), Kanji: "日", Spanish: "día"},
 		{ID: id(weekday), Kanji: "曜", Spanish: "día de la semana"},
 	}
@@ -126,7 +167,7 @@ func TestAWordPageShowsTheStoredKanjiInItsSpelling(t *testing.T) {
 	}
 
 	// 歩 isn't stored, and neither kana is a Kanji.
-	got = get[model.WordJSON](phone, "/api/japanese/words/"+id(walk))
+	got = get[wordJSON](phone, "/api/japanese/words/"+id(walk))
 	if want := []string{"回"}; !reflect.DeepEqual(characters(got.Kanji), want) {
 		t.Errorf("Kanji in 歩き回る = %v, want %v", characters(got.Kanji), want)
 	}

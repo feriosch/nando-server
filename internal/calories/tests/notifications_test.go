@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/feriosch/nando-server/internal/calories/model"
 	"github.com/feriosch/nando-server/internal/testpush"
 )
 
@@ -48,20 +47,20 @@ func (n *nando) tickAt(now time.Time) {
 }
 
 // saveCaloriesSettings saves when the Calories Notifications are sent.
-func (d *browser) saveCaloriesSettings(noEntriesReminder, eveningSummary *model.NotificationSettingJSON) {
+func (d *browser) saveCaloriesSettings(noEntriesReminder, eveningSummary notificationSettingJSON) {
 	d.nando.t.Helper()
 	d.must(http.MethodPut, "/api/calories/settings",
-		model.SettingsJSON{NoEntriesReminder: noEntriesReminder, EveningSummary: eveningSummary}, http.StatusNoContent)
+		settingsJSON{NoEntriesReminder: noEntriesReminder, EveningSummary: eveningSummary}, http.StatusNoContent)
 }
 
 // on is the Notification setting switched on at clock time hhmm.
-func on(hhmm string) *model.NotificationSettingJSON {
-	return &model.NotificationSettingJSON{Enabled: bptr(true), Time: hhmm}
+func on(hhmm string) notificationSettingJSON {
+	return notificationSettingJSON{Enabled: true, Time: hhmm}
 }
 
 // off is the Notification setting switched off, though set for hhmm.
-func off(hhmm string) *model.NotificationSettingJSON {
-	return &model.NotificationSettingJSON{Enabled: bptr(false), Time: hhmm}
+func off(hhmm string) notificationSettingJSON {
+	return notificationSettingJSON{Enabled: false, Time: hhmm}
 }
 
 // tokyoTime is the moment it is hh:mm on Thursday 2026-10-22 in Tokyo.
