@@ -47,3 +47,8 @@ func (r oauthClients) Approve(ctx context.Context, id string) error {
 	res, err := r.collection.UpdateByID(ctx, id, update)
 	return utils.Matched(res, err)
 }
+
+func (r oauthClients) Expire(ctx context.Context, id string, at time.Time) error {
+	_, err := r.collection.UpdateByID(ctx, id, bson.D{{Key: "$set", Value: bson.D{{Key: "expiresAt", Value: at}}}})
+	return err
+}

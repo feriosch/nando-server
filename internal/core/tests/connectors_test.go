@@ -971,3 +971,50 @@ func TestReusingACodeRemovesItsConnector(t *testing.T) {
 	}
 	refusedAsInvalidGrant(t, "refresh with the tokens from the reused code", n.token(refresh(client, tokens.RefreshToken)))
 }
+
+// approveAgain has the Owner approve client once more, as a new Connector on
+// the same registration, as when the app is connected a second time.
+func (d *browser) approveAgain(client clientJSON) {
+	d.nando.t.Helper()
+	request := requestOf(d.nando.t, d.nando.authorize(authorizeQuery(client, "again")))
+	tokensIn(d.nando.t, d.nando.token(codeExchange(client, d.mustApprove(request), verifier)))
+}
+
+// removeConnector removes the Connector at index i of the Owner's list.
+func (d *browser) removeConnector(i int) {
+	d.nando.t.Helper()
+	id := d.listConnectors()[i].ID
+	if rec := d.do(http.MethodDelete, "/api/connectors/"+id, nil); rec.Code != http.StatusNoContent {
+		d.nando.t.Fatalf("DELETE the Connector: status = %d, body %q", rec.Code, rec.Body)
+	}
+}
+
+func TestARemovedConnectorsRegistrationExpiresADayLater(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	client, _ := phone.connect(claude)
+
+	phone.removeConnector(0)
+
+	n.clock.Advance(23 * time.Hour)
+	requestOf(t, n.authorize(authorizeQuery(client, "xyz")))
+	n.clock.Advance(2 * time.Hour)
+	if rec := n.authorize(authorizeQuery(client, "xyz")); rec.Code != http.StatusBadRequest {
+		t.Errorf("authorize a day after its Connector was removed: status = %d, Location %q; want %d, an unknown client",
+			rec.Code, rec.Header().Get("Location"), http.StatusBadRequest)
+	}
+}
+
+func TestARegistrationAnotherConnectorStillUsesIsKept(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	client, _ := phone.connect(claude)
+	phone.approveAgain(client)
+
+	phone.removeConnector(0)
+
+	n.clock.Advance(25 * time.Hour)
+	requestOf(t, n.authorize(authorizeQuery(client, "xyz")))
+}

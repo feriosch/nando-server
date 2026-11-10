@@ -20,6 +20,7 @@ func NewConnectors(ctx context.Context, db *mongo.Database) (model.ConnectorsRep
 		{Keys: bson.D{{Key: "accessTokenHash", Value: 1}}},
 		{Keys: bson.D{{Key: "refreshTokenHash", Value: 1}}},
 		{Keys: bson.D{{Key: "retiredRefreshTokenHashes", Value: 1}}},
+		{Keys: bson.D{{Key: "clientId", Value: 1}}},
 	})
 	if err != nil {
 		return nil, err
@@ -101,4 +102,12 @@ func (r connectors) List(ctx context.Context) ([]model.Connector, error) {
 func (r connectors) MarkUsed(ctx context.Context, id string, at time.Time) error {
 	_, err := r.collection.UpdateByID(ctx, id, bson.D{{Key: "$set", Value: bson.D{{Key: "lastUsedAt", Value: at}}}})
 	return err
+}
+
+func (r connectors) Find(ctx context.Context, id string) (model.Connector, error) {
+	return r.findOne(ctx, bson.D{{Key: "_id", Value: id}})
+}
+
+func (r connectors) CountForClient(ctx context.Context, clientID string) (int64, error) {
+	return r.collection.CountDocuments(ctx, bson.D{{Key: "clientId", Value: clientID}})
 }

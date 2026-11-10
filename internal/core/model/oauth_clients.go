@@ -27,6 +27,8 @@ type OAuthClientsRepository interface {
 	Find(ctx context.Context, id string, now time.Time) (OAuthClient, error)
 	// Approve keeps the client with id from expiring.
 	Approve(ctx context.Context, id string) error
+	// Expire has the client with id expire at, as one never approved does.
+	Expire(ctx context.Context, id string, at time.Time) error
 }
 
 // The JSON shapes below are what the API answers with and is sent.

@@ -54,6 +54,11 @@ type ConnectorsRepository interface {
 	// Delete removes the Connector with id and so its tokens. Deleting one
 	// that doesn't exist also succeeds.
 	Delete(ctx context.Context, id string) error
+	// Find returns the Connector with id.
+	Find(ctx context.Context, id string) (Connector, error)
+	// CountForClient counts the Connectors approved for the OAuth client
+	// with clientID.
+	CountForClient(ctx context.Context, clientID string) (int64, error)
 	// List returns every Connector, oldest approved first.
 	List(ctx context.Context) ([]Connector, error)
 	// MarkUsed records that the Connector with id called /mcp at.

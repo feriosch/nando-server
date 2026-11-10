@@ -380,7 +380,7 @@ func (s *OAuthService) exchangeCode(w http.ResponseWriter, r *http.Request) {
 	}
 	if code.UsedAt != nil {
 		log.Printf("Connector %s removed: its authorization code was exchanged twice", code.ConnectorID)
-		if err := s.connectors.Delete(r.Context(), code.ConnectorID); err != nil {
+		if err := removeConnector(r.Context(), s.connectors, s.clients, code.ConnectorID, now); err != nil {
 			utils.ServerError(w, err)
 			return
 		}
@@ -458,7 +458,7 @@ func (s *OAuthService) refuseRefreshToken(w http.ResponseWriter, r *http.Request
 // removeReusedConnector removes connector, whose refresh token was used twice.
 func (s *OAuthService) removeReusedConnector(ctx context.Context, connector model.Connector) error {
 	log.Printf("Connector %s (%s) removed: a refresh token was used twice", connector.ID, connector.Name)
-	return s.connectors.Delete(ctx, connector.ID)
+	return removeConnector(ctx, s.connectors, s.clients, connector.ID, s.now())
 }
 
 // pkceMatches reports whether verifier is the one the S256 challenge was

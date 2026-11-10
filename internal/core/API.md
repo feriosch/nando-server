@@ -244,13 +244,13 @@ The OAuth routes (`/.well-known/`, `/oauth/`) and `/mcp` are called by the Conne
 
 Every secret Nando issues is random and stored only as a SHA-256 hash, like a Session token:
 
-| Secret             | Lasts                                                                          |
-| ------------------ | ------------------------------------------------------------------------------ |
-| Registration       | a day, unless a Connector is approved for it; then until it is removed         |
-| Pending request    | 10 minutes, and it is approved or denied only once                             |
-| Authorization code | 1 minute; any exchange uses it up, even a refused one                          |
-| Access token       | 1 hour                                                                         |
-| Refresh token      | 90 days unused, like a Session; each refresh replaces it                       |
+| Secret             | Lasts                                                                                              |
+| ------------------ | -------------------------------------------------------------------------------------------------- |
+| Registration       | a day, unless a Connector is approved for it; then until a day after its last Connector is removed |
+| Pending request    | 10 minutes, and it is approved or denied only once                                                 |
+| Authorization code | 1 minute; any exchange uses it up, even a refused one                                              |
+| Access token       | 1 hour                                                                                             |
+| Refresh token      | 90 days unused, like a Session; each refresh replaces it                                           |
 
 ### `GET /.well-known/oauth-protected-resource`
 
@@ -385,4 +385,4 @@ A Connector's access token works only here; under `/api/` it gets `401`.
 
 ### `DELETE /api/connectors/{id}`
 
-`204`: removes the Connector and its tokens. Its next call to `/mcp` gets `401`, and its refresh token `invalid_grant`. Deleting one that doesn't exist also answers `204`.
+`204`: removes the Connector and its tokens. Its next call to `/mcp` gets `401`, and its refresh token `invalid_grant`. If no other Connector uses its registration, the registration expires a day later, so the app can be connected again with the same `client_id` until then. Deleting one that doesn't exist also answers `204`.
