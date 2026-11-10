@@ -396,3 +396,145 @@ func TestARegistrationNotApprovedWithinADayIsForgotten(t *testing.T) {
 			rec.Code, rec.Header().Get("Location"), http.StatusBadRequest)
 	}
 }
+
+// pendingRequestJSON is a Connector's pending request as the consent page
+// shows it.
+type pendingRequestJSON struct {
+	ClientName   string `json:"clientName"`
+	RedirectHost string `json:"redirectHost"`
+}
+
+// redirectJSON is where the consent page sends the browser next.
+type redirectJSON struct {
+	Redirect string `json:"redirect"`
+}
+
+// requestOf is the pending request id an authorization sent the browser to
+// the consent page with.
+func requestOf(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	return redirectOf(t, rec).Query().Get("request")
+}
+
+// mustAuthorize registers claude, has it authorize with state "xyz" and
+// returns its registration and the pending request.
+func (n *nando) mustAuthorize() (clientJSON, string) {
+	n.t.Helper()
+	client := n.mustRegister(claude)
+	return client, requestOf(n.t, n.authorize(authorizeQuery(client, "xyz")))
+}
+
+// approve approves request on the consent page with this browser's Passkey,
+// returning the response that ends the ceremony (or the first one that fails).
+func (d *browser) approve(request string) *httptest.ResponseRecorder {
+	d.nando.t.Helper()
+	rec := d.do(http.MethodPost, "/auth/connect/"+request+"/begin", nil)
+	if rec.Code != http.StatusOK {
+		return rec
+	}
+	return d.do(http.MethodPost, "/auth/connect/"+request+"/finish", d.passkey.Get(d.nando.t, d.origin, rec.Body.Bytes()))
+}
+
+// redirectIn is the URL a consent page response sends the browser to.
+func redirectIn(t *testing.T, rec *httptest.ResponseRecorder) *url.URL {
+	t.Helper()
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %q; want %d", rec.Code, rec.Body, http.StatusOK)
+	}
+	var r redirectJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &r); err != nil {
+		t.Fatalf("%v in %q", err, rec.Body)
+	}
+	u, err := url.Parse(r.Redirect)
+	if err != nil {
+		t.Fatalf("redirect %q: %v", r.Redirect, err)
+	}
+	return u
+}
+
+// withoutQuery is u without its query, to compare with a redirect URI.
+func withoutQuery(u *url.URL) string {
+	bare := *u
+	bare.RawQuery = ""
+	return bare.String()
+}
+
+func TestTheConsentPageShowsWhichAppAsks(t *testing.T) {
+	n := newNando(t)
+	_, request := n.mustAuthorize()
+	mac := n.newBrowser("Mac")
+
+	rec := mac.do(http.MethodGet, "/auth/connect/"+request, nil)
+
+	var got pendingRequestJSON
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
+		t.Fatalf("GET the pending request: status = %d, body %q", rec.Code, rec.Body)
+	}
+	if want := (pendingRequestJSON{ClientName: "Claude", RedirectHost: "claude.ai"}); got != want {
+		t.Errorf("pending request = %+v, want %+v", got, want)
+	}
+	if rec := mac.do(http.MethodGet, "/auth/connect/unknown", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET an unknown request: status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestOwnerApprovesAConnectorWithAPasskey(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	_, request := n.mustAuthorize()
+	// The Mac has the Passkey through iCloud Keychain, but no Session.
+	mac := n.newBrowser("Mac").syncedFrom(phone)
+
+	u := redirectIn(t, mac.approve(request))
+
+	if withoutQuery(u) != claude.RedirectURIs[0] || u.Query().Get("code") == "" || u.Query().Get("state") != "xyz" {
+		t.Errorf("approval redirects to %s, want %s?code=…&state=xyz", u, claude.RedirectURIs[0])
+	}
+	if mac.session != nil {
+		t.Errorf("approving a Connector started a Session in the Mac")
+	}
+	if rec := mac.approve(request); rec.Code != http.StatusNotFound {
+		t.Errorf("approve the same request again: status = %d, body %q; want %d", rec.Code, rec.Body, http.StatusNotFound)
+	}
+}
+
+func TestOwnerDeniesAConnector(t *testing.T) {
+	n := newNando(t)
+	_, request := n.mustAuthorize()
+	mac := n.newBrowser("Mac")
+
+	u := redirectIn(t, mac.do(http.MethodPost, "/auth/connect/"+request+"/deny", nil))
+
+	if withoutQuery(u) != claude.RedirectURIs[0] || u.Query().Get("error") != "access_denied" ||
+		u.Query().Get("state") != "xyz" || u.Query().Get("code") != "" {
+		t.Errorf("denial redirects to %s, want %s?error=access_denied&state=xyz", u, claude.RedirectURIs[0])
+	}
+	if rec := mac.do(http.MethodGet, "/auth/connect/"+request, nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET a denied request: status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestAPendingRequestExpiresAfterTenMinutes(t *testing.T) {
+	n := newNando(t)
+	_, request := n.mustAuthorize()
+	mac := n.newBrowser("Mac")
+
+	n.clock.Advance(11 * time.Minute)
+
+	if rec := mac.do(http.MethodGet, "/auth/connect/"+request, nil); rec.Code != http.StatusNotFound {
+		t.Errorf("GET a request after 11 minutes: status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestAnApprovedRegistrationIsKept(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	client, request := n.mustAuthorize()
+	redirectIn(t, phone.approve(request))
+
+	n.clock.Advance(25 * time.Hour)
+
+	requestOf(t, n.authorize(authorizeQuery(client, "abc")))
+}

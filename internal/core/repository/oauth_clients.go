@@ -33,6 +33,17 @@ func (r oauthClients) Insert(ctx context.Context, client model.OAuthClient) erro
 
 func (r oauthClients) Find(ctx context.Context, id string, now time.Time) (model.OAuthClient, error) {
 	var client model.OAuthClient
-	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}, utils.Unexpired(now)}).Decode(&client)
+	// An approved client has no expiresAt, so it never expires.
+	unexpired := bson.E{Key: "$or", Value: bson.A{
+		bson.D{{Key: "expiresAt", Value: bson.D{{Key: "$exists", Value: false}}}},
+		bson.D{utils.Unexpired(now)},
+	}}
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}, unexpired}).Decode(&client)
 	return client, utils.NotFound(err)
+}
+
+func (r oauthClients) Approve(ctx context.Context, id string) error {
+	update := bson.D{{Key: "$unset", Value: bson.D{{Key: "expiresAt", Value: ""}}}}
+	res, err := r.collection.UpdateByID(ctx, id, update)
+	return utils.Matched(res, err)
 }

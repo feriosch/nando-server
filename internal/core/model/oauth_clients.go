@@ -14,8 +14,9 @@ type OAuthClient struct {
 	Name         string    `bson:"name"`
 	RedirectURIs []string  `bson:"redirectUris"`
 	CreatedAt    time.Time `bson:"createdAt"`
-	// ExpiresAt is when an unapproved registration is deleted.
-	ExpiresAt time.Time `bson:"expiresAt"`
+	// ExpiresAt is when an unapproved registration is deleted. Approving a
+	// Connector for it removes it, so the registration is kept.
+	ExpiresAt *time.Time `bson:"expiresAt,omitempty"`
 }
 
 // OAuthClientsRepository reads and writes the oauth_clients collection.
@@ -24,6 +25,8 @@ type OAuthClientsRepository interface {
 	// Find returns the client with id, unless its registration has expired
 	// at now.
 	Find(ctx context.Context, id string, now time.Time) (OAuthClient, error)
+	// Approve keeps the client with id from expiring.
+	Approve(ctx context.Context, id string) error
 }
 
 // The JSON shapes below are what the API answers with and is sent.

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"errors"
@@ -20,8 +21,10 @@ import (
 // Connector get tokens for /mcp. It serves the metadata a Connector starts
 // from under /.well-known/, and the OAuth endpoints under /oauth/.
 type OAuthService struct {
-	clients  model.OAuthClientsRepository
-	requests model.AuthorizationRequestsRepository
+	clients    model.OAuthClientsRepository
+	requests   model.AuthorizationRequestsRepository
+	connectors model.ConnectorsRepository
+	codes      model.AuthorizationCodesRepository
 	// apiURL is the API's own URL, https://api.<domain>: the issuer.
 	apiURL string
 	// consentURL is the web app's consent page, where the Owner approves a
@@ -41,6 +44,9 @@ const (
 	// authorizationRequestLifetime is how long the Owner has to approve a
 	// Connector on the consent page.
 	authorizationRequestLifetime = 10 * time.Minute
+	// authorizationCodeLifetime is how long an approved Connector has to
+	// exchange its code for tokens.
+	authorizationCodeLifetime = time.Minute
 )
 
 // NewOAuth returns the OAuthService of the API at apiURL, whose consent page
@@ -48,24 +54,32 @@ const (
 func NewOAuth(
 	clients model.OAuthClientsRepository,
 	requests model.AuthorizationRequestsRepository,
+	connectors model.ConnectorsRepository,
+	codes model.AuthorizationCodesRepository,
 	apiURL, webURL string,
 	now func() time.Time,
 ) *OAuthService {
 	return &OAuthService{
 		clients:    clients,
 		requests:   requests,
+		connectors: connectors,
+		codes:      codes,
 		apiURL:     apiURL,
 		consentURL: webURL + "/connect",
 		now:        now,
 	}
 }
 
-// Routes adds the metadata documents and the OAuth endpoints to mux.
+// Routes adds the metadata documents, the OAuth endpoints, and the consent
+// page's routes under /auth/connect/ except approving, which needs a
+// Passkey and so is the IdentityService's.
 func (s *OAuthService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.protectedResourceMetadata)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.authorizationServerMetadata)
 	mux.HandleFunc("POST /oauth/register", s.register)
 	mux.HandleFunc("GET /oauth/authorize", s.authorize)
+	mux.HandleFunc("GET /auth/connect/{request}", s.pendingRequest)
+	mux.HandleFunc("POST /auth/connect/{request}/deny", s.deny)
 }
 
 // protectedResourceMetadata answers that /mcp takes tokens from this server.
@@ -143,12 +157,13 @@ func (s *OAuthService) register(w http.ResponseWriter, r *http.Request) {
 	}
 	metadata.TokenEndpointAuthMethod = "none"
 	now := s.now()
+	expiresAt := now.Add(unapprovedClientLifetime)
 	client := model.OAuthClient{
 		ID:           rand.Text(),
 		Name:         metadata.ClientName,
 		RedirectURIs: metadata.RedirectURIs,
 		CreatedAt:    now,
-		ExpiresAt:    now.Add(unapprovedClientLifetime),
+		ExpiresAt:    &expiresAt,
 	}
 	if err := s.clients.Insert(r.Context(), client); err != nil {
 		utils.ServerError(w, err)
@@ -213,22 +228,136 @@ func (s *OAuthService) authorize(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.consentURL+"?"+url.Values{"request": {request.ID}}.Encode(), http.StatusFound)
 }
 
-// redirectError sends the browser back to a trusted redirectURI with an OAuth
-// error and the Connector's state, if it sent one.
-func redirectError(w http.ResponseWriter, r *http.Request, redirectURI, code, description, state string) {
-	u, err := url.Parse(redirectURI)
+// errNoRequest means a pending request is unknown, already answered or expired.
+var errNoRequest = errors.New("no pending request")
+
+// requestError answers a consent page call for a request that isn't pending.
+func requestError(w http.ResponseWriter, err error) {
+	if errors.Is(err, errNoRequest) || errors.Is(err, utils.ErrNotFound) {
+		http.Error(w, "that request is unknown, already answered or expired; connect the app again", http.StatusNotFound)
+		return
+	}
+	utils.ServerError(w, err)
+}
+
+// pendingRequest answers which app asks to become a Connector, for the
+// consent page to show before the Owner approves it.
+func (s *OAuthService) pendingRequest(w http.ResponseWriter, r *http.Request) {
+	request, err := s.requests.Find(r.Context(), r.PathValue("request"), s.now())
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	client, err := s.clients.Find(r.Context(), request.ClientID, s.now())
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	redirect, err := url.Parse(request.RedirectURI)
 	if err != nil {
 		utils.ServerError(w, err)
 		return
 	}
+	utils.WriteJSON(w, http.StatusOK, model.AuthorizationRequestJSON{
+		ClientName:   client.Name,
+		RedirectHost: redirect.Hostname(),
+	})
+}
+
+// findRequest returns the pending request with id, or errNoRequest.
+func (s *OAuthService) findRequest(ctx context.Context, id string) (model.AuthorizationRequest, error) {
+	request, err := s.requests.Find(ctx, id, s.now())
+	if errors.Is(err, utils.ErrNotFound) {
+		return request, errNoRequest
+	}
+	return request, err
+}
+
+// deny answers a request the Owner refused: the browser goes back to the
+// Connector with access_denied.
+func (s *OAuthService) deny(w http.ResponseWriter, r *http.Request) {
+	request, err := s.requests.Take(r.Context(), r.PathValue("request"), s.now())
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	redirect, err := withQuery(request.RedirectURI, url.Values{"error": {"access_denied"}, "state": {request.State}})
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, model.RedirectJSON{Redirect: redirect})
+}
+
+// approve answers a request the Owner approved with a Passkey: it creates the
+// Connector, keeps its registration, and returns where to send the browser,
+// the redirect URI with a single-use authorization code. It returns
+// errNoRequest if the request was answered or expired meanwhile.
+func (s *OAuthService) approve(ctx context.Context, requestID string) (redirect string, err error) {
+	now := s.now()
+	request, err := s.requests.Take(ctx, requestID, now)
+	if errors.Is(err, utils.ErrNotFound) {
+		return "", errNoRequest
+	}
+	if err != nil {
+		return "", err
+	}
+	client, err := s.clients.Find(ctx, request.ClientID, now)
+	if errors.Is(err, utils.ErrNotFound) {
+		return "", errNoRequest
+	}
+	if err != nil {
+		return "", err
+	}
+	connector := model.Connector{ID: rand.Text(), ClientID: client.ID, Name: client.Name, ApprovedAt: now}
+	if err := s.connectors.Insert(ctx, connector); err != nil {
+		return "", err
+	}
+	if err := s.clients.Approve(ctx, client.ID); err != nil {
+		return "", err
+	}
+	code := rand.Text()
+	err = s.codes.Insert(ctx, model.AuthorizationCode{
+		Hash:          sha256Of(code),
+		ConnectorID:   connector.ID,
+		ClientID:      client.ID,
+		RedirectURI:   request.RedirectURI,
+		CodeChallenge: request.CodeChallenge,
+		ExpiresAt:     now.Add(authorizationCodeLifetime),
+	})
+	if err != nil {
+		return "", err
+	}
+	return withQuery(request.RedirectURI, url.Values{"code": {code}, "state": {request.State}})
+}
+
+// withQuery is uri with params added to its query.
+func withQuery(uri string, params url.Values) (string, error) {
+	u, err := url.Parse(uri)
+	if err != nil {
+		return "", err
+	}
 	q := u.Query()
-	q.Set("error", code)
-	q.Set("error_description", description)
-	if state != "" {
-		q.Set("state", state)
+	for key, values := range params {
+		q[key] = values
 	}
 	u.RawQuery = q.Encode()
-	http.Redirect(w, r, u.String(), http.StatusFound)
+	return u.String(), nil
+}
+
+// redirectError sends the browser back to a trusted redirectURI with an OAuth
+// error and the Connector's state, if it sent one.
+func redirectError(w http.ResponseWriter, r *http.Request, redirectURI, code, description, state string) {
+	params := url.Values{"error": {code}, "error_description": {description}}
+	if state != "" {
+		params.Set("state", state)
+	}
+	redirect, err := withQuery(redirectURI, params)
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
 // checkRedirectURI accepts an https: URL, or plain http: to localhost or

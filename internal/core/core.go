@@ -106,6 +106,10 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
+	authorizationCodes, err := repository.NewAuthorizationCodes(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	passkeys := repository.NewPasskeys(db)
 	weighIns := repository.NewWeighIns(db)
 	pushSubscriptions := repository.NewPushSubscriptions(db)
@@ -119,12 +123,13 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		settings:          service.NewSettings(repository.NewSettings(db), now),
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
 		mcp:               service.NewMCP(apiURL),
-		oauth:             service.NewOAuth(oauthClients, authorizationRequests, apiURL, webURL, now),
+		oauth: service.NewOAuth(oauthClients, authorizationRequests, repository.NewConnectors(db), authorizationCodes,
+			apiURL, webURL, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns}
 	c.body = service.NewBody(weighIns, c.settings)
-	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, cfg.Domain, cfg.Origins, now)
+	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, c.oauth, cfg.Domain, cfg.Origins, now)
 	if err != nil {
 		return nil, err
 	}

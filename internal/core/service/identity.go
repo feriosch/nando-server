@@ -30,14 +30,16 @@ const (
 	signInRefused = "that passkey is unknown or could not be verified"
 )
 
-// IdentityService signs the Owner in under /auth/: registering a Passkey
-// with an Enrollment Code, and signing in with a Passkey. Both end by having
-// the SessionsService start a Session.
+// IdentityService checks it is the Owner, with a Passkey, under /auth/:
+// registering a Passkey with an Enrollment Code and signing in, which both
+// end by having the SessionsService start a Session, and approving a
+// Connector, which ends by having the OAuthService create it.
 type IdentityService struct {
 	enrollmentCodes model.EnrollmentCodesRepository
 	ceremonies      model.CeremoniesRepository
 	passkeys        model.PasskeysRepository
 	sessions        *SessionsService
+	oauth           *OAuthService
 	webauthn        *webauthn.WebAuthn
 	now             func() time.Time
 }
@@ -49,6 +51,7 @@ func NewIdentity(
 	ceremonies model.CeremoniesRepository,
 	passkeys model.PasskeysRepository,
 	sessions *SessionsService,
+	oauth *OAuthService,
 	domain string,
 	origins []string,
 	now func() time.Time,
@@ -74,17 +77,20 @@ func NewIdentity(
 		ceremonies:      ceremonies,
 		passkeys:        passkeys,
 		sessions:        sessions,
+		oauth:           oauth,
 		webauthn:        relyingParty,
 		now:             now,
 	}, nil
 }
 
-// Routes adds the signing-in routes to mux, under /auth/.
+// Routes adds the signing-in and Connector-approving routes to mux, under /auth/.
 func (s *IdentityService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/register/begin", s.beginRegistration)
 	mux.HandleFunc("POST /auth/register/finish", s.finishRegistration)
 	mux.HandleFunc("POST /auth/signin/begin", s.beginSignIn)
 	mux.HandleFunc("POST /auth/signin/finish", s.finishSignIn)
+	mux.HandleFunc("POST /auth/connect/{request}/begin", s.beginApproval)
+	mux.HandleFunc("POST /auth/connect/{request}/finish", s.finishApproval)
 }
 
 // IssueEnrollmentCode stores and returns a new Enrollment Code.
@@ -145,7 +151,7 @@ func (s *IdentityService) beginRegistration(w http.ResponseWriter, r *http.Reque
 		utils.ServerError(w, err)
 		return
 	}
-	if err := s.beginCeremony(r.Context(), sessionData, codeHash); err != nil {
+	if err := s.beginCeremony(r.Context(), sessionData, model.Ceremony{EnrollmentCodeHash: codeHash}); err != nil {
 		utils.ServerError(w, err)
 		return
 	}
@@ -211,15 +217,15 @@ func (s *IdentityService) beginSignIn(w http.ResponseWriter, r *http.Request) {
 		utils.ServerError(w, err)
 		return
 	}
-	if err := s.beginCeremony(r.Context(), sessionData, nil); err != nil {
+	if err := s.beginCeremony(r.Context(), sessionData, model.Ceremony{}); err != nil {
 		utils.ServerError(w, err)
 		return
 	}
 	utils.WriteJSON(w, http.StatusOK, assertion)
 }
 
-// finishSignIn checks the Passkey's answer from navigator.credentials.get,
-// saves its new sign count and starts a Session.
+// finishSignIn checks the Passkey's answer from navigator.credentials.get
+// and starts a Session.
 func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 	parsed, err := protocol.ParseCredentialRequestResponseBody(r.Body)
 	if err != nil {
@@ -231,41 +237,11 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		ceremonyError(w, err)
 		return
 	}
-	if ceremony.EnrollmentCodeHash != nil {
+	if ceremony.EnrollmentCodeHash != nil || ceremony.AuthorizationRequestID != "" {
 		http.Error(w, "that challenge was not for a sign-in", http.StatusBadRequest)
 		return
 	}
-	var passkey model.Passkey
-	_, credential, err := s.webauthn.ValidatePasskeyLogin(s.findOwner(r.Context(), &passkey), sessionData, parsed)
-	if err != nil {
-		http.Error(w, signInRefused, http.StatusUnauthorized)
-		return
-	}
-	// A sign count that didn't go up means another copy of the Passkey may
-	// exist. Synced Passkeys always report 0, which never sets this, so it
-	// guards hardware security keys.
-	if credential.Authenticator.CloneWarning {
-		log.Printf("sign-in refused: passkey %x reported sign count %d, not above the stored %d; it may have been copied",
-			credential.ID, parsed.Response.AuthenticatorData.Counter, credential.Authenticator.SignCount)
-		http.Error(w, signInRefused, http.StatusUnauthorized)
-		return
-	}
-	stored, err := json.Marshal(credential)
-	if err != nil {
-		utils.ServerError(w, err)
-		return
-	}
-	// Saved only if unchanged since it was read: of two sign-ins checked
-	// against the same sign count, only the first counts, and a Passkey
-	// deleted meanwhile can't sign in.
-	err = s.passkeys.Update(r.Context(), passkey.ID, passkey.Credential, stored)
-	if errors.Is(err, utils.ErrNotFound) {
-		log.Printf("sign-in refused: passkey %x was deleted or signed in again meanwhile", passkey.ID)
-		http.Error(w, signInRefused, http.StatusUnauthorized)
-		return
-	}
-	if err != nil {
-		utils.ServerError(w, err)
+	if !s.checkPasskey(w, r, parsed, sessionData) {
 		return
 	}
 	if err := s.sessions.startSession(w, r); err != nil {
@@ -273,6 +249,102 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// beginApproval answers with the options for navigator.credentials.get, for
+// the Owner to approve the pending request in the path with any of their
+// Passkeys. A Session is never enough to approve a Connector.
+func (s *IdentityService) beginApproval(w http.ResponseWriter, r *http.Request) {
+	requestID := r.PathValue("request")
+	if _, err := s.oauth.findRequest(r.Context(), requestID); err != nil {
+		requestError(w, err)
+		return
+	}
+	assertion, sessionData, err := s.webauthn.BeginDiscoverableLogin()
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	if err := s.beginCeremony(r.Context(), sessionData, model.Ceremony{AuthorizationRequestID: requestID}); err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, assertion)
+}
+
+// finishApproval checks the Passkey's answer from navigator.credentials.get
+// and has the OAuthService create the Connector, answering where to send the
+// browser: back to the Connector with its authorization code.
+func (s *IdentityService) finishApproval(w http.ResponseWriter, r *http.Request) {
+	requestID := r.PathValue("request")
+	parsed, err := protocol.ParseCredentialRequestResponseBody(r.Body)
+	if err != nil {
+		http.Error(w, "body must be a PublicKeyCredential", http.StatusBadRequest)
+		return
+	}
+	ceremony, sessionData, err := s.takeCeremony(r.Context(), parsed.Response.CollectedClientData.Challenge)
+	if err != nil {
+		ceremonyError(w, err)
+		return
+	}
+	if ceremony.AuthorizationRequestID != requestID {
+		http.Error(w, "that challenge was not for approving this Connector", http.StatusBadRequest)
+		return
+	}
+	if !s.checkPasskey(w, r, parsed, sessionData) {
+		return
+	}
+	redirect, err := s.oauth.approve(r.Context(), requestID)
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, model.RedirectJSON{Redirect: redirect})
+}
+
+// checkPasskey checks the Passkey's answer to a sign-in or approval ceremony
+// and saves its new sign count. If the Passkey is refused, it answers r and
+// returns false.
+func (s *IdentityService) checkPasskey(
+	w http.ResponseWriter,
+	r *http.Request,
+	parsed *protocol.ParsedCredentialAssertionData,
+	sessionData webauthn.SessionData,
+) bool {
+	var passkey model.Passkey
+	_, credential, err := s.webauthn.ValidatePasskeyLogin(s.findOwner(r.Context(), &passkey), sessionData, parsed)
+	if err != nil {
+		http.Error(w, signInRefused, http.StatusUnauthorized)
+		return false
+	}
+	// A sign count that didn't go up means another copy of the Passkey may
+	// exist. Synced Passkeys always report 0, which never sets this, so it
+	// guards hardware security keys.
+	if credential.Authenticator.CloneWarning {
+		log.Printf("passkey refused: passkey %x reported sign count %d, not above the stored %d; it may have been copied",
+			credential.ID, parsed.Response.AuthenticatorData.Counter, credential.Authenticator.SignCount)
+		http.Error(w, signInRefused, http.StatusUnauthorized)
+		return false
+	}
+	stored, err := json.Marshal(credential)
+	if err != nil {
+		utils.ServerError(w, err)
+		return false
+	}
+	// Saved only if unchanged since it was read: of two sign-ins checked
+	// against the same sign count, only the first counts, and a Passkey
+	// deleted meanwhile can't sign in.
+	err = s.passkeys.Update(r.Context(), passkey.ID, passkey.Credential, stored)
+	if errors.Is(err, utils.ErrNotFound) {
+		log.Printf("passkey refused: passkey %x was deleted or used again meanwhile", passkey.ID)
+		http.Error(w, signInRefused, http.StatusUnauthorized)
+		return false
+	}
+	if err != nil {
+		utils.ServerError(w, err)
+		return false
+	}
+	return true
 }
 
 // findOwner finds the Owner by the Passkey they signed in with, keeping that
@@ -325,18 +397,19 @@ func enrollmentCodeError(w http.ResponseWriter, err error) {
 	utils.ServerError(w, err)
 }
 
-// beginCeremony keeps sessionData, go-webauthn's state, until the ceremony's finish request.
-func (s *IdentityService) beginCeremony(ctx context.Context, sessionData *webauthn.SessionData, enrollmentCodeHash []byte) error {
+// beginCeremony keeps sessionData, go-webauthn's state, until the ceremony's
+// finish request, with what the ceremony is for set in purpose: the
+// Enrollment Code of a registration, the pending request of an approval, or
+// neither for a sign-in.
+func (s *IdentityService) beginCeremony(ctx context.Context, sessionData *webauthn.SessionData, purpose model.Ceremony) error {
 	stored, err := json.Marshal(sessionData)
 	if err != nil {
 		return err
 	}
-	return s.ceremonies.Insert(ctx, model.Ceremony{
-		Challenge:          sessionData.Challenge,
-		SessionData:        stored,
-		EnrollmentCodeHash: enrollmentCodeHash,
-		ExpiresAt:          s.now().Add(ceremonyTimeout),
-	})
+	purpose.Challenge = sessionData.Challenge
+	purpose.SessionData = stored
+	purpose.ExpiresAt = s.now().Add(ceremonyTimeout)
+	return s.ceremonies.Insert(ctx, purpose)
 }
 
 // errNoCeremony means a finish request has no begun, unfinished ceremony.
