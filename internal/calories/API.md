@@ -27,7 +27,7 @@ A Meal is something the Owner eats repeatedly, saved by name with its kcal so it
 - `store`: at most 100 characters, or `null`.
 - `emoji`: one emoji (at most 8 code points, so flags and family emoji fit), or `null`.
 - `imageUrl`: an `https:` URL of a photo, set by hand (for example, a file in the Meal photos bucket), or `null`.
-- `tags`: free-form labels, each 1 to 30 characters, at most 20. They are trimmed and repeats are dropped. A Tag never changes how a Meal behaves.
+- `tags`: free-form labels, each 1 to 30 characters, at most 20. They are trimmed and repeats are dropped. A Meal Tag never changes how a Meal behaves.
 - `pinned`: pinned Meals lead the quick list.
 - `archived`: read-only. `true` once the Meal is deleted.
 

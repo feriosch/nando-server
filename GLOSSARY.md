@@ -32,6 +32,10 @@ _Avoid_: Dashboard, start page, landing
 A small summary that a Module (or Core itself) supplies for Home, such as today's Consumed Calories against the Daily Limit, or the latest Weigh-in.
 _Avoid_: Widget, tile, panel
 
+**Tool**:
+An action Core or a Module offers to Connectors, such as searching Words or adding one. Core serves every Tool to every Connector without knowing what any Module's Tools do.
+_Avoid_: Command, endpoint, function, skill
+
 **Settings Section**:
 The part of the single Settings screen that a Module (or Core itself) supplies for its own preferences, such as the Daily Limit for Calories.
 _Avoid_: Preferences page, module settings, config
@@ -52,9 +56,9 @@ The Module for tracking what the Owner eats each Day.
 Something the Owner eats repeatedly, saved by name with its kcal (and optionally the store it comes from) so it can be logged in one tap. Not tied to any Day. A snack is a Meal too. A different recipe or size of the same product is a separate Meal, not a new version of one.
 _Avoid_: Food, item, product, dish, breakfast/lunch/dinner
 
-**Tag**:
+**Meal Tag**:
 A free-form label on a Meal that adds information, such as "snack". It never changes how a Meal behaves.
-_Avoid_: Category, type, kind
+_Avoid_: Tag (alone), category, type, kind
 
 **Entry**:
 One record that the Owner ate something on a particular Day: a name, a kcal per serving and a number of Servings, either taken from a Meal or typed in for a one-off item. It keeps those values from when it was logged, so later changes to a Meal never alter it.
@@ -75,6 +79,50 @@ _Avoid_: Empty day, zero day, fasting day
 **Daily Limit**:
 The most kcal the Owner intends to consume in a Day; a ceiling to stay under, not a goal to reach. It is set once and stays in force until the Owner changes it, and each change applies from the Day it is made, so past Days are judged against the limit they had. The very first Daily Limit also covers every Day before it.
 _Avoid_: Target, goal, budget, allowance
+
+## Japanese
+
+The Module for the Owner's Japanese vocabulary and kanji study: Claude adds and improves what is stored, and the Owner searches it and takes it to Anki.
+
+**Word**:
+A Japanese word or Expression the Owner is learning, stored once in its kanji spelling (if it has one) with its reading, Spanish meaning, Group, Word Tags, example sentences and Word Links.
+_Avoid_: Vocabulary, entry, card, note, item
+
+**Expression**:
+A set phrase, such as 首にされる or 腹が立つ, stored as one Word and treated as the part of speech it acts as. A phrase that jisho.org doesn't list is a collocation, not an Expression.
+_Avoid_: Phrase, idiom, collocation
+
+**Part**:
+A Word that an Expression is built from, such as 首 in 首にされる. A Part the Owner doesn't know becomes a Word of its own, joined to the Expression by a Word Link, unless it is hardly used outside that Expression.
+_Avoid_: Component (that is a Kanji's)
+
+**Group**:
+The one place a Word is filed. A Word that jisho.org tags N2 or N3 goes in JLPT N2 or JLPT N3, and one tagged N4 or N5 goes in Basic; any other Word goes in the Group for what the Owner was doing when they found it (Literature, Gaming, Anime, Movie or Miscellaneous), or in JLPT N1 if they were studying for N1. Basic Words are kept so that other Words can be linked to them, not to be studied. Each Group has a display name and a picture.
+_Avoid_: Collection, deck, category, level
+
+**Word Tag**:
+A label on a Word, from a mostly fixed list, saying when or how to use it (formal, archaic, spoken…) or a fact about it (common, usually written in kana, uses a kanji outside the jōyō list, JLPT N1). Unlike a Meal Tag, some Word Tags change how the Word is exported to Anki.
+_Avoid_: Tag (alone), label, category
+
+**Word Link**:
+A two-way connection between two Words, of one of three kinds: Synonym, Antonym or Related. Each side has its own note and Nuance Tags about the other Word. Changing one side leaves the other as it is; removing a Word Link removes both sides.
+_Avoid_: Link (alone), relation, related word, URL
+
+**Nuance Tag**:
+A label on one side of a Word Link saying how the other Word differs from this one, such as formal or written. When a Word Link is made, the other side gets the opposite Nuance Tags (formal and casual, spoken and written, Expression and Part swap).
+_Avoid_: Tag (alone), Word Tag
+
+**Hint**:
+A one-way, text-only pointer from a Word to an everyday word that isn't stored as a Word, such as 天気. It has no other side.
+_Avoid_: Basic link, text link, Word Link
+
+**Kanji**:
+One character the Owner studies, stored with its Spanish meaning, readings, Components and a story to remember it by, and numbered by its place in Heisig's Remembering the Kanji (volume 1, and volume 2 for some).
+_Avoid_: Character, glyph
+
+**Component**:
+One of the shapes a Kanji is written with, such as 氵 in 海: either a Kanji itself or an irregular shape that isn't one.
+_Avoid_: Part (that is an Expression's)
 
 ## Body
 
@@ -101,6 +149,10 @@ _Avoid_: Log in, login, authenticate
 **Session**:
 One browser or Home Screen app in which the Owner is signed in, so one iPhone can have two, and separate from any Push Subscription on the same device. It expires if left unused, and deleting it signs that browser or Home Screen app out.
 _Avoid_: Login, token, device
+
+**Connector**:
+An outside app, such as Claude, that the Owner allowed, with a Passkey, to use Nando's Tools on their behalf. A Connector never signs in and has no Session; removing it cuts it off at once.
+_Avoid_: Integration, client, app, bot, token
 
 ## Notifications
 
