@@ -71,6 +71,7 @@ type Core struct {
 	pushSubscriptions *service.PushSubscriptionsService
 	notifications     *service.NotificationsService
 	mcp               *service.MCPService
+	oauth             *service.OAuthService
 	// coreService is what Modules' services are handed.
 	coreService coreService
 }
@@ -101,12 +102,15 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	weighIns := repository.NewWeighIns(db)
 	pushSubscriptions := repository.NewPushSubscriptions(db)
 
+	// apiURL is the API's own URL, which Connectors reach it at.
+	apiURL := "https://api." + cfg.Domain
 	c := &Core{
 		sessions:          service.NewSessions(sessionsRepo, cfg.Domain, now),
 		passkeys:          service.NewPasskeys(passkeys),
 		settings:          service.NewSettings(repository.NewSettings(db), now),
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
-		mcp:               service.NewMCP(cfg.Domain),
+		mcp:               service.NewMCP(apiURL),
+		oauth:             service.NewOAuth(apiURL),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns}
@@ -130,8 +134,9 @@ func (c *Core) IssueEnrollmentCode(ctx context.Context) (string, error) {
 }
 
 // Routes adds Core's routes to mux: signing in under /auth/, the tick under
-// /internal/, the Tools for Connectors at /mcp, and everything else under
-// /api/, which must be served behind RequireSession.
+// /internal/, the Tools for Connectors at /mcp with OAuth under /oauth/ and
+// /.well-known/, and everything else under /api/, which must be served
+// behind RequireSession.
 func (c *Core) Routes(mux *http.ServeMux) {
 	c.identity.Routes(mux)
 	c.sessions.Routes(mux)
@@ -142,6 +147,7 @@ func (c *Core) Routes(mux *http.ServeMux) {
 	c.pushSubscriptions.Routes(mux)
 	c.notifications.Routes(mux)
 	c.mcp.Routes(mux)
+	c.oauth.Routes(mux)
 }
 
 // Service is Core's service, which Modules' services call for Core's data.

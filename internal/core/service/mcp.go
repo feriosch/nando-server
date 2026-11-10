@@ -12,10 +12,10 @@ type MCPService struct {
 	resourceMetadataURL string
 }
 
-// NewMCP returns the MCPService of the API at api.<domain>.
-func NewMCP(domain string) *MCPService {
+// NewMCP returns the MCPService of the API at apiURL, https://api.<domain>.
+func NewMCP(apiURL string) *MCPService {
 	return &MCPService{
-		resourceMetadataURL: "https://api." + domain + "/.well-known/oauth-protected-resource",
+		resourceMetadataURL: apiURL + "/.well-known/oauth-protected-resource",
 	}
 }
 
