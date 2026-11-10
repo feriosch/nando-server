@@ -70,6 +70,9 @@ type Core struct {
 	body              *service.BodyService
 	pushSubscriptions *service.PushSubscriptionsService
 	notifications     *service.NotificationsService
+	mcp               *service.MCPService
+	connectors        *service.ConnectorsService
+	oauth             *service.OAuthService
 	// coreService is what Modules' services are handed.
 	coreService coreService
 }
@@ -96,20 +99,42 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
+	oauthClients, err := repository.NewOAuthClients(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	authorizationRequests, err := repository.NewAuthorizationRequests(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	authorizationCodes, err := repository.NewAuthorizationCodes(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	connectors, err := repository.NewConnectors(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	passkeys := repository.NewPasskeys(db)
 	weighIns := repository.NewWeighIns(db)
 	pushSubscriptions := repository.NewPushSubscriptions(db)
 
+	// apiURL is the API's own URL, which Connectors reach it at, and webURL
+	// the web app's.
+	apiURL, webURL := "https://api."+cfg.Domain, "https://web."+cfg.Domain
 	c := &Core{
 		sessions:          service.NewSessions(sessionsRepo, cfg.Domain, now),
 		passkeys:          service.NewPasskeys(passkeys),
 		settings:          service.NewSettings(repository.NewSettings(db), now),
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
+		mcp:               service.NewMCP(connectors, apiURL, now),
+		connectors:        service.NewConnectors(connectors, oauthClients, now),
+		oauth:             service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns}
 	c.body = service.NewBody(weighIns, c.settings)
-	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, cfg.Domain, cfg.Origins, now)
+	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, c.oauth, cfg.Domain, cfg.Origins, now)
 	if err != nil {
 		return nil, err
 	}
@@ -128,8 +153,9 @@ func (c *Core) IssueEnrollmentCode(ctx context.Context) (string, error) {
 }
 
 // Routes adds Core's routes to mux: signing in under /auth/, the tick under
-// /internal/, and everything else under /api/, which must be served behind
-// RequireSession.
+// /internal/, the Tools for Connectors at /mcp with OAuth under /oauth/ and
+// /.well-known/, and everything else under /api/, which must be served
+// behind RequireSession.
 func (c *Core) Routes(mux *http.ServeMux) {
 	c.identity.Routes(mux)
 	c.sessions.Routes(mux)
@@ -139,6 +165,9 @@ func (c *Core) Routes(mux *http.ServeMux) {
 	c.body.Routes(mux)
 	c.pushSubscriptions.Routes(mux)
 	c.notifications.Routes(mux)
+	c.mcp.Routes(mux)
+	c.connectors.Routes(mux)
+	c.oauth.Routes(mux)
 }
 
 // Service is Core's service, which Modules' services call for Core's data.
@@ -170,6 +199,14 @@ func (s coreService) LatestWeighIn(ctx context.Context) (model.WeighIn, error) {
 // before serving.
 func (c *Core) AddNotificationProvider(p model.NotificationProvider) {
 	c.notifications.AddNotificationProvider(p)
+}
+
+// AddToolProvider has Core serve p's Tools to every Connector at /mcp. Each
+// Module with Tools adds its provider once, at startup, before serving. It
+// panics if a Tool can't be served: one without a name, a handler or an
+// object schema, or whose name another Tool already has.
+func (c *Core) AddToolProvider(p model.ToolProvider) {
+	c.mcp.AddToolProvider(p)
 }
 
 // RequireSession lets a request through to next only if it carries a valid
