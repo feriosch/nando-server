@@ -15,7 +15,6 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/core"
-	"github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/server"
 	"github.com/feriosch/nando-server/internal/testmongo"
 	"github.com/feriosch/nando-server/internal/testpasskey"
@@ -450,13 +449,22 @@ func sessionCookieIn(rec *httptest.ResponseRecorder) *http.Cookie {
 	return nil
 }
 
-func (d *browser) listSessions() []model.SessionJSON {
+// sessionJSON is one Session as GET /api/sessions lists it.
+type sessionJSON struct {
+	ID        string    `json:"id"`
+	UserAgent string    `json:"userAgent"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Current   bool      `json:"current"`
+}
+
+func (d *browser) listSessions() []sessionJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/sessions", nil)
 	if rec.Code != http.StatusOK {
 		d.nando.t.Fatalf("GET /api/sessions: status = %d, body %q", rec.Code, rec.Body)
 	}
-	var sessions []model.SessionJSON
+	var sessions []sessionJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &sessions); err != nil {
 		d.nando.t.Fatalf("GET /api/sessions: %v in %q", err, rec.Body)
 	}
@@ -476,13 +484,19 @@ func TestOwnerSeesEachSession(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("Sessions = %+v, want the iPhone's and the Mac's", got)
 	}
-	for i, want := range []model.SessionJSON{{UserAgent: "iPhone", Current: false}, {UserAgent: "Mac", Current: true}} {
+	for i, want := range []sessionJSON{{UserAgent: "iPhone", Current: false}, {UserAgent: "Mac", Current: true}} {
 		if got[i].UserAgent != want.UserAgent || got[i].Current != want.Current {
 			t.Errorf("Session %d = %+v, want userAgent %q, current %t", i, got[i], want.UserAgent, want.Current)
 		}
 		if got[i].ID == "" {
 			t.Errorf("Session %d has no id", i)
 		}
+		if got[i].CreatedAt.IsZero() || !got[i].ExpiresAt.After(got[i].CreatedAt) {
+			t.Errorf("Session %d created %v, expires %v; want both, expiring after it was created", i, got[i].CreatedAt, got[i].ExpiresAt)
+		}
+	}
+	if gap := got[1].CreatedAt.Sub(got[0].CreatedAt); gap != time.Minute {
+		t.Errorf("the Mac's Session was created %v after the iPhone's, want 1m", gap)
 	}
 }
 
@@ -507,13 +521,19 @@ func TestDeletingASessionSignsItsBrowserOut(t *testing.T) {
 	}
 }
 
-func (d *browser) listPasskeys() []model.PasskeyJSON {
+// passkeyJSON is one Passkey as GET /api/passkeys lists it.
+type passkeyJSON struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (d *browser) listPasskeys() []passkeyJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/passkeys", nil)
 	if rec.Code != http.StatusOK {
 		d.nando.t.Fatalf("GET /api/passkeys: status = %d, body %q", rec.Code, rec.Body)
 	}
-	var passkeys []model.PasskeyJSON
+	var passkeys []passkeyJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &passkeys); err != nil {
 		d.nando.t.Fatalf("GET /api/passkeys: %v in %q", err, rec.Body)
 	}
@@ -539,6 +559,9 @@ func TestOwnerSeesEachPasskey(t *testing.T) {
 		if got[i].ID != want[i] {
 			t.Errorf("Passkey %d id = %q, want %q", i, got[i].ID, want[i])
 		}
+	}
+	if gap := got[1].CreatedAt.Sub(got[0].CreatedAt); got[0].CreatedAt.IsZero() || gap != time.Minute {
+		t.Errorf("Passkeys created %v and %v, want the Pixel's 1m after the iPhone's", got[0].CreatedAt, got[1].CreatedAt)
 	}
 }
 

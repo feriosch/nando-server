@@ -201,7 +201,9 @@ func TestPushMessagesAreSignedWithTheVAPIDKeyTheWebAppSubscribesWith(t *testing.
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET /api/push-subscriptions/vapid-public-key: status = %d, body %q", rec.Code, rec.Body)
 	}
-	var key model.VAPIDPublicKeyJSON
+	var key struct {
+		PublicKey string `json:"publicKey"`
+	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &key); err != nil || key.PublicKey == "" {
 		t.Fatalf("vapid-public-key body %q: %v", rec.Body, err)
 	}
@@ -217,7 +219,7 @@ func TestPushMessagesAreSignedWithTheVAPIDKeyTheWebAppSubscribesWith(t *testing.
 }
 
 // saveWeighInReminder sets the Weigh-in reminder, keeping the other settings.
-func (d *browser) saveWeighInReminder(r model.ReminderJSON) {
+func (d *browser) saveWeighInReminder(r reminderJSON) {
 	d.nando.t.Helper()
 	s := d.getSettings()
 	s.WeighInReminder = r
@@ -235,7 +237,7 @@ func TestWeighInReminderIsSentAtItsTimeEachWeek(t *testing.T) {
 	push := testpush.New(t)
 	phone.subscribe(push)
 	phone.saveTimeZone("Asia/Tokyo")
-	phone.saveWeighInReminder(model.ReminderJSON{Enabled: true, Weekday: "monday", Time: "08:00"})
+	phone.saveWeighInReminder(reminderJSON{Enabled: true, Weekday: "monday", Time: "08:00"})
 
 	n.mustTick() // 07:30
 	if got := push.Received(); len(got) != 0 {
@@ -264,7 +266,7 @@ func TestDisabledWeighInReminderIsNotSent(t *testing.T) {
 	n, phone := signedInBrowser(t, monday8am)
 	push := testpush.New(t)
 	phone.subscribe(push)
-	phone.saveWeighInReminder(model.ReminderJSON{Enabled: false, Weekday: "monday", Time: "08:00"})
+	phone.saveWeighInReminder(reminderJSON{Enabled: false, Weekday: "monday", Time: "08:00"})
 
 	n.mustTick()
 
@@ -306,7 +308,7 @@ func TestWeighInReminderIsSentInATimeZoneOffsetByAQuarterHour(t *testing.T) {
 	push := testpush.New(t)
 	phone.subscribe(push)
 	phone.saveTimeZone("Asia/Kathmandu")
-	phone.saveWeighInReminder(model.ReminderJSON{Enabled: true, Weekday: "monday", Time: "08:00"})
+	phone.saveWeighInReminder(reminderJSON{Enabled: true, Weekday: "monday", Time: "08:00"})
 
 	n.mustTick()
 
