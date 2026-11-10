@@ -296,3 +296,56 @@ func TestASessionCookieDoesNotOpenMCP(t *testing.T) {
 		t.Errorf("POST /mcp with the Session cookie: status = %d, body %q; want %d", rec.Code, rec.Body, http.StatusUnauthorized)
 	}
 }
+
+func TestTheBearerSchemeIgnoresCase(t *testing.T) {
+	n := newNando(t)
+	tokens := connectorTokens(t, n)
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Authorization", "bearer "+tokens.AccessToken)
+	rec := httptest.NewRecorder()
+
+	n.handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("tools/list with \"bearer\": status = %d, body %q; want %d", rec.Code, rec.Body, http.StatusOK)
+	}
+}
+
+// toolsOf is a Tool provider of exactly tools.
+type toolsOf []model.Tool
+
+func (p toolsOf) Tools() []model.Tool { return p }
+
+// addingPanics reports whether adding p as a Tool provider panics, and with what.
+func addingPanics(n *nando, p model.ToolProvider) (panicked any) {
+	defer func() { panicked = recover() }()
+	n.core.AddToolProvider(p)
+	return nil
+}
+
+func TestAToolProviderWithABadToolIsRefusedAtStartup(t *testing.T) {
+	n := newNando(t)
+	n.core.AddToolProvider(testTools{})
+	handle := func(context.Context, json.RawMessage) (any, error) { return nil, nil }
+	object := json.RawMessage(`{"type":"object"}`)
+
+	for name, tool := range map[string]model.Tool{
+		"a name another Tool has": {Name: "test_echo", InputSchema: object, Handle: handle},
+		"no name":                 {InputSchema: object, Handle: handle},
+		"a schema not an object":  {Name: "test_text", InputSchema: json.RawMessage(`{"type":"string"}`), Handle: handle},
+		"no schema":               {Name: "test_none", Handle: handle},
+		"no handler":              {Name: "test_idle", InputSchema: object},
+	} {
+		if addingPanics(n, toolsOf{tool}) == nil {
+			t.Errorf("adding a Tool with %s didn't panic", name)
+		}
+	}
+
+	// The Tools already added are still served, unchanged.
+	listed, err := n.mustConnectMCP(connectorTokens(t, n).AccessToken).ListTools(context.Background(), nil)
+	if err != nil || len(listed.Tools) != 2 || listed.Tools[0].Description != "Repeats the text it is given." {
+		t.Errorf("tools/list after the refused providers: %v, %+v", err, listed)
+	}
+}

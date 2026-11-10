@@ -202,7 +202,9 @@ func (c *Core) AddNotificationProvider(p model.NotificationProvider) {
 }
 
 // AddToolProvider has Core serve p's Tools to every Connector at /mcp. Each
-// Module with Tools adds its provider once, at startup, before serving.
+// Module with Tools adds its provider once, at startup, before serving. It
+// panics if a Tool can't be served: one without a name, a handler or an
+// object schema, or whose name another Tool already has.
 func (c *Core) AddToolProvider(p model.ToolProvider) {
 	c.mcp.AddToolProvider(p)
 }

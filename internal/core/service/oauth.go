@@ -149,7 +149,8 @@ func (s *OAuthService) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(metadata.GrantTypes) == 0 {
-		metadata.GrantTypes = []string{"authorization_code"}
+		// Every Connector gets a refresh token, so the registration says so.
+		metadata.GrantTypes = []string{"authorization_code", "refresh_token"}
 	}
 	for _, grant := range metadata.GrantTypes {
 		if grant != "authorization_code" && grant != "refresh_token" {
@@ -203,7 +204,7 @@ func (s *OAuthService) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	redirectURI := q.Get("redirect_uri")
-	if !slices.Contains(client.RedirectURIs, redirectURI) {
+	if !isRegisteredRedirect(client.RedirectURIs, redirectURI) {
 		http.Error(w, "redirect_uri isn't one this app registered", http.StatusBadRequest)
 		return
 	}
@@ -527,6 +528,37 @@ func redirectError(w http.ResponseWriter, r *http.Request, redirectURI, code, de
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
 
+// isRegisteredRedirect reports whether uri is one of the registered redirect
+// URIs. A loopback one matches on any port (RFC 8252 section 7.3), since a
+// local app listens on whichever port is free each time it runs.
+func isRegisteredRedirect(registered []string, uri string) bool {
+	if slices.Contains(registered, uri) {
+		return true
+	}
+	portless := withoutLoopbackPort(uri)
+	if portless == "" {
+		return false
+	}
+	return slices.ContainsFunc(registered, func(r string) bool { return withoutLoopbackPort(r) == portless })
+}
+
+// withoutLoopbackPort is uri without its port if it is an http: loopback
+// URI, or "" if it isn't one.
+func withoutLoopbackPort(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil || u.Scheme != "http" || !isLoopback(u.Hostname()) {
+		return ""
+	}
+	u.Host = u.Hostname()
+	return u.String()
+}
+
+// isLoopback reports whether host is one of the loopback names a local app
+// may be sent back to over plain http:.
+func isLoopback(host string) bool {
+	return host == "localhost" || host == "127.0.0.1"
+}
+
 // checkRedirectURI accepts an https: URL, or plain http: to localhost or
 // 127.0.0.1 on any port, where a local app such as Claude Code listens. It
 // refuses a fragment or user info, as an authorization code must reach only
@@ -542,7 +574,7 @@ func checkRedirectURI(uri string) error {
 		return fmt.Errorf("redirect URI %q must not have user info", uri)
 	case u.Scheme == "https":
 		return nil
-	case u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"):
+	case u.Scheme == "http" && isLoopback(u.Hostname()):
 		return nil
 	default:
 		return fmt.Errorf("redirect URI %q must be https:, or http: to localhost or 127.0.0.1", uri)

@@ -1018,3 +1018,50 @@ func TestARegistrationAnotherConnectorStillUsesIsKept(t *testing.T) {
 	n.clock.Advance(25 * time.Hour)
 	requestOf(t, n.authorize(authorizeQuery(client, "xyz")))
 }
+
+func TestALocalAppMayComeBackOnAnotherPort(t *testing.T) {
+	n := newNando(t)
+	client := n.mustRegister(clientJSON{ClientName: "Claude Code", RedirectURIs: []string{"http://localhost:53682/callback"}})
+	at := func(uri string) url.Values {
+		q := authorizeQuery(client, "xyz")
+		q.Set("redirect_uri", uri)
+		return q
+	}
+
+	// RFC 8252 section 7.3: a loopback redirect URI may use any port.
+	requestOf(t, n.authorize(at("http://localhost:61000/callback")))
+	requestOf(t, n.authorize(at("http://localhost/callback")))
+
+	for _, uri := range []string{"http://localhost:61000/elsewhere", "http://127.0.0.1:61000/callback", "https://localhost:61000/callback"} {
+		if rec := n.authorize(at(uri)); rec.Code != http.StatusBadRequest {
+			t.Errorf("authorize with %s: status = %d, Location %q; want %d", uri, rec.Code, rec.Header().Get("Location"), http.StatusBadRequest)
+		}
+	}
+}
+
+func TestAConnectorOnAnotherPortExchangesItsCodeThere(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	client := n.mustRegister(clientJSON{ClientName: "Claude Code", RedirectURIs: []string{"http://localhost:53682/callback"}})
+	q := authorizeQuery(client, "xyz")
+	q.Set("redirect_uri", "http://localhost:61000/callback")
+	back := redirectIn(t, phone.approve(requestOf(t, n.authorize(q))))
+	if withoutQuery(back) != "http://localhost:61000/callback" {
+		t.Fatalf("approval redirects to %s, want the port it authorized with", back)
+	}
+
+	form := codeExchange(client, back.Query().Get("code"), verifier)
+	form.Set("redirect_uri", "http://localhost:61000/callback")
+	tokensIn(t, n.token(form))
+}
+
+func TestARegistrationWithoutGrantTypesMayRefresh(t *testing.T) {
+	n := newNando(t)
+
+	got := n.mustRegister(clientJSON{ClientName: "Claude", RedirectURIs: claude.RedirectURIs})
+
+	if want := []string{"authorization_code", "refresh_token"}; !reflect.DeepEqual(got.GrantTypes, want) {
+		t.Errorf("grant_types = %q, want %q: every Connector gets a refresh token", got.GrantTypes, want)
+	}
+}

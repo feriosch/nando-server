@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -21,7 +22,8 @@ import (
 // Run may send each request to a different instance.
 type MCPService struct {
 	connectors model.ConnectorsRepository
-	providers  []model.ToolProvider
+	// tools are every provider's Tools, checked when added.
+	tools []model.Tool
 	// handler is the MCP Go SDK's Streamable HTTP transport.
 	handler http.Handler
 	// resourceMetadataURL is where a Connector learns how to get a token.
@@ -41,9 +43,42 @@ func NewMCP(connectors model.ConnectorsRepository, apiURL string, now func() tim
 	return s
 }
 
-// AddToolProvider has /mcp serve p's Tools.
+// AddToolProvider has /mcp serve p's Tools. Adding is done at startup, so a
+// Tool that can't be served panics then, rather than on every request: one
+// without a name, a handler or an object schema, or whose name another Tool
+// has, which would silently replace it. Nothing of p is added then.
 func (s *MCPService) AddToolProvider(p model.ToolProvider) {
-	s.providers = append(s.providers, p)
+	tools := p.Tools()
+	names := map[string]bool{}
+	for _, t := range s.tools {
+		names[t.Name] = true
+	}
+	for _, t := range tools {
+		if err := checkTool(t); err != nil {
+			panic(fmt.Errorf("AddToolProvider: %w", err))
+		}
+		if names[t.Name] {
+			panic(fmt.Errorf("AddToolProvider: two Tools are named %q", t.Name))
+		}
+		names[t.Name] = true
+	}
+	s.tools = append(s.tools, tools...)
+}
+
+// checkTool reports what makes t impossible to serve.
+func checkTool(t model.Tool) error {
+	var schema struct {
+		Type string `json:"type"`
+	}
+	switch {
+	case t.Name == "":
+		return errors.New("a Tool has no name")
+	case t.Handle == nil:
+		return fmt.Errorf("Tool %q has no handler", t.Name)
+	case json.Unmarshal(t.InputSchema, &schema) != nil || schema.Type != "object":
+		return fmt.Errorf(`Tool %q's input schema must be a JSON Schema of type "object"`, t.Name)
+	}
+	return nil
 }
 
 // Routes adds /mcp to mux.
@@ -55,8 +90,9 @@ func (s *MCPService) Routes(mux *http.ServeMux) {
 // against Core's clock, and records when it was last used. Anyone else is
 // told where to get a token.
 func (s *MCPService) serveMCP(w http.ResponseWriter, r *http.Request) {
-	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if !ok || token == "" {
+	// The scheme is case-insensitive (RFC 7235 section 2.1).
+	scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !strings.EqualFold(scheme, "Bearer") || token == "" {
 		s.unauthorized(w)
 		return
 	}
@@ -70,9 +106,10 @@ func (s *MCPService) serveMCP(w http.ResponseWriter, r *http.Request) {
 		utils.ServerError(w, err)
 		return
 	}
+	// Recording when it was last used is bookkeeping: failing at it doesn't
+	// refuse a Connector that is let in.
 	if err := s.connectors.MarkUsed(r.Context(), connector.ID, now); err != nil {
-		utils.ServerError(w, err)
-		return
+		log.Printf("record Connector %s as used: %v", connector.ID, err)
 	}
 	s.handler.ServeHTTP(w, r)
 }
@@ -86,16 +123,14 @@ func (s *MCPService) unauthorized(w http.ResponseWriter) {
 // server is the MCP server for one request, with every provider's Tools.
 func (s *MCPService) server(*http.Request) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "nando", Version: "1.0"}, nil)
-	for _, p := range s.providers {
-		for _, tool := range p.Tools() {
-			destructive := tool.Destructive
-			server.AddTool(&mcp.Tool{
-				Name:        tool.Name,
-				Description: tool.Description,
-				InputSchema: tool.InputSchema,
-				Annotations: &mcp.ToolAnnotations{ReadOnlyHint: tool.ReadOnly, DestructiveHint: &destructive},
-			}, handleTool(tool))
-		}
+	for _, tool := range s.tools {
+		destructive := tool.Destructive
+		server.AddTool(&mcp.Tool{
+			Name:        tool.Name,
+			Description: tool.Description,
+			InputSchema: tool.InputSchema,
+			Annotations: &mcp.ToolAnnotations{ReadOnlyHint: tool.ReadOnly, DestructiveHint: &destructive},
+		}, handleTool(tool))
 	}
 	return server
 }

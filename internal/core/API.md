@@ -291,13 +291,13 @@ Dynamic client registration (RFC 7591).
 }
 ```
 
-- `201`: the registration as kept: the fields above plus `client_id` and `client_id_issued_at`. It is always a public client, `token_endpoint_auth_method: "none"` with no `client_secret`, whatever was asked. `client_name` defaults to the first redirect URI's host, and is the Connector's name. `grant_types` defaults to `["authorization_code"]` and `response_types` to `["code"]`.
+- `201`: the registration as kept: the fields above plus `client_id` and `client_id_issued_at`. It is always a public client, `token_endpoint_auth_method: "none"` with no `client_secret`, whatever was asked. `client_name` defaults to the first redirect URI's host, and is the Connector's name. `grant_types` defaults to `["authorization_code", "refresh_token"]`, since every Connector gets a refresh token, and `response_types` to `["code"]`.
 - `400` `invalid_redirect_uri`: no redirect URI, or one that isn't `https:`, or `http:` to `localhost` or `127.0.0.1` on any port (for local apps such as Claude Code). Fragments and user info are refused.
 - `400` `invalid_client_metadata`: the body isn't JSON, more than 10 redirect URIs, a name over 100 characters, or a grant or response type other than those above.
 
 ### `GET /oauth/authorize`
 
-The Connector sends the Owner's browser here with `response_type=code`, `client_id`, `redirect_uri` (exactly as registered), `code_challenge`, `code_challenge_method=S256` and `state`.
+The Connector sends the Owner's browser here with `response_type=code`, `client_id`, `redirect_uri` (exactly as registered, except that a loopback one may use any port, as RFC 8252 section 7.3 asks for local apps), `code_challenge`, `code_challenge_method=S256` and `state`. The code exchange must repeat the `redirect_uri` used here, port and all.
 
 - `302` to `https://web.<DOMAIN>/connect?request=<id>`, the consent page, with the pending request.
 - `400`, plain text: an unknown or expired `client_id`, or a `redirect_uri` it didn't register. These are never redirected, since the redirect URI can't be trusted.
@@ -356,7 +356,7 @@ Form-encoded (`application/x-www-form-urlencoded`). Every answer has `Cache-Cont
 
 ### `POST /mcp`
 
-MCP over Streamable HTTP, stateless, answering `application/json`, so each request can reach any instance. It needs `Authorization: Bearer <access token>`, never a Session cookie. It serves `tools/list` and `tools/call` for the Tools Core and every Module add. Each Tool says whether it is read-only (`readOnlyHint`) and whether it deletes, merges or moves data (`destructiveHint`). A Tool's result comes back as JSON text, and also as `structuredContent` when it is a JSON object. A Tool that fails comes back with `isError: true` and its message.
+MCP over Streamable HTTP, stateless, answering `application/json`, so each request can reach any instance. It needs `Authorization: Bearer <access token>` (the scheme in any case), never a Session cookie. It serves `tools/list` and `tools/call` for the Tools Core and every Module add. Each Tool says whether it is read-only (`readOnlyHint`) and whether it deletes, merges or moves data (`destructiveHint`). A Tool's result comes back as JSON text, and also as `structuredContent` when it is a JSON object. A Tool that fails comes back with `isError: true` and its message.
 
 `401` without a valid, unexpired access token, with where to start:
 
