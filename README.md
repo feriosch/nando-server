@@ -81,7 +81,7 @@ Tests that touch data run against a real MongoDB through `testmongo.URI(t)`: eac
 
 ### JSON shapes are the API
 
-Core's and every Module's tests read and write the API with their own copies of its JSON shapes, declared in the test files (`settingsJSON` in `core/tests/settings_test.go`, `mealJSON` in `calories/tests/meals_test.go`, `wordJSON` in `japanese/tests/words_test.go`), the way `nando-web` has its own. They never use the `model` JSON types, so a test reads the API as a client does, and a changed `json` tag fails it.
+Core's and every Module's tests read and write the API with their own copies of its JSON shapes, declared in the test files (`settingsJSON` in `core/tests/settings_test.go`, `mealJSON` in `calories/tests/meals_test.go`, `wordJSON` in `japanese/tests/words_test.go`), the way `nando-web` has its own. They never use the `model` JSON types, so a test reads the API as a client does, and a changed `json` tag fails it. `internal/json_copies_test.go` fails the build if a file in a `tests/` folder uses a `model` type named `…JSON`.
 
 > [!NOTE]
 > If someone renames `json:"weekday"` to `json:"day"` in `model.ReminderJSON`, the test's `reminderJSON` still reads `weekday`, finds nothing, and fails, just as the web app would break.
@@ -91,6 +91,7 @@ So treat every `json` tag in `model/` as part of the API, the same as a route:
 - Never rename, remove or retype a `json` tag, or add or drop `omitempty`, as part of a refactor. Renaming the Go field is fine; its tag is what the web app reads.
 - When a test fails on a changed tag, the API changed: change the area's `API.md` and `nando-web` in step, in the same piece of work, then the test's copy. Never change only the test's copy to make it pass.
 - A test's copy only checks the fields it declares, and a field it leaves out goes unchecked. When the API gains a field, add it to the copy of the test that should check it.
+- Go matches JSON keys without regard to case, so no test notices a tag that only changes case (`imageUrl` to `imageURL`), though the web app breaks on it.
 - In review, read every diff to a `json:"…"` tag in `model/` as an API change.
 
 Every pull request runs `go vet ./...` and the same `go test` on GitHub Actions (`.github/workflows/pr.yml`); the runner's Docker hosts the test containers. It also builds the container image.

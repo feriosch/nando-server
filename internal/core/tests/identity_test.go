@@ -451,9 +451,11 @@ func sessionCookieIn(rec *httptest.ResponseRecorder) *http.Cookie {
 
 // sessionJSON is one Session as GET /api/sessions lists it.
 type sessionJSON struct {
-	ID        string `json:"id"`
-	UserAgent string `json:"userAgent"`
-	Current   bool   `json:"current"`
+	ID        string    `json:"id"`
+	UserAgent string    `json:"userAgent"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Current   bool      `json:"current"`
 }
 
 func (d *browser) listSessions() []sessionJSON {
@@ -489,6 +491,12 @@ func TestOwnerSeesEachSession(t *testing.T) {
 		if got[i].ID == "" {
 			t.Errorf("Session %d has no id", i)
 		}
+		if got[i].CreatedAt.IsZero() || !got[i].ExpiresAt.After(got[i].CreatedAt) {
+			t.Errorf("Session %d created %v, expires %v; want both, expiring after it was created", i, got[i].CreatedAt, got[i].ExpiresAt)
+		}
+	}
+	if gap := got[1].CreatedAt.Sub(got[0].CreatedAt); gap != time.Minute {
+		t.Errorf("the Mac's Session was created %v after the iPhone's, want 1m", gap)
 	}
 }
 
@@ -515,7 +523,8 @@ func TestDeletingASessionSignsItsBrowserOut(t *testing.T) {
 
 // passkeyJSON is one Passkey as GET /api/passkeys lists it.
 type passkeyJSON struct {
-	ID string `json:"id"`
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 func (d *browser) listPasskeys() []passkeyJSON {
@@ -550,6 +559,9 @@ func TestOwnerSeesEachPasskey(t *testing.T) {
 		if got[i].ID != want[i] {
 			t.Errorf("Passkey %d id = %q, want %q", i, got[i].ID, want[i])
 		}
+	}
+	if gap := got[1].CreatedAt.Sub(got[0].CreatedAt); got[0].CreatedAt.IsZero() || gap != time.Minute {
+		t.Errorf("Passkeys created %v and %v, want the Pixel's 1m after the iPhone's", got[0].CreatedAt, got[1].CreatedAt)
 	}
 }
 

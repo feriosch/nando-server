@@ -13,6 +13,7 @@ type settingsJSON struct {
 	WeighInReminder reminderJSON `json:"weighInReminder"`
 }
 
+// reminderJSON is the Weigh-in reminder inside settingsJSON.
 type reminderJSON struct {
 	Enabled bool   `json:"enabled"`
 	Weekday string `json:"weekday"`
