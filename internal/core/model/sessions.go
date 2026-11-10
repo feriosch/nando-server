@@ -29,3 +29,13 @@ type SessionsRepository interface {
 	Renew(ctx context.Context, id string, renewedAt, expiresAt time.Time) error
 	Delete(ctx context.Context, id string) error
 }
+
+// SessionJSON is a Session as the API lists it. Current marks the Session
+// asking.
+type SessionJSON struct {
+	ID        string    `json:"id"`
+	UserAgent string    `json:"userAgent"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Current   bool      `json:"current"`
+}

@@ -25,3 +25,10 @@ type PasskeysRepository interface {
 	Update(ctx context.Context, id []byte, old, credential []byte) error
 	Delete(ctx context.Context, id []byte) error
 }
+
+// PasskeyJSON is a Passkey as the API lists it. ID is base64url, as the
+// Passkey's path takes it.
+type PasskeyJSON struct {
+	ID        string    `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+}

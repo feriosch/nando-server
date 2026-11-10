@@ -34,20 +34,11 @@ const pushMessageTTL = 12 * time.Hour
 // Subscription: the Owner revoked it or uninstalled that copy of Nando.
 var errPushSubscriptionGone = errors.New("the push service no longer knows this Push Subscription")
 
-// pushMessageJSON is what a push message carries: one Notification, as the
-// web app's service worker reads it. An empty field is left out, so the
-// service worker shows its default ("Nando" for the title, Home for the url).
-type pushMessageJSON struct {
-	Title string `json:"title,omitempty"`
-	Body  string `json:"body,omitempty"`
-	URL   string `json:"url,omitempty"`
-}
-
 // deliver sends n to sub as a push message through sub's push service,
 // signed with vapid. It returns errPushSubscriptionGone if the push service no
 // longer knows sub.
 func deliver(ctx context.Context, vapid VAPID, sub model.PushSubscription, n model.Notification) error {
-	message, err := json.Marshal(pushMessageJSON{Title: n.Title, Body: n.Body, URL: n.URL})
+	message, err := json.Marshal(model.PushMessageJSON{Title: n.Title, Body: n.Body, URL: n.URL})
 	if err != nil {
 		return err
 	}

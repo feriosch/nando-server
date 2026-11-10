@@ -23,3 +23,9 @@ type WeighInsRepository interface {
 	List(ctx context.Context) ([]WeighIn, error)
 	Delete(ctx context.Context, week Day) error
 }
+
+// WeighInJSON is a Weigh-in as the API shows it.
+type WeighInJSON struct {
+	Week Day     `json:"week"`
+	Kg   float64 `json:"kg"`
+}

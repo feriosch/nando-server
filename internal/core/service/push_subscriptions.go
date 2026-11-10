@@ -39,23 +39,11 @@ func (s *PushSubscriptionsService) Routes(mux *http.ServeMux) {
 // getVAPIDPublicKey answers the key the web app passes to
 // pushManager.subscribe as its applicationServerKey.
 func (s *PushSubscriptionsService) getVAPIDPublicKey(w http.ResponseWriter, r *http.Request) {
-	utils.WriteJSON(w, http.StatusOK, struct {
-		PublicKey string `json:"publicKey"`
-	}{s.vapidPublicKey})
-}
-
-// pushSubscriptionJSON is a Push Subscription as PushSubscription.toJSON()
-// gives it in the browser.
-type pushSubscriptionJSON struct {
-	Endpoint string `json:"endpoint"`
-	Keys     struct {
-		P256dh string `json:"p256dh"`
-		Auth   string `json:"auth"`
-	} `json:"keys"`
+	utils.WriteJSON(w, http.StatusOK, model.VAPIDPublicKeyJSON{PublicKey: s.vapidPublicKey})
 }
 
 // checkPushSubscription explains what makes j unusable for sending, if anything.
-func checkPushSubscription(j pushSubscriptionJSON) error {
+func checkPushSubscription(j model.PushSubscriptionJSON) error {
 	if u, err := url.Parse(j.Endpoint); err != nil || !u.IsAbs() || u.Host == "" ||
 		(u.Scheme != "https" && u.Scheme != "http") {
 		return errors.New("endpoint must be the push service's URL")
@@ -86,7 +74,7 @@ func decodeKey(key string) ([]byte, error) {
 }
 
 func (s *PushSubscriptionsService) postPushSubscription(w http.ResponseWriter, r *http.Request) {
-	var j pushSubscriptionJSON
+	var j model.PushSubscriptionJSON
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
 		http.Error(w, "the body isn't a PushSubscription", http.StatusBadRequest)
 		return

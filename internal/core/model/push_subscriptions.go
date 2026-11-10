@@ -24,3 +24,19 @@ type PushSubscriptionsRepository interface {
 	List(ctx context.Context) ([]PushSubscription, error)
 	Delete(ctx context.Context, endpoint string) error
 }
+
+// PushSubscriptionJSON is a Push Subscription as PushSubscription.toJSON()
+// gives it in the browser.
+type PushSubscriptionJSON struct {
+	Endpoint string `json:"endpoint"`
+	Keys     struct {
+		P256dh string `json:"p256dh"`
+		Auth   string `json:"auth"`
+	} `json:"keys"`
+}
+
+// VAPIDPublicKeyJSON is the key the web app passes to pushManager.subscribe
+// as its applicationServerKey.
+type VAPIDPublicKeyJSON struct {
+	PublicKey string `json:"publicKey"`
+}

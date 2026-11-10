@@ -3,7 +3,6 @@ package service
 import (
 	"encoding/base64"
 	"net/http"
-	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/core/utils"
@@ -33,13 +32,9 @@ func (s *PasskeysService) listPasskeys(w http.ResponseWriter, r *http.Request) {
 		utils.ServerError(w, err)
 		return
 	}
-	type passkeyJSON struct {
-		ID        string    `json:"id"`
-		CreatedAt time.Time `json:"createdAt"`
-	}
-	list := make([]passkeyJSON, len(passkeys))
+	list := make([]model.PasskeyJSON, len(passkeys))
 	for i, passkey := range passkeys {
-		list[i] = passkeyJSON{ID: base64.RawURLEncoding.EncodeToString(passkey.ID), CreatedAt: passkey.CreatedAt}
+		list[i] = model.PasskeyJSON{ID: base64.RawURLEncoding.EncodeToString(passkey.ID), CreatedAt: passkey.CreatedAt}
 	}
 	utils.WriteJSON(w, http.StatusOK, list)
 }
