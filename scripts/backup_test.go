@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,6 +26,9 @@ import (
 // uriInContainer is how mongodump and mongorestore, run inside a MongoDB
 // container, reach that container's own server.
 const uriInContainer = "mongodb://localhost:27017"
+
+// nandoDatabases are the databases backup.sh dumps: Core and every Module.
+var nandoDatabases = []string{"core", "calories", "japanese"}
 
 // restoreMarker precedes the README's restore block.
 const restoreMarker = "<!-- restore: scripts/backup_test.go runs the block below -->"
@@ -194,30 +198,27 @@ func TestBackupLeavesOutOtherDatabases(t *testing.T) {
 		t.Fatalf("list databases: %v", err)
 	}
 	for _, name := range names {
-		switch name {
-		case "core", "calories", "japanese", "admin", "config", "local":
-		default:
-			t.Errorf("restored database %q, want only core, calories and japanese", name)
+		if !slices.Contains(nandoDatabases, name) && name != "admin" && name != "config" && name != "local" {
+			t.Errorf("restored database %q, want only %v", name, nandoDatabases)
 		}
 	}
 }
 
-// The backup needs no more than readWrite on Nando's own databases. Production's
-// Atlas user (nando-server) has readWriteAnyDatabase, but the backup mustn't
-// come to depend on it.
+// The backup needs no more than readWrite on Nando's own databases, whatever
+// wider role production's Atlas user has.
 func TestBackupNeedsOnlyNandosDatabases(t *testing.T) {
 	source := startMongo(t, mongodb.WithUsername("root"), mongodb.WithPassword("root"))
 	source.insert(t, "core", "settings", bson.D{{Key: "_id", Value: "owner"}})
 	source.insert(t, "calories", "meals", bson.D{{Key: "_id", Value: "onigiri"}})
 	source.insert(t, "japanese", "words", bson.D{{Key: "_id", Value: "tenki"}})
+	var roles bson.A
+	for _, db := range nandoDatabases {
+		roles = append(roles, bson.D{{Key: "role", Value: "readWrite"}, {Key: "db", Value: db}})
+	}
 	err := source.client.Database("admin").RunCommand(context.Background(), bson.D{
 		{Key: "createUser", Value: "nando"},
 		{Key: "pwd", Value: "nando"},
-		{Key: "roles", Value: bson.A{
-			bson.D{{Key: "role", Value: "readWrite"}, {Key: "db", Value: "core"}},
-			bson.D{{Key: "role", Value: "readWrite"}, {Key: "db", Value: "calories"}},
-			bson.D{{Key: "role", Value: "readWrite"}, {Key: "db", Value: "japanese"}},
-		}},
+		{Key: "roles", Value: roles},
 	}).Err()
 	if err != nil {
 		t.Fatalf("create user: %v", err)

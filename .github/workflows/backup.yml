@@ -3,8 +3,9 @@
 # Project, WIF provider, backup account and bucket are repo variables from #5.
 # Signs in as the backup service account through Workload Identity Federation:
 # it may read the Mongo secret and create objects in the bucket, but not read,
-# overwrite or delete them. The bucket's lifecycle rule deletes each backup at
-# 56 days old, leaving the last 8 weekly ones while backups keep running.
+# overwrite or delete them. The bucket's lifecycle rule deletes each nando-
+# backup at 56 days old, leaving the last 8 weekly ones while backups keep
+# running.
 # Restore: README's Backups section.
 name: Backup
 
@@ -55,6 +56,7 @@ jobs:
           BUCKET: ${{ vars.GCP_BACKUP_BUCKET }}
         run: |
           BUCKET="${BUCKET#gs://}"
+          # The lifecycle rule only expires names starting with nando- (#36).
           name="nando-$(date -u +%Y-%m-%dT%H%MZ).tar"
           curl -fsS -X POST \
             -H "Authorization: Bearer $TOKEN" \

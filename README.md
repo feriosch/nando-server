@@ -98,7 +98,7 @@ Every Sunday at 03:17 Tokyo time, `.github/workflows/backup.yml` (also runnable 
 
 The bucket's lifecycle rule deletes each `nando-` backup when it's 56 days old, which leaves the last 8 weekly ones. It goes by age, not count: if backups stop, the old ones still expire, and after 8 weeks there are none. So watch for failed runs. GitHub emails a failed scheduled run to whoever last changed the workflow's `cron` line, and in a public repository it turns scheduled workflows off after 60 days without activity (re-enable Backup in the Actions tab).
 
-The rule only matches names starting with `nando-`, so anything else in the bucket is kept. `final/vocabulary-2026-11-10.tar` is the last dump of benkyo's `vocabulary` database from the old US-East cluster, taken when it moved into `japanese` (#36). It has the same layout, so the restore below works on it, but it restores into `vocabulary` and includes benkyo's `users`.
+Anything else in the bucket is kept. `final/vocabulary-2026-11-10.tar` is the last dump of benkyo's `vocabulary` database from the old US-East cluster, taken when it moved into `japanese` (#36). It has the same layout, so the restore below works on it, but it restores into `vocabulary` and includes benkyo's `users`.
 
 `backup.sh` lists the databases it dumps. A new Module's database must be added there.
 
