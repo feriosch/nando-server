@@ -1,0 +1,32 @@
+{{FrontSide}}
+
+<hr id=answer>
+
+{{#Pronunciation}}<div class="hiragana" lang="ja">{{Pronunciation}}</div>{{/Pronunciation}}
+<div class="spanish" lang="es">{{Definition}}</div>
+<div class="type" lang="ja">{{Type}}</div>
+
+<div class="tags">
+	{{#Common}}<span class="tag success">Common</span>{{/Common}}
+	{{#JLPT N1}}<span class="tag info">JLPT N1</span>{{/JLPT N1}}
+	{{#Expression}}<span class="tag info">Expression</span>{{/Expression}}
+	{{#Onomatopoeic}}<span class="tag danger">Onomatopoeic</span>{{/Onomatopoeic}}
+	{{#Transitive}}<span class="tag link">Transitive</span>{{/Transitive}}
+	{{#Intransitive}}<span class="tag link">Intransitive</span>{{/Intransitive}}
+	{{Usage}}
+</div>
+
+{{#Japanese Sentence}}
+<div class="sentence">
+	<div class="sentence-ja" lang="ja">{{Japanese Sentence}}</div>
+	{{#Translation Sentence}}<div class="sentence-es" lang="es">{{Translation Sentence}}</div>{{/Translation Sentence}}
+</div>
+{{/Japanese Sentence}}
+
+{{#Notes}}
+<div class="notes" lang="es">{{Notes}}</div>
+{{/Notes}}
+
+{{#Related Back}}
+<div class="related" lang="ja">{{Related Back}}</div>
+{{/Related Back}}

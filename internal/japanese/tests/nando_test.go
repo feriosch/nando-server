@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/SherClockHolmes/webpush-go"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -21,6 +22,12 @@ import (
 
 const webOrigin = "https://web.example.com"
 
+// clock is the time Nando sees; tests set it by hand.
+type clock struct{ now time.Time }
+
+func (c *clock) Now() time.Time  { return c.now }
+func (c *clock) Set(t time.Time) { c.now = t }
+
 // nando is the whole HTTP API, Core and Japanese, over a fresh MongoDB, as
 // main wires it. The Japanese API is read-only, so tests store Words and Kanji
 // straight into the japanese database, shaped as the data moved from benkyo.
@@ -29,6 +36,7 @@ type nando struct {
 	core     *core.Core
 	japanese *mongo.Database
 	handler  http.Handler
+	clock    *clock
 }
 
 func newNando(t *testing.T) *nando {
@@ -43,9 +51,12 @@ func newNando(t *testing.T) *nando {
 	if err != nil {
 		t.Fatalf("GenerateVAPIDKeys: %v", err)
 	}
+	// Real time to start with: go-webauthn checks its ceremony timeouts against it.
+	clk := &clock{now: time.Now()}
 	c, err := core.New(context.Background(), client.Database("core"), core.Config{
 		Domain:               "example.com",
 		Origins:              []string{webOrigin},
+		Now:                  clk.Now,
 		VerifySchedulerToken: func(context.Context, string) error { return nil },
 		VAPID: core.VAPID{
 			PublicKey:  vapidPublic,
@@ -61,10 +72,11 @@ func newNando(t *testing.T) *nando {
 		t:        t,
 		core:     c,
 		japanese: db,
+		clock:    clk,
 		handler: server.New(server.Config{
 			AllowedOrigins: []string{webOrigin},
 			Core:           c,
-			Modules:        []server.Module{japanese.NewJapaneseModule(db)},
+			Modules:        []server.Module{japanese.NewJapaneseModule(db, c.Service())},
 		}),
 	}
 }

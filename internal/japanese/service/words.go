@@ -52,15 +52,15 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 		Word:      word.Word,
 		Hiragana:  utils.OrNull(word.Hiragana),
 		Spanish:   word.Spanish,
-		Type:      word.Type,
+		Type:      map[string]int{},
 		Group:     model.GroupJSON{Key: group.Key, Name: group.Name, ImageURL: utils.OrNull(group.ImageURL)},
 		Tags:      utils.OrEmptyList(word.Tags),
 		Notes:     utils.OrNull(word.Notes),
 		Sentences: []model.SentenceJSON{},
 		Hints:     []model.HintJSON{},
 	}
-	if j.Type == nil {
-		j.Type = map[string]int{}
+	for _, partOfSpeech := range word.Type {
+		j.Type[partOfSpeech.Key] = partOfSpeech.Form
 	}
 	for _, sentence := range word.Sentences {
 		j.Sentences = append(j.Sentences, model.SentenceJSON(sentence))

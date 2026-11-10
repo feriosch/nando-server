@@ -25,14 +25,16 @@ type words struct {
 
 // wordDocument is a Word as it is stored.
 type wordDocument struct {
-	ID        bson.ObjectID  `bson:"_id"`
-	Word      string         `bson:"word"`
-	Hiragana  string         `bson:"hiragana"`
-	Spanish   string         `bson:"spanish"`
-	Group     string         `bson:"group"`
-	Type      map[string]int `bson:"type"`
-	Tags      []string       `bson:"tags"`
-	Notes     string         `bson:"notes"`
+	ID       bson.ObjectID `bson:"_id"`
+	Word     string        `bson:"word"`
+	Hiragana string        `bson:"hiragana"`
+	Spanish  string        `bson:"spanish"`
+	Group    string        `bson:"group"`
+	// Type is a document, decoded in order: the order of a Word's parts of
+	// speech is the order Anki lists them in.
+	Type      bson.D   `bson:"type"`
+	Tags      []string `bson:"tags"`
+	Notes     string   `bson:"notes"`
 	Sentences []struct {
 		Sentence    string `bson:"sentence"`
 		Translation string `bson:"translation"`
@@ -55,21 +57,37 @@ func (d wordDocument) toWord() model.Word {
 		Hiragana: d.Hiragana,
 		Spanish:  d.Spanish,
 		Group:    d.Group,
-		Type:     d.Type,
 		Tags:     d.Tags,
 		Notes:    d.Notes,
+	}
+	for _, e := range d.Type {
+		w.Type = append(w.Type, model.PartOfSpeech{Key: e.Key, Form: toInt(e.Value)})
 	}
 	for _, s := range d.Sentences {
 		w.Sentences = append(w.Sentences, model.Sentence(s))
 	}
-	for _, rel := range d.Related {
+	for i, rel := range d.Related {
 		if rel.WordID == nil {
-			w.Hints = append(w.Hints, model.Hint{Text: rel.Word, Note: rel.Note})
+			w.Hints = append(w.Hints, model.Hint{Text: rel.Word, Note: rel.Note, Kind: rel.Type, NuanceTags: rel.Tags, Position: i})
 			continue
 		}
-		w.WordLinks = append(w.WordLinks, model.WordLink{WordID: rel.WordID.Hex(), Kind: rel.Type, Note: rel.Note, NuanceTags: rel.Tags})
+		w.WordLinks = append(w.WordLinks, model.WordLink{WordID: rel.WordID.Hex(), Kind: rel.Type, Note: rel.Note, NuanceTags: rel.Tags, Position: i})
 	}
 	return w
+}
+
+// toInt is v as an int, whichever number type it was stored as, or 0 if it
+// isn't a number.
+func toInt(v any) int {
+	switch n := v.(type) {
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	case float64:
+		return int(n)
+	}
+	return 0
 }
 
 func (r words) GetManyBySearch(ctx context.Context, q string, limit int) ([]model.Word, error) {
@@ -126,7 +144,8 @@ func (r words) GetManyByIDs(ctx context.Context, ids []string) ([]model.Word, er
 			oids = append(oids, oid)
 		}
 	}
-	cursor, err := r.collection.Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: oids}}}}, options.Find().SetProjection(rowFields))
+	projection := append(bson.D{{Key: "tags", Value: 1}}, rowFields...)
+	cursor, err := r.collection.Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$in", Value: oids}}}}, options.Find().SetProjection(projection))
 	if err != nil {
 		return nil, err
 	}
@@ -141,6 +160,18 @@ func (r words) GetManyByKanji(ctx context.Context, kanji string, limit int) ([]m
 		{{Key: "$limit", Value: limit}},
 		{{Key: "$project", Value: rowFields}},
 	})
+	if err != nil {
+		return nil, err
+	}
+	return toWords(ctx, cursor)
+}
+
+func (r words) GetManyForJLPTDeck(ctx context.Context) ([]model.Word, error) {
+	filter := bson.D{{Key: "$or", Value: bson.A{
+		bson.D{{Key: "group", Value: bson.D{{Key: "$in", Value: bson.A{"jlpt_n3", "jlpt_n2", "jlpt_n1"}}}}},
+		bson.D{{Key: "tags", Value: "jlpt_n1"}},
+	}}}
+	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))
 	if err != nil {
 		return nil, err
 	}
