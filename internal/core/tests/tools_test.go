@@ -52,8 +52,16 @@ func (testTools) Tools() []model.Tool {
 // tokens it exchanges its code for.
 func connectorTokens(t *testing.T, n *nando) tokenJSON {
 	t.Helper()
+	_, tokens := connectorWithTokens(t, n)
+	return tokens
+}
+
+// connectorWithTokens has the Owner approve claude with a Passkey and returns
+// its registration and the tokens it exchanges its code for.
+func connectorWithTokens(t *testing.T, n *nando) (clientJSON, tokenJSON) {
+	t.Helper()
 	client, code := approvedConnector(t, n)
-	return tokensIn(t, n.token(codeExchange(client, code, verifier)))
+	return client, tokensIn(t, n.token(codeExchange(client, code, verifier)))
 }
 
 // bearer sends every request with a Connector's access token.

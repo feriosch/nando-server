@@ -16,6 +16,10 @@ type Connector struct {
 	ApprovedAt time.Time `bson:"approvedAt"`
 	// Tokens are its current tokens, once it has exchanged its code.
 	Tokens ConnectorTokens `bson:",inline"`
+	// RetiredRefreshTokenHashes are its latest replaced refresh tokens, so a
+	// reused one is recognised: it may have been stolen, so the Connector is
+	// removed.
+	RetiredRefreshTokenHashes [][]byte `bson:"retiredRefreshTokenHashes,omitempty"`
 }
 
 // ConnectorTokens are a Connector's current access and refresh tokens,
@@ -35,6 +39,19 @@ type ConnectorsRepository interface {
 	// FindByAccessToken returns the Connector whose access token has hash,
 	// unless the token has expired at now.
 	FindByAccessToken(ctx context.Context, hash []byte, now time.Time) (Connector, error)
+	// FindByRefreshToken returns the Connector whose current refresh token
+	// has hash, expired or not.
+	FindByRefreshToken(ctx context.Context, hash []byte) (Connector, error)
+	// FindByRetiredRefreshToken returns the Connector that had a refresh
+	// token with hash before it was replaced.
+	FindByRetiredRefreshToken(ctx context.Context, hash []byte) (Connector, error)
+	// Rotate replaces the tokens of the Connector with id, only if its
+	// refresh token still has oldHash, which it then retires. If not, it
+	// returns ErrNotFound: the token was used meanwhile.
+	Rotate(ctx context.Context, id string, oldHash []byte, tokens ConnectorTokens) error
+	// Delete removes the Connector with id and so its tokens. Deleting one
+	// that doesn't exist also succeeds.
+	Delete(ctx context.Context, id string) error
 }
 
 // The JSON shapes below are what the API answers with.

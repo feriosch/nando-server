@@ -688,3 +688,92 @@ func TestATokenRequestWithoutAKnownGrantIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// refresh is the form a Connector posts to swap refreshToken for new tokens.
+func refresh(client clientJSON, refreshToken string) url.Values {
+	return url.Values{
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshToken},
+		"client_id":     {client.ClientID},
+	}
+}
+
+// mustRefresh swaps refreshToken for new tokens, or fails the test.
+func (n *nando) mustRefresh(client clientJSON, refreshToken string) tokenJSON {
+	n.t.Helper()
+	return tokensIn(n.t, n.token(refresh(client, refreshToken)))
+}
+
+// refusedAsInvalidGrant checks that a token request was refused with
+// invalid_grant.
+func refusedAsInvalidGrant(t *testing.T, what string, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	if rec.Code != http.StatusBadRequest || oauthErrorIn(rec) != "invalid_grant" {
+		t.Errorf("%s: status = %d, body %q; want 400 invalid_grant", what, rec.Code, rec.Body)
+	}
+}
+
+func TestRefreshingGivesTheConnectorNewTokens(t *testing.T) {
+	n := newNando(t)
+	client, first := connectorWithTokens(t, n)
+
+	second := n.mustRefresh(client, first.RefreshToken)
+
+	if second.AccessToken == first.AccessToken || second.RefreshToken == first.RefreshToken || second.AccessToken == second.RefreshToken {
+		t.Errorf("tokens after refreshing = %+v, want a new access and refresh token, not %+v", second, first)
+	}
+	if second.TokenType != "Bearer" || second.ExpiresIn != 3600 {
+		t.Errorf("token_type %q, expires_in %d; want Bearer, 3600", second.TokenType, second.ExpiresIn)
+	}
+	if rec := n.mcpWithToken(second.AccessToken); rec.Code != http.StatusOK {
+		t.Errorf("tools/list with the new access token: status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if rec := n.mcpWithToken(first.AccessToken); rec.Code != http.StatusUnauthorized {
+		t.Errorf("tools/list with the replaced access token: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestReusingARotatedRefreshTokenRemovesTheConnector(t *testing.T) {
+	n := newNando(t)
+	client, first := connectorWithTokens(t, n)
+	second := n.mustRefresh(client, first.RefreshToken)
+
+	refusedAsInvalidGrant(t, "refresh with the rotated token", n.token(refresh(client, first.RefreshToken)))
+
+	if rec := n.mcpWithToken(second.AccessToken); rec.Code != http.StatusUnauthorized {
+		t.Errorf("tools/list once the Connector is removed: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	refusedAsInvalidGrant(t, "refresh once the Connector is removed", n.token(refresh(client, second.RefreshToken)))
+}
+
+func TestAnUnknownRefreshTokenIsRefusedWithoutRemovingTheConnector(t *testing.T) {
+	n := newNando(t)
+	client, tokens := connectorWithTokens(t, n)
+
+	refusedAsInvalidGrant(t, "refresh with an unknown token", n.token(refresh(client, "not-a-token")))
+
+	n.mustRefresh(client, tokens.RefreshToken)
+}
+
+func TestARefreshFromAnotherClientIsRefused(t *testing.T) {
+	n := newNando(t)
+	client, tokens := connectorWithTokens(t, n)
+	other := n.mustRegister(clientJSON{ClientName: "Other", RedirectURIs: []string{"https://other.example.org/callback"}})
+
+	refusedAsInvalidGrant(t, "refresh as another client", n.token(refresh(other, tokens.RefreshToken)))
+
+	n.mustRefresh(client, tokens.RefreshToken)
+}
+
+func TestARefreshTokenExpiresAfter90DaysUnused(t *testing.T) {
+	n := newNando(t)
+	client, tokens := connectorWithTokens(t, n)
+
+	n.clock.Advance(89 * 24 * time.Hour)
+	tokens = n.mustRefresh(client, tokens.RefreshToken)
+	n.clock.Advance(89 * 24 * time.Hour) // each refresh gives another 90 days
+	tokens = n.mustRefresh(client, tokens.RefreshToken)
+
+	n.clock.Advance(91 * 24 * time.Hour)
+	refusedAsInvalidGrant(t, "refresh after 91 days unused", n.token(refresh(client, tokens.RefreshToken)))
+}

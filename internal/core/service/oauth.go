@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"slices"
@@ -351,6 +352,8 @@ func (s *OAuthService) token(w http.ResponseWriter, r *http.Request) {
 	switch grant := r.PostForm.Get("grant_type"); grant {
 	case "authorization_code":
 		s.exchangeCode(w, r)
+	case "refresh_token":
+		s.refreshTokens(w, r)
 	case "":
 		oauthError(w, http.StatusBadRequest, "invalid_request", "grant_type is required")
 	default:
@@ -381,7 +384,70 @@ func (s *OAuthService) exchangeCode(w http.ResponseWriter, r *http.Request) {
 		oauthError(w, http.StatusBadRequest, "invalid_grant", "code_verifier doesn't match the code_challenge")
 		return
 	}
-	s.issueTokens(w, r, code.ConnectorID, now)
+	s.issueTokens(w, now, func(tokens model.ConnectorTokens) error {
+		return s.connectors.SetTokens(r.Context(), code.ConnectorID, tokens)
+	})
+}
+
+// refreshTokens gives a Connector new tokens for its refresh token (RFC 6749
+// section 6), replacing both: the old refresh token is retired. A retired one
+// used again may have been stolen, so its Connector is removed (OAuth 2.1
+// section 4.3.1); so is one refreshed twice at once, as only the first
+// rotates it.
+func (s *OAuthService) refreshTokens(w http.ResponseWriter, r *http.Request) {
+	form := r.PostForm
+	now := s.now()
+	hash := sha256Of(form.Get("refresh_token"))
+	connector, err := s.connectors.FindByRefreshToken(r.Context(), hash)
+	if errors.Is(err, utils.ErrNotFound) {
+		s.refuseRefreshToken(w, r, hash)
+		return
+	}
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	if form.Get("client_id") != connector.ClientID {
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "the refresh token was issued to another client")
+		return
+	}
+	if !connector.Tokens.RefreshExpiresAt.After(now) {
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "the refresh token expired unused; connect the app again")
+		return
+	}
+	s.issueTokens(w, now, func(tokens model.ConnectorTokens) error {
+		err := s.connectors.Rotate(r.Context(), connector.ID, hash, tokens)
+		if errors.Is(err, utils.ErrNotFound) {
+			if removeErr := s.removeReusedConnector(r.Context(), connector); removeErr != nil {
+				return removeErr
+			}
+		}
+		return err
+	})
+}
+
+// refuseRefreshToken answers a refresh token that isn't any Connector's
+// current one. If it is a retired one, its Connector is removed.
+func (s *OAuthService) refuseRefreshToken(w http.ResponseWriter, r *http.Request, hash []byte) {
+	connector, err := s.connectors.FindByRetiredRefreshToken(r.Context(), hash)
+	if errors.Is(err, utils.ErrNotFound) {
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "the refresh token is unknown")
+		return
+	}
+	if err == nil {
+		err = s.removeReusedConnector(r.Context(), connector)
+	}
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	oauthError(w, http.StatusBadRequest, "invalid_grant", "the refresh token was already used, so the Connector is removed; connect the app again")
+}
+
+// removeReusedConnector removes connector, whose refresh token was used twice.
+func (s *OAuthService) removeReusedConnector(ctx context.Context, connector model.Connector) error {
+	log.Printf("Connector %s (%s) removed: a refresh token was used twice", connector.ID, connector.Name)
+	return s.connectors.Delete(ctx, connector.ID)
 }
 
 // pkceMatches reports whether verifier is the one the S256 challenge was
@@ -394,18 +460,19 @@ func pkceMatches(verifier, challenge string) bool {
 	return subtle.ConstantTimeCompare([]byte(base64.RawURLEncoding.EncodeToString(sum[:])), []byte(challenge)) == 1
 }
 
-// issueTokens gives the Connector with id a new access token and refresh
-// token, replacing any it had, and answers with them.
-func (s *OAuthService) issueTokens(w http.ResponseWriter, r *http.Request, connectorID string, now time.Time) {
+// issueTokens makes a new access token and refresh token, has save store
+// them as a Connector's, and answers with them. If save finds no Connector to
+// store them on, it was removed, and the request is refused.
+func (s *OAuthService) issueTokens(w http.ResponseWriter, now time.Time, save func(model.ConnectorTokens) error) {
 	access, refresh := rand.Text(), rand.Text()
-	err := s.connectors.SetTokens(r.Context(), connectorID, model.ConnectorTokens{
+	err := save(model.ConnectorTokens{
 		AccessTokenHash:  sha256Of(access),
 		AccessExpiresAt:  now.Add(accessTokenLifetime),
 		RefreshTokenHash: sha256Of(refresh),
 		RefreshExpiresAt: now.Add(refreshTokenLifetime),
 	})
 	if errors.Is(err, utils.ErrNotFound) {
-		oauthError(w, http.StatusBadRequest, "invalid_grant", "the Connector has been removed")
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "the Connector has been removed; connect the app again")
 		return
 	}
 	if err != nil {

@@ -17,12 +17,18 @@ func NewConnectors(ctx context.Context, db *mongo.Database) (model.ConnectorsRep
 	collection := db.Collection("connectors")
 	_, err := collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
 		{Keys: bson.D{{Key: "accessTokenHash", Value: 1}}},
+		{Keys: bson.D{{Key: "refreshTokenHash", Value: 1}}},
+		{Keys: bson.D{{Key: "retiredRefreshTokenHashes", Value: 1}}},
 	})
 	if err != nil {
 		return nil, err
 	}
 	return connectors{collection: collection}, nil
 }
+
+// maxRetiredRefreshTokens is how many replaced refresh tokens a Connector
+// remembers, to recognise one used again.
+const maxRetiredRefreshTokens = 100
 
 // connectors is the connectors collection.
 type connectors struct {
@@ -47,4 +53,36 @@ func (r connectors) FindByAccessToken(ctx context.Context, hash []byte, now time
 	}
 	err := r.collection.FindOne(ctx, filter).Decode(&connector)
 	return connector, utils.NotFound(err)
+}
+
+func (r connectors) FindByRefreshToken(ctx context.Context, hash []byte) (model.Connector, error) {
+	return r.findOne(ctx, bson.D{{Key: "refreshTokenHash", Value: hash}})
+}
+
+func (r connectors) FindByRetiredRefreshToken(ctx context.Context, hash []byte) (model.Connector, error) {
+	return r.findOne(ctx, bson.D{{Key: "retiredRefreshTokenHashes", Value: hash}})
+}
+
+func (r connectors) findOne(ctx context.Context, filter bson.D) (model.Connector, error) {
+	var connector model.Connector
+	err := r.collection.FindOne(ctx, filter).Decode(&connector)
+	return connector, utils.NotFound(err)
+}
+
+func (r connectors) Rotate(ctx context.Context, id string, oldHash []byte, tokens model.ConnectorTokens) error {
+	filter := bson.D{{Key: "_id", Value: id}, {Key: "refreshTokenHash", Value: oldHash}}
+	update := bson.D{
+		{Key: "$set", Value: tokens},
+		{Key: "$push", Value: bson.D{{Key: "retiredRefreshTokenHashes", Value: bson.D{
+			{Key: "$each", Value: bson.A{oldHash}},
+			{Key: "$slice", Value: -maxRetiredRefreshTokens},
+		}}}},
+	}
+	res, err := r.collection.UpdateOne(ctx, filter, update)
+	return utils.Matched(res, err)
+}
+
+func (r connectors) Delete(ctx context.Context, id string) error {
+	_, err := r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	return err
 }
