@@ -131,16 +131,9 @@ func (s *SessionsService) listSessions(w http.ResponseWriter, r *http.Request) {
 		utils.ServerError(w, err)
 		return
 	}
-	type sessionJSON struct {
-		ID        string    `json:"id"`
-		UserAgent string    `json:"userAgent"`
-		CreatedAt time.Time `json:"createdAt"`
-		ExpiresAt time.Time `json:"expiresAt"`
-		Current   bool      `json:"current"`
-	}
-	list := make([]sessionJSON, len(sessions))
+	list := make([]model.SessionJSON, len(sessions))
 	for i, session := range sessions {
-		list[i] = sessionJSON{
+		list[i] = model.SessionJSON{
 			ID:        session.ID,
 			UserAgent: session.UserAgent,
 			CreatedAt: session.CreatedAt,

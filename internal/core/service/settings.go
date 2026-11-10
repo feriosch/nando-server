@@ -42,28 +42,15 @@ func (s *SettingsService) Settings(ctx context.Context) (model.Settings, error) 
 	return settings, err
 }
 
-// settingsJSON is the settings as the API reads and writes them.
-type settingsJSON struct {
-	TimeZone        string       `json:"timeZone"`
-	HeightCm        *int         `json:"heightCm"`
-	WeighInReminder reminderJSON `json:"weighInReminder"`
-}
-
-type reminderJSON struct {
-	Enabled bool   `json:"enabled"`
-	Weekday string `json:"weekday"`
-	Time    string `json:"time"`
-}
-
-func toSettingsJSON(settings model.Settings) settingsJSON {
+func toSettingsJSON(settings model.Settings) model.SettingsJSON {
 	var height *int
 	if settings.HeightCm != 0 {
 		height = &settings.HeightCm
 	}
-	return settingsJSON{
+	return model.SettingsJSON{
 		TimeZone: settings.TimeZone,
 		HeightCm: height,
-		WeighInReminder: reminderJSON{
+		WeighInReminder: model.ReminderJSON{
 			Enabled: settings.WeighInReminder.Enabled,
 			Weekday: strings.ToLower(settings.WeighInReminder.Weekday.String()),
 			Time:    settings.WeighInReminder.Time,
@@ -91,7 +78,7 @@ var weekdays = func() map[string]time.Weekday {
 
 // fromSettingsJSON turns the settings the API was sent into Settings, or
 // explains what's wrong with them.
-func fromSettingsJSON(j settingsJSON) (model.Settings, error) {
+func fromSettingsJSON(j model.SettingsJSON) (model.Settings, error) {
 	// "" and "Local" load too, as UTC and the server's own zone.
 	if _, err := time.LoadLocation(j.TimeZone); err != nil || j.TimeZone == "" || j.TimeZone == "Local" {
 		return model.Settings{}, errors.New("timeZone must be an IANA time zone such as Asia/Tokyo")
@@ -122,7 +109,7 @@ func fromSettingsJSON(j settingsJSON) (model.Settings, error) {
 
 // putSettings replaces all of the settings.
 func (s *SettingsService) putSettings(w http.ResponseWriter, r *http.Request) {
-	var j settingsJSON
+	var j model.SettingsJSON
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
 		http.Error(w, "the body isn't settings", http.StatusBadRequest)
 		return

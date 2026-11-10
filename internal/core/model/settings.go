@@ -35,3 +35,18 @@ type SettingsRepository interface {
 	Find(ctx context.Context) (Settings, error)
 	Save(ctx context.Context, settings Settings) error
 }
+
+// SettingsJSON is the settings as the API reads and writes them.
+type SettingsJSON struct {
+	TimeZone        string       `json:"timeZone"`
+	HeightCm        *int         `json:"heightCm"`
+	WeighInReminder ReminderJSON `json:"weighInReminder"`
+}
+
+// ReminderJSON is the Weigh-in reminder as the API reads and writes it.
+// Weekday is its API name, such as "monday".
+type ReminderJSON struct {
+	Enabled bool   `json:"enabled"`
+	Weekday string `json:"weekday"`
+	Time    string `json:"time"`
+}

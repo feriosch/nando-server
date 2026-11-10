@@ -35,3 +35,12 @@ type NotificationProvider interface {
 	// each ID only once.
 	DueNotifications(ctx context.Context, slot time.Time) ([]Notification, error)
 }
+
+// PushMessageJSON is what a push message carries: one Notification, as the
+// web app's service worker reads it. An empty field is left out, so the
+// service worker shows its default ("Nando" for the title, Home for the url).
+type PushMessageJSON struct {
+	Title string `json:"title,omitempty"`
+	Body  string `json:"body,omitempty"`
+	URL   string `json:"url,omitempty"`
+}
