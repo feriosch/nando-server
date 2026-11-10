@@ -52,19 +52,25 @@ func (s *MCPService) Routes(mux *http.ServeMux) {
 }
 
 // serveMCP answers only a Connector with an unexpired access token, checked
-// against Core's clock. Anyone else is told where to get one.
+// against Core's clock, and records when it was last used. Anyone else is
+// told where to get a token.
 func (s *MCPService) serveMCP(w http.ResponseWriter, r *http.Request) {
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !ok || token == "" {
 		s.unauthorized(w)
 		return
 	}
-	_, err := s.connectors.FindByAccessToken(r.Context(), sha256Of(token), s.now())
+	now := s.now()
+	connector, err := s.connectors.FindByAccessToken(r.Context(), sha256Of(token), now)
 	if errors.Is(err, utils.ErrNotFound) {
 		s.unauthorized(w)
 		return
 	}
 	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	if err := s.connectors.MarkUsed(r.Context(), connector.ID, now); err != nil {
 		utils.ServerError(w, err)
 		return
 	}

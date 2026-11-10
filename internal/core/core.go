@@ -71,6 +71,7 @@ type Core struct {
 	pushSubscriptions *service.PushSubscriptionsService
 	notifications     *service.NotificationsService
 	mcp               *service.MCPService
+	connectors        *service.ConnectorsService
 	oauth             *service.OAuthService
 	// coreService is what Modules' services are handed.
 	coreService coreService
@@ -127,6 +128,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		settings:          service.NewSettings(repository.NewSettings(db), now),
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
 		mcp:               service.NewMCP(connectors, apiURL, now),
+		connectors:        service.NewConnectors(connectors),
 		oauth:             service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
@@ -164,6 +166,7 @@ func (c *Core) Routes(mux *http.ServeMux) {
 	c.pushSubscriptions.Routes(mux)
 	c.notifications.Routes(mux)
 	c.mcp.Routes(mux)
+	c.connectors.Routes(mux)
 	c.oauth.Routes(mux)
 }
 

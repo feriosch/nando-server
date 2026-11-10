@@ -6,6 +6,7 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/core/utils"
@@ -84,5 +85,20 @@ func (r connectors) Rotate(ctx context.Context, id string, oldHash []byte, token
 
 func (r connectors) Delete(ctx context.Context, id string) error {
 	_, err := r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
+	return err
+}
+
+func (r connectors) List(ctx context.Context) ([]model.Connector, error) {
+	cursor, err := r.collection.Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "approvedAt", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var list []model.Connector
+	err = cursor.All(ctx, &list)
+	return list, err
+}
+
+func (r connectors) MarkUsed(ctx context.Context, id string, at time.Time) error {
+	_, err := r.collection.UpdateByID(ctx, id, bson.D{{Key: "$set", Value: bson.D{{Key: "lastUsedAt", Value: at}}}})
 	return err
 }

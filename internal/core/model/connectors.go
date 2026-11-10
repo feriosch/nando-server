@@ -14,6 +14,8 @@ type Connector struct {
 	// Name is the client's name when it was approved.
 	Name       string    `bson:"name"`
 	ApprovedAt time.Time `bson:"approvedAt"`
+	// LastUsedAt is when it last called /mcp, or nil if it never has.
+	LastUsedAt *time.Time `bson:"lastUsedAt,omitempty"`
 	// Tokens are its current tokens, once it has exchanged its code.
 	Tokens ConnectorTokens `bson:",inline"`
 	// RetiredRefreshTokenHashes are its latest replaced refresh tokens, so a
@@ -52,9 +54,22 @@ type ConnectorsRepository interface {
 	// Delete removes the Connector with id and so its tokens. Deleting one
 	// that doesn't exist also succeeds.
 	Delete(ctx context.Context, id string) error
+	// List returns every Connector, oldest approved first.
+	List(ctx context.Context) ([]Connector, error)
+	// MarkUsed records that the Connector with id called /mcp at.
+	MarkUsed(ctx context.Context, id string, at time.Time) error
 }
 
 // The JSON shapes below are what the API answers with.
+
+// ConnectorJSON is a Connector as the API lists it. LastUsedAt is null if it
+// has never called /mcp.
+type ConnectorJSON struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	ApprovedAt time.Time  `json:"approvedAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt"`
+}
 
 // TokenJSON is the token endpoint's answer (RFC 6749 section 5.1): a
 // Connector's new access and refresh tokens.

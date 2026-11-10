@@ -777,3 +777,110 @@ func TestARefreshTokenExpiresAfter90DaysUnused(t *testing.T) {
 	n.clock.Advance(91 * 24 * time.Hour)
 	refusedAsInvalidGrant(t, "refresh after 91 days unused", n.token(refresh(client, tokens.RefreshToken)))
 }
+
+// connectorJSON is a Connector as GET /api/connectors lists it.
+type connectorJSON struct {
+	ID         string     `json:"id"`
+	Name       string     `json:"name"`
+	ApprovedAt time.Time  `json:"approvedAt"`
+	LastUsedAt *time.Time `json:"lastUsedAt"`
+}
+
+// listConnectors lists the Connectors as the Owner's signed-in browser sees them.
+func (d *browser) listConnectors() []connectorJSON {
+	d.nando.t.Helper()
+	rec := d.do(http.MethodGet, "/api/connectors", nil)
+	var connectors []connectorJSON
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &connectors) != nil {
+		d.nando.t.Fatalf("GET /api/connectors: status = %d, body %q", rec.Code, rec.Body)
+	}
+	return connectors
+}
+
+// connect registers client, has the Owner approve it with this browser's
+// Passkey and returns its registration and tokens.
+func (d *browser) connect(client clientJSON) (clientJSON, tokenJSON) {
+	d.nando.t.Helper()
+	registered := d.nando.mustRegister(client)
+	request := requestOf(d.nando.t, d.nando.authorize(authorizeQuery(registered, "xyz")))
+	code := d.mustApprove(request)
+	return registered, tokensIn(d.nando.t, d.nando.token(codeExchange(registered, code, verifier)))
+}
+
+// sameTime reports whether a time the API answered is want, as MongoDB
+// keeps it: to the millisecond.
+func sameTime(got time.Time, want time.Time) bool {
+	return got.Equal(want.Truncate(time.Millisecond))
+}
+
+func TestOwnerSeesEachConnectorAndWhenItWasLastUsed(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	claudeApproved := n.clock.Now()
+	_, claudeTokens := phone.connect(claude)
+	n.clock.Advance(time.Minute)
+	codeApproved := n.clock.Now()
+	phone.connect(clientJSON{ClientName: "Claude Code", RedirectURIs: []string{"http://localhost:53682/callback"}})
+	n.clock.Advance(time.Minute)
+	used := n.clock.Now()
+	n.mustConnectMCP(claudeTokens.AccessToken)
+
+	got := phone.listConnectors()
+
+	if len(got) != 2 {
+		t.Fatalf("Connectors = %+v, want Claude and Claude Code", got)
+	}
+	if got[0].Name != "Claude" || !sameTime(got[0].ApprovedAt, claudeApproved) || got[0].LastUsedAt == nil || !sameTime(*got[0].LastUsedAt, used) {
+		t.Errorf("first Connector = %+v, want Claude, approved %v, last used %v", got[0], claudeApproved, used)
+	}
+	if got[1].Name != "Claude Code" || !sameTime(got[1].ApprovedAt, codeApproved) || got[1].LastUsedAt != nil {
+		t.Errorf("second Connector = %+v, want Claude Code, approved %v, never used", got[1], codeApproved)
+	}
+	if got[0].ID == "" || got[0].ID == got[1].ID {
+		t.Errorf("Connector ids %q and %q, want two different ones", got[0].ID, got[1].ID)
+	}
+}
+
+func TestRemovingAConnectorCutsItOffAtOnce(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	client, tokens := phone.connect(claude)
+	id := phone.listConnectors()[0].ID
+
+	if rec := phone.do(http.MethodDelete, "/api/connectors/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE the Connector: status = %d, body %q", rec.Code, rec.Body)
+	}
+
+	if rec := n.mcpWithToken(tokens.AccessToken); rec.Code != http.StatusUnauthorized {
+		t.Errorf("tools/list once removed: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	refusedAsInvalidGrant(t, "refresh once removed", n.token(refresh(client, tokens.RefreshToken)))
+	if got := phone.listConnectors(); len(got) != 0 {
+		t.Errorf("Connectors once removed = %+v, want none", got)
+	}
+	// Deleting one that doesn't exist succeeds, like Core's other deletes.
+	if rec := phone.do(http.MethodDelete, "/api/connectors/"+id, nil); rec.Code != http.StatusNoContent {
+		t.Errorf("DELETE it again: status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+func TestConnectorsAreForTheOwnersSessionOnly(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	_, tokens := phone.connect(claude)
+
+	signedOut := n.newBrowser("Mac")
+	if rec := signedOut.do(http.MethodGet, "/api/connectors", nil); rec.Code != http.StatusUnauthorized {
+		t.Errorf("GET /api/connectors without a Session: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/connectors", nil)
+	req.Header.Set("Authorization", "Bearer "+tokens.AccessToken)
+	rec := httptest.NewRecorder()
+	n.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("GET /api/connectors with a Connector's access token: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
