@@ -110,7 +110,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		settings:          service.NewSettings(repository.NewSettings(db), now),
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
 		mcp:               service.NewMCP(apiURL),
-		oauth:             service.NewOAuth(apiURL),
+		oauth:             service.NewOAuth(apiURL, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns}

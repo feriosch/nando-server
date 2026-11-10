@@ -22,3 +22,28 @@ type AuthorizationServerMetadataJSON struct {
 	CodeChallengeMethodsSupported     []string `json:"code_challenge_methods_supported"`
 	TokenEndpointAuthMethodsSupported []string `json:"token_endpoint_auth_methods_supported"`
 }
+
+// ClientMetadataJSON is what a Connector sends to register (RFC 7591).
+type ClientMetadataJSON struct {
+	ClientName              string   `json:"client_name"`
+	RedirectURIs            []string `json:"redirect_uris"`
+	GrantTypes              []string `json:"grant_types"`
+	ResponseTypes           []string `json:"response_types"`
+	TokenEndpointAuthMethod string   `json:"token_endpoint_auth_method"`
+}
+
+// ClientJSON is a Connector's registration as the API answers it: its
+// client_id and the metadata as registered, which may differ from what was
+// sent (always a public client, with defaults filled in).
+type ClientJSON struct {
+	ClientID         string `json:"client_id"`
+	ClientIDIssuedAt int64  `json:"client_id_issued_at"`
+	ClientMetadataJSON
+}
+
+// OAuthErrorJSON is an OAuth error answer (RFC 6749 section 5.2, RFC 7591
+// section 3.2.2).
+type OAuthErrorJSON struct {
+	Error            string `json:"error"`
+	ErrorDescription string `json:"error_description"`
+}
