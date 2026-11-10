@@ -123,6 +123,10 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 // wordLinks returns links as the Word page shows them, each with the other
 // Word, leaving out any to a Word that isn't stored.
 func (s *WordsService) wordLinks(ctx context.Context, links []model.WordLink) ([]wordLinkJSON, error) {
+	list := []wordLinkJSON{}
+	if len(links) == 0 {
+		return list, nil
+	}
 	ids := make([]string, len(links))
 	for i, l := range links {
 		ids[i] = l.WordID
@@ -135,7 +139,6 @@ func (s *WordsService) wordLinks(ctx context.Context, links []model.WordLink) ([
 	for _, row := range utils.ToWordRowJSONs(others) {
 		byID[row.ID] = row
 	}
-	list := []wordLinkJSON{}
 	for _, l := range links {
 		other, ok := byID[l.WordID]
 		if !ok {

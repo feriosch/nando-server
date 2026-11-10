@@ -55,11 +55,12 @@ var kanjiRowFields = bson.D{{Key: "kanji", Value: 1}, {Key: "spanish", Value: 1}
 
 func (r kanji) GetManyBySearch(ctx context.Context, q string, limit int) ([]model.Kanji, error) {
 	pattern := utils.SearchPattern(q)
+	characters := strings.Split(q, "")
 	// A Kanji whose character is in q matches it exactly.
-	inQ := bson.D{{Key: "$in", Value: bson.A{"$kanji", strings.Split(q, "")}}}
+	inQ := bson.D{{Key: "$in", Value: bson.A{"$kanji", characters}}}
 	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: bson.D{{Key: "$or", Value: bson.A{
-			bson.D{{Key: "kanji", Value: bson.D{{Key: "$in", Value: strings.Split(q, "")}}}},
+			bson.D{{Key: "kanji", Value: bson.D{{Key: "$in", Value: characters}}}},
 			utils.MatchesAny(pattern, "spanish"),
 		}}}}},
 		{{Key: "$addFields", Value: bson.D{

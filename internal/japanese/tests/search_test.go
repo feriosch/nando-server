@@ -2,8 +2,10 @@ package tests
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -210,4 +212,24 @@ func TestSearchFindsAtMost50WordsAnd20Kanji(t *testing.T) {
 	if len(got.Words) != 50 || len(got.Kanji) != 20 {
 		t.Errorf("search dia found %d Words and %d Kanji, want 50 and 20", len(got.Words), len(got.Kanji))
 	}
+}
+
+func TestSearchFoldsDecomposedAccentsAndKana(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("words", word("心", "こころ", "corazón", "basic"), word("学校", "がっこう", "escuela", "basic"))
+
+	// corazón and がっこう as some keyboards send them: a base letter, then a combining mark.
+	if got := search(phone, "corazón"); !reflect.DeepEqual(spellings(got.Words), []string{"心"}) {
+		t.Errorf("Words for decomposed corazón = %v, want [心]", spellings(got.Words))
+	}
+	if got := search(phone, "がっこう"); !reflect.DeepEqual(spellings(got.Words), []string{"学校"}) {
+		t.Errorf("Words for decomposed がっこう = %v, want [学校]", spellings(got.Words))
+	}
+}
+
+func TestATooLongSearchIsRejected(t *testing.T) {
+	_, phone := signedInBrowser(t)
+
+	phone.must(http.MethodGet, "/api/japanese/search?q="+strings.Repeat("a", 101), nil, http.StatusBadRequest)
+	phone.must(http.MethodGet, "/api/japanese/search?q="+url.QueryEscape(strings.Repeat("足", 100)), nil, http.StatusOK)
 }

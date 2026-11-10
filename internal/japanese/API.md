@@ -48,6 +48,9 @@ A Kanji row:
 - Within each list, exact matches (the whole `word`, `hiragana` or `spanish` is `q`, or the Kanji's character is in `q`) come first, then the rest, shorter before longer (by the length of whatever matched). Kanji found by character come in the order they appear in `q`, and Kanji of equal rank by their Heisig number.
 - At most 50 Words and 20 Kanji.
 - An empty or blank `q` finds nothing: `{ "words": [], "kanji": [] }`.
+- An accent or dakuten sent as a separate combining mark matches like the composed letter (`corazo\u0301n` finds `corazón`).
+
+`400`: `q` is longer than 100 characters.
 
 ## Words
 

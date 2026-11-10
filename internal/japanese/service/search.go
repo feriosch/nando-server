@@ -3,6 +3,9 @@ package service
 import (
 	"net/http"
 	"strings"
+	"unicode/utf8"
+
+	"golang.org/x/text/unicode/norm"
 
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 	"github.com/feriosch/nando-server/internal/japanese/model"
@@ -25,10 +28,12 @@ func (s *SearchService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/japanese/search", s.search)
 }
 
-// maxWords and maxKanji are how many Words and Kanji a search returns at most.
+// maxWords and maxKanji are how many Words and Kanji a search returns at
+// most, and maxQLength how many characters it is sent at most.
 const (
-	maxWords = 50
-	maxKanji = 20
+	maxWords   = 50
+	maxKanji   = 20
+	maxQLength = 100
 )
 
 type searchJSON struct {
@@ -37,7 +42,13 @@ type searchJSON struct {
 }
 
 func (s *SearchService) search(w http.ResponseWriter, r *http.Request) {
-	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	// NFC, so an accent or dakuten sent as a separate combining mark is
+	// matched like the stored, composed letter.
+	q := norm.NFC.String(strings.TrimSpace(r.URL.Query().Get("q")))
+	if utf8.RuneCountInString(q) > maxQLength {
+		http.Error(w, "q is longer than 100 characters", http.StatusBadRequest)
+		return
+	}
 	if q == "" {
 		coreutils.WriteJSON(w, http.StatusOK, searchJSON{Words: []utils.WordRowJSON{}, Kanji: []utils.KanjiRowJSON{}})
 		return
