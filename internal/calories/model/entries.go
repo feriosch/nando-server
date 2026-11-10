@@ -57,3 +57,24 @@ type EntriesRepository interface {
 	// last, inclusive, that has Entries. An Unlogged Day isn't in it.
 	ConsumedByDay(ctx context.Context, first, last coremodel.Day) (map[coremodel.Day]int, error)
 }
+
+// The JSON shapes below are what the API answers with and is sent.
+
+// EntryJSON is an Entry as the API lists it.
+type EntryJSON struct {
+	ID             string        `json:"id"`
+	Day            coremodel.Day `json:"day"`
+	MealID         *string       `json:"mealId"`
+	Name           string        `json:"name"`
+	KcalPerServing int           `json:"kcalPerServing"`
+	Servings       int           `json:"servings"`
+	Kcal           int           `json:"kcal"`
+	LoggedAt       string        `json:"loggedAt"`
+}
+
+// EntryValues are what the Owner sets of an Entry, as the API is sent them.
+type EntryValues struct {
+	Name           string `json:"name"`
+	KcalPerServing *int   `json:"kcalPerServing"`
+	Servings       int    `json:"servings"`
+}

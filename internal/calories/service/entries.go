@@ -34,16 +34,9 @@ func (s *EntriesService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/calories/entries/{id}", s.deleteEntry)
 }
 
-// entryValues are what the Owner sets of an Entry, as the API is sent them.
-type entryValues struct {
-	Name           string `json:"name"`
-	KcalPerServing *int   `json:"kcalPerServing"`
-	Servings       int    `json:"servings"`
-}
-
-// toEntry checks all three values and returns an Entry with them, or explains
-// what's wrong.
-func (v entryValues) toEntry() (model.Entry, error) {
+// toEntry checks all three of v's values and returns an Entry with them, or
+// explains what's wrong.
+func toEntry(v model.EntryValues) (model.Entry, error) {
 	name, err := utils.CheckName("name", v.Name)
 	if err != nil {
 		return model.Entry{}, err
@@ -97,7 +90,7 @@ func (s *EntriesService) postEntry(w http.ResponseWriter, r *http.Request) {
 	}
 	var body struct {
 		MealID *string `json:"mealId"`
-		entryValues
+		model.EntryValues
 		// SaveAsMeal also saves a one-off Entry as a Meal, which it then
 		// belongs to.
 		SaveAsMeal bool `json:"saveAsMeal"`
@@ -117,7 +110,7 @@ func (s *EntriesService) postEntry(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		var err error
-		if entry, err = body.toEntry(); err != nil {
+		if entry, err = toEntry(body.EntryValues); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -187,12 +180,12 @@ func (s *EntriesService) editableEntry(w http.ResponseWriter, r *http.Request, i
 
 // putEntry edits an Entry's name, kcal per serving and Servings.
 func (s *EntriesService) putEntry(w http.ResponseWriter, r *http.Request) {
-	var body entryValues
+	var body model.EntryValues
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "the body isn't an Entry", http.StatusBadRequest)
 		return
 	}
-	edited, err := body.toEntry()
+	edited, err := toEntry(body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

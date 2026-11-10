@@ -27,12 +27,6 @@ func (s *DailyLimitsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/calories/daily-limit", s.putDailyLimit)
 }
 
-// dailyLimitJSON is a Daily Limit as the API answers it.
-type dailyLimitJSON struct {
-	Kcal          int           `json:"kcal"`
-	EffectiveFrom coremodel.Day `json:"effectiveFrom"`
-}
-
 // getDailyLimit answers the Daily Limit in force now, or null if none was
 // ever set.
 func (s *DailyLimitsService) getDailyLimit(w http.ResponseWriter, r *http.Request) {
@@ -46,7 +40,7 @@ func (s *DailyLimitsService) getDailyLimit(w http.ResponseWriter, r *http.Reques
 		coreutils.WriteJSON(w, http.StatusOK, nil)
 		return
 	}
-	coreutils.WriteJSON(w, http.StatusOK, dailyLimitJSON{Kcal: latest.Kcal, EffectiveFrom: latest.EffectiveFrom})
+	coreutils.WriteJSON(w, http.StatusOK, model.DailyLimitJSON{Kcal: latest.Kcal, EffectiveFrom: latest.EffectiveFrom})
 }
 
 // putDailyLimit changes the Daily Limit from today.

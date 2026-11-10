@@ -38,26 +38,12 @@ func (s *MealsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/calories/meals/{id}/restore", s.restoreMeal)
 }
 
-// mealJSON is a Meal as the API reads and writes it. Optional strings are
-// null when not set.
-type mealJSON struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name"`
-	Kcal     int      `json:"kcal"`
-	Store    *string  `json:"store"`
-	Emoji    *string  `json:"emoji"`
-	ImageURL *string  `json:"imageUrl"`
-	Tags     []string `json:"tags"`
-	Pinned   bool     `json:"pinned"`
-	Archived bool     `json:"archived"`
-}
-
-func toMealJSON(m model.Meal) mealJSON {
+func toMealJSON(m model.Meal) model.MealJSON {
 	tags := m.Tags
 	if tags == nil {
 		tags = []string{}
 	}
-	return mealJSON{
+	return model.MealJSON{
 		ID:       m.ID,
 		Name:     m.Name,
 		Kcal:     m.Kcal,
@@ -83,28 +69,17 @@ func (s *MealsService) listMeals(w http.ResponseWriter, r *http.Request) {
 
 // writeMeals answers 200 with meals as the API lists them.
 func writeMeals(w http.ResponseWriter, meals []model.Meal) {
-	list := make([]mealJSON, len(meals))
+	list := make([]model.MealJSON, len(meals))
 	for i, m := range meals {
 		list[i] = toMealJSON(m)
 	}
 	coreutils.WriteJSON(w, http.StatusOK, list)
 }
 
-// mealBody is a Meal as the API is sent it: what the Owner can set of one.
-type mealBody struct {
-	Name     string   `json:"name"`
-	Kcal     *int     `json:"kcal"`
-	Store    *string  `json:"store"`
-	Emoji    *string  `json:"emoji"`
-	ImageURL *string  `json:"imageUrl"`
-	Tags     []string `json:"tags"`
-	Pinned   bool     `json:"pinned"`
-}
-
 // readMeal reads and checks the Meal in r's body. On a bad body it answers
 // 400 and returns false.
 func readMeal(w http.ResponseWriter, r *http.Request) (model.Meal, bool) {
-	var j mealBody
+	var j model.MealBody
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
 		http.Error(w, "the body isn't a Meal", http.StatusBadRequest)
 		return model.Meal{}, false
@@ -119,7 +94,7 @@ func readMeal(w http.ResponseWriter, r *http.Request) (model.Meal, bool) {
 
 // fromMealBody turns the Meal the API was sent into a Meal, or explains what's
 // wrong with it.
-func fromMealBody(j mealBody) (model.Meal, error) {
+func fromMealBody(j model.MealBody) (model.Meal, error) {
 	name, err := utils.CheckName("name", j.Name)
 	if err != nil {
 		return model.Meal{}, err

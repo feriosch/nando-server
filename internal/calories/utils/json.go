@@ -1,9 +1,6 @@
 package utils
 
-import (
-	"github.com/feriosch/nando-server/internal/calories/model"
-	coremodel "github.com/feriosch/nando-server/internal/core/model"
-)
+import "github.com/feriosch/nando-server/internal/calories/model"
 
 // OrNull is s, or nil if s is "": an optional string as the API writes it.
 func OrNull(s string) *string {
@@ -21,23 +18,11 @@ func OrEmpty(s *string) string {
 	return *s
 }
 
-// EntryJSON is an Entry as the API lists it.
-type EntryJSON struct {
-	ID             string        `json:"id"`
-	Day            coremodel.Day `json:"day"`
-	MealID         *string       `json:"mealId"`
-	Name           string        `json:"name"`
-	KcalPerServing int           `json:"kcalPerServing"`
-	Servings       int           `json:"servings"`
-	Kcal           int           `json:"kcal"`
-	LoggedAt       string        `json:"loggedAt"`
-}
-
 // ToEntryJSONs returns entries as the API lists them.
-func ToEntryJSONs(entries []model.Entry) []EntryJSON {
-	list := make([]EntryJSON, len(entries))
+func ToEntryJSONs(entries []model.Entry) []model.EntryJSON {
+	list := make([]model.EntryJSON, len(entries))
 	for i, e := range entries {
-		list[i] = EntryJSON{
+		list[i] = model.EntryJSON{
 			ID:             e.ID,
 			Day:            e.Day,
 			MealID:         OrNull(e.MealID),

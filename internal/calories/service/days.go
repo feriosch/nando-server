@@ -34,18 +34,8 @@ func (s *DaysService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/calories/home-card", s.homeCard)
 }
 
-// caloriesJSON is a Day's Consumed Calories against its Daily Limit, as the
-// Day view, the preview, the history and the Home Card answer them.
-type caloriesJSON struct {
-	Day              coremodel.Day `json:"day"`
-	ConsumedCalories *int          `json:"consumedCalories"`
-	DailyLimit       *int          `json:"dailyLimit"`
-	Remaining        *int          `json:"remaining"`
-	OverLimit        *bool         `json:"overLimit"`
-}
-
-func toCaloriesJSON(d model.DayCalories) caloriesJSON {
-	return caloriesJSON{
+func toCaloriesJSON(d model.DayCalories) model.CaloriesJSON {
+	return model.CaloriesJSON{
 		Day:              d.Day,
 		ConsumedCalories: d.ConsumedCalories,
 		DailyLimit:       d.DailyLimit,
@@ -54,21 +44,15 @@ func toCaloriesJSON(d model.DayCalories) caloriesJSON {
 	}
 }
 
-// dayJSON is the Day view as the API answers it.
-type dayJSON struct {
-	caloriesJSON
-	Entries []utils.EntryJSON `json:"entries"`
-}
-
 // dayView returns day's Entries with its Consumed Calories against its Daily
 // Limit.
-func (s *DaysService) dayView(ctx context.Context, day coremodel.Day) (dayJSON, error) {
+func (s *DaysService) dayView(ctx context.Context, day coremodel.Day) (model.DayJSON, error) {
 	calories, entries, err := s.dayCalories(ctx, day)
 	if err != nil {
-		return dayJSON{}, err
+		return model.DayJSON{}, err
 	}
-	return dayJSON{
-		caloriesJSON: toCaloriesJSON(calories),
+	return model.DayJSON{
+		CaloriesJSON: toCaloriesJSON(calories),
 		Entries:      utils.ToEntryJSONs(entries),
 	}, nil
 }
@@ -115,7 +99,7 @@ func (s *DaysService) homeCard(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	coreutils.WriteJSON(w, http.StatusOK, view.caloriesJSON)
+	coreutils.WriteJSON(w, http.StatusOK, view.CaloriesJSON)
 }
 
 // previewEntry answers what logging an Entry of ?kcal= on the Day would make
@@ -193,7 +177,7 @@ func (s *DaysService) history(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	list := []caloriesJSON{}
+	list := []model.CaloriesJSON{}
 	for day := to; day >= from; day = day.AddDays(-1) {
 		var kcal *int
 		if k, logged := consumed[day]; logged {
