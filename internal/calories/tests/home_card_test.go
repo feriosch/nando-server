@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ func TestHomeCardShowsTodaysConsumedCaloriesAgainstTheDailyLimit(t *testing.T) {
 	phone.setDailyLimit(2000)
 
 	got := get[model.CaloriesJSON](phone, "/api/calories/home-card")
-	if want := (model.CaloriesJSON{Day: "2026-10-22", DailyLimit: iptr(2000)}); !equalCalories(got, want) {
+	if want := (model.CaloriesJSON{Day: "2026-10-22", DailyLimit: iptr(2000)}); !reflect.DeepEqual(got, want) {
 		t.Errorf("home card before logging = %s, want %s", showCalories(got), showCalories(want))
 	}
 
@@ -23,7 +24,7 @@ func TestHomeCardShowsTodaysConsumedCaloriesAgainstTheDailyLimit(t *testing.T) {
 
 	got = get[model.CaloriesJSON](phone, "/api/calories/home-card")
 	want := model.CaloriesJSON{Day: "2026-10-22", ConsumedCalories: iptr(460), DailyLimit: iptr(2000), Remaining: iptr(1540), OverLimit: bptr(false)}
-	if !equalCalories(got, want) {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("home card = %s, want %s", showCalories(got), showCalories(want))
 	}
 }

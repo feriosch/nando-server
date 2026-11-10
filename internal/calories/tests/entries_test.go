@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -52,33 +54,25 @@ func TestEditingAMealNeverChangesItsEntries(t *testing.T) {
 	}
 }
 
-// equalEntries compares Entries by value, following MealID. It leaves out
-// LoggedAt, which TestAnEntryRecordsWhenItWasLogged checks.
+// equalEntries compares Entries by value. It leaves out LoggedAt, which
+// TestAnEntryRecordsWhenItWasLogged checks.
 func equalEntries(a, b []model.EntryJSON) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		x, y := a[i], b[i]
-		if (x.MealID == nil) != (y.MealID == nil) || (x.MealID != nil && *x.MealID != *y.MealID) {
-			return false
+	withoutLoggedAt := func(entries []model.EntryJSON) []model.EntryJSON {
+		out := slices.Clone(entries)
+		for i := range out {
+			out[i].LoggedAt = ""
 		}
-		x.MealID, y.MealID = nil, nil
-		x.LoggedAt, y.LoggedAt = "", ""
-		if x != y {
-			return false
-		}
+		return out
 	}
-	return true
+	return reflect.DeepEqual(withoutLoggedAt(a), withoutLoggedAt(b))
 }
 
 // saveTimeZone sets the Owner Time Zone through Core's settings API.
 func (d *browser) saveTimeZone(name string) {
 	d.nando.t.Helper()
-	d.must(http.MethodPut, "/api/settings", map[string]any{
-		"timeZone":        name,
-		"heightCm":        nil,
-		"weighInReminder": map[string]any{"enabled": false, "weekday": "monday", "time": "08:00"},
+	d.must(http.MethodPut, "/api/settings", coremodel.SettingsJSON{
+		TimeZone:        name,
+		WeighInReminder: coremodel.ReminderJSON{Enabled: false, Weekday: "monday", Time: "08:00"},
 	}, http.StatusNoContent)
 }
 

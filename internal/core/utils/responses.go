@@ -19,7 +19,7 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 }
 
 // WriteCreated answers 201 with the ID of what a POST created, as
-// model.CreatedJSON.
+// model.CreatedJSON: {"id": "…"}.
 func WriteCreated(w http.ResponseWriter, id string) {
 	WriteJSON(w, http.StatusCreated, model.CreatedJSON{ID: id})
 }

@@ -155,7 +155,7 @@ func TestChangingAMealOrEntryThatDoesNotExistIsNotFound(t *testing.T) {
 		{http.MethodPut, "/api/calories/meals/" + missing, onigiri},
 		{http.MethodDelete, "/api/calories/meals/" + missing, nil},
 		{http.MethodPost, "/api/calories/meals/" + missing + "/restore", nil},
-		{http.MethodPut, "/api/calories/entries/" + missing, map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 1}},
+		{http.MethodPut, "/api/calories/entries/" + missing, model.EntryValues{Name: "Sushi", KcalPerServing: iptr(45), Servings: 1}},
 	} {
 		if rec := phone.do(req.method, req.path, req.body); rec.Code != http.StatusNotFound {
 			t.Errorf("%s %s: status = %d, body %q; want %d", req.method, req.path, rec.Code, rec.Body, http.StatusNotFound)

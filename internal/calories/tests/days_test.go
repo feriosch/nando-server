@@ -3,6 +3,7 @@ package tests
 import (
 	"fmt"
 	"net/http"
+	"reflect"
 	"testing"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
@@ -32,14 +33,9 @@ func TestDayViewSumsTheDaysEntriesAgainstTheDailyLimit(t *testing.T) {
 		t.Errorf("day view entries = %+v, want %+v", got.Entries, wantEntries)
 	}
 	want := model.CaloriesJSON{Day: "2026-10-21", ConsumedCalories: iptr(1000), DailyLimit: iptr(2000), Remaining: iptr(1000), OverLimit: bptr(false)}
-	if !equalCalories(got.CaloriesJSON, want) {
+	if !reflect.DeepEqual(got.CaloriesJSON, want) {
 		t.Errorf("day view = %s, want %s", showCalories(got.CaloriesJSON), showCalories(want))
 	}
-}
-
-// equalBools compares two optional booleans by value.
-func equalBools(a, b *bool) bool {
-	return (a == nil && b == nil) || (a != nil && b != nil && *a == *b)
 }
 
 // showBool shows an optional boolean, or "null".
@@ -58,13 +54,6 @@ func show(i *int) any {
 	return *i
 }
 
-// equalCalories compares two Days' Consumed Calories against their Daily
-// Limits by value.
-func equalCalories(a, b model.CaloriesJSON) bool {
-	return a.Day == b.Day && equalInts(a.ConsumedCalories, b.ConsumedCalories) && equalInts(a.DailyLimit, b.DailyLimit) &&
-		equalInts(a.Remaining, b.Remaining) && equalBools(a.OverLimit, b.OverLimit)
-}
-
 // showCalories shows a Day's Consumed Calories against its Daily Limit.
 func showCalories(c model.CaloriesJSON) string {
 	return fmt.Sprintf("%s consumed %v limit %v remaining %v over %v",
@@ -78,7 +67,7 @@ func TestAnUnloggedDayIsNotZeroKcal(t *testing.T) {
 	got := get[model.DayJSON](phone, "/api/calories/days/2026-10-21")
 
 	want := model.CaloriesJSON{Day: "2026-10-21", DailyLimit: iptr(2000)}
-	if len(got.Entries) != 0 || !equalCalories(got.CaloriesJSON, want) {
+	if len(got.Entries) != 0 || !reflect.DeepEqual(got.CaloriesJSON, want) {
 		t.Errorf("unlogged day view = %s with Entries %+v, want %s with none", showCalories(got.CaloriesJSON), got.Entries, showCalories(want))
 	}
 }
@@ -95,7 +84,7 @@ func TestPreviewTellsWhetherAnEntryWouldTakeTheDayOverTheDailyLimit(t *testing.T
 		// An Unlogged Day would be logged with just this Entry.
 		"/api/calories/days/2026-10-20/preview?kcal=300": {Day: "2026-10-20", ConsumedCalories: iptr(300), DailyLimit: iptr(2000), Remaining: iptr(1700), OverLimit: bptr(false)},
 	} {
-		if got := get[model.CaloriesJSON](phone, path); !equalCalories(got, want) {
+		if got := get[model.CaloriesJSON](phone, path); !reflect.DeepEqual(got, want) {
 			t.Errorf("GET %s = %s, want %s", path, showCalories(got), showCalories(want))
 		}
 	}
@@ -105,7 +94,7 @@ func TestWithoutADailyLimitNothingIsOverIt(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 
 	got := get[model.CaloriesJSON](phone, "/api/calories/days/2026-10-21/preview?kcal=9000")
-	if want := (model.CaloriesJSON{Day: "2026-10-21", ConsumedCalories: iptr(9000), OverLimit: bptr(false)}); !equalCalories(got, want) {
+	if want := (model.CaloriesJSON{Day: "2026-10-21", ConsumedCalories: iptr(9000), OverLimit: bptr(false)}); !reflect.DeepEqual(got, want) {
 		t.Errorf("preview without a Daily Limit = %s, want %s", showCalories(got), showCalories(want))
 	}
 }
@@ -145,7 +134,7 @@ func TestPreviewOfAnEditLeavesOutTheEntryItReplaces(t *testing.T) {
 
 	got := get[model.CaloriesJSON](phone, "/api/calories/days/2026-10-21/preview?kcal=1600&replacing="+ramenID)
 	want := model.CaloriesJSON{Day: "2026-10-21", ConsumedCalories: iptr(2100), DailyLimit: iptr(2000), Remaining: iptr(-100), OverLimit: bptr(true)}
-	if !equalCalories(got, want) {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("preview of editing Ramen to 1600 kcal = %s, want %s", showCalories(got), showCalories(want))
 	}
 

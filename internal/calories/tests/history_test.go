@@ -2,7 +2,7 @@ package tests
 
 import (
 	"net/http"
-	"slices"
+	"reflect"
 	"testing"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
@@ -31,7 +31,7 @@ func TestHistoryShowsEachDayAgainstItsDailyLimitAndUnloggedDaysAsNotLogged(t *te
 		// Before the first Daily Limit, which covers it too.
 		{Day: "2026-10-18", ConsumedCalories: iptr(500), DailyLimit: iptr(2000), Remaining: iptr(1500), OverLimit: bptr(false)},
 	}
-	if !slices.EqualFunc(got, want, equalCalories) {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("history =\n%s\nwant\n%s", showHistory(got), showHistory(want))
 	}
 }
@@ -46,7 +46,7 @@ func TestHistoryWithoutADailyLimitIsNeverOverIt(t *testing.T) {
 		{Day: "2026-10-21", ConsumedCalories: iptr(4500), OverLimit: bptr(false)},
 		{Day: "2026-10-20"},
 	}
-	if !slices.EqualFunc(got, want, equalCalories) {
+	if !reflect.DeepEqual(got, want) {
 		t.Errorf("history =\n%s\nwant\n%s", showHistory(got), showHistory(want))
 	}
 }
