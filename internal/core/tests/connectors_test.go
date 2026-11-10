@@ -884,3 +884,77 @@ func TestConnectorsAreForTheOwnersSessionOnly(t *testing.T) {
 		t.Errorf("GET /api/connectors with a Connector's access token: status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
 }
+
+// stillPending checks that request can still be approved: nothing approved it.
+func stillPending(t *testing.T, d *browser, request string) {
+	t.Helper()
+	if rec := d.do(http.MethodGet, "/auth/connect/"+request, nil); rec.Code != http.StatusOK {
+		t.Errorf("GET the request afterwards: status = %d, want %d: it should still be pending", rec.Code, http.StatusOK)
+	}
+}
+
+func TestApprovingWithoutAPasskeyIsRefused(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll() // signed in, so it has a Session
+	_, request := n.mustAuthorize()
+
+	for name, body := range map[string][]byte{"no body": nil, "not a credential": []byte(`{"id":"x"}`)} {
+		rec := phone.do(http.MethodPost, "/auth/connect/"+request+"/finish", body)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("finish with %s, from a browser with a Session: status = %d, body %q; want %d", name, rec.Code, rec.Body, http.StatusBadRequest)
+		}
+	}
+	stillPending(t, phone, request)
+}
+
+func TestApprovingWithADeletedPasskeyIsRefused(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	if rec := phone.do(http.MethodDelete, "/api/passkeys/"+phone.listPasskeys()[0].ID, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE the Passkey: status = %d, body %q", rec.Code, rec.Body)
+	}
+	_, request := n.mustAuthorize()
+
+	if rec := phone.approve(request); rec.Code != http.StatusUnauthorized {
+		t.Errorf("approve with the deleted Passkey: status = %d, body %q; want %d", rec.Code, rec.Body, http.StatusUnauthorized)
+	}
+	stillPending(t, phone, request)
+}
+
+func TestAPasskeyAnswerForAnotherCeremonyCannotApprove(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	_, request := n.mustAuthorize()
+	_, other := n.mustAuthorize()
+
+	for name, beginPath := range map[string]string{
+		"a sign-in":                  "/auth/signin/begin",
+		"another request's approval": "/auth/connect/" + other + "/begin",
+	} {
+		options := phone.do(http.MethodPost, beginPath, nil)
+		answer := phone.passkey.Get(t, phone.origin, options.Body.Bytes())
+		if rec := phone.do(http.MethodPost, "/auth/connect/"+request+"/finish", answer); rec.Code != http.StatusBadRequest {
+			t.Errorf("finish with the answer to %s: status = %d, body %q; want %d", name, rec.Code, rec.Body, http.StatusBadRequest)
+		}
+	}
+	stillPending(t, phone, request)
+}
+
+func TestAnApprovalCeremonyCannotSignIn(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	_, request := n.mustAuthorize()
+	mac := n.newBrowser("Mac").syncedFrom(phone)
+
+	options := mac.do(http.MethodPost, "/auth/connect/"+request+"/begin", nil)
+	rec := mac.do(http.MethodPost, "/auth/signin/finish", mac.passkey.Get(t, mac.origin, options.Body.Bytes()))
+
+	if rec.Code != http.StatusBadRequest || mac.session != nil {
+		t.Errorf("sign in with an approval's answer: status = %d, body %q, Session %v; want %d and no Session",
+			rec.Code, rec.Body, mac.session != nil, http.StatusBadRequest)
+	}
+}

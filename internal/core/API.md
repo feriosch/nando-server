@@ -3,6 +3,7 @@
 Identity: Passkeys, Enrollment Codes and Sessions ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)).
 Settings and body measurements: the Owner Time Zone, height and Weigh-ins ([ADR 0003](../../docs/adr/0003-body-measurements-in-core.md)).
 Notifications: Push Subscriptions, the push messages Core sends, and the scheduler's tick ([ADR 0001](../../docs/adr/0001-cloud-run-hosting.md)).
+Connectors: Nando as its own OAuth 2.1 authorization server, the consent page's calls, the Tools at `/mcp`, and the Owner's list of Connectors ([ADR 0004](../../docs/adr/0004-connectors-over-oauth.md)).
 
 The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors are a status code with a short plain-text message.
 
@@ -234,3 +235,154 @@ At each tick Core asks every Notification provider (Core's own and every Module'
 - `204`: done. A push service that failed to take a message doesn't fail the tick; that Notification isn't retried.
 - `401`: no token, or not the scheduler's.
 - `500`: a provider failed, or a Notification couldn't be recorded as sent. Everything else was still sent, and Cloud Scheduler's retry won't send it again.
+
+## Connectors
+
+A Connector, such as the Claude app, uses the Tools of Core and every Module over MCP at `https://api.<DOMAIN>/mcp`. It never signs in. Nando is its own OAuth 2.1 authorization server: authorization code with PKCE (`S256` only) and dynamic client registration, for public clients only. The Owner approves each Connector on the web app's consent page with a Passkey, always, even in a browser with a Session ([ADR 0004](../../docs/adr/0004-connectors-over-oauth.md)).
+
+The OAuth routes (`/.well-known/`, `/oauth/`) and `/mcp` are called by the Connector, not the web app. They need no Session and send no cookie. OAuth errors are JSON, `{ "error": "invalid_grant", "error_description": "…" }`, as RFC 6749 sets out.
+
+Every secret Nando issues is random and stored only as a SHA-256 hash, like a Session token:
+
+| Secret             | Lasts                                                                          |
+| ------------------ | ------------------------------------------------------------------------------ |
+| Registration       | a day, unless a Connector is approved for it; then until it is removed         |
+| Pending request    | 10 minutes, and it is approved or denied only once                             |
+| Authorization code | 1 minute, and any exchange uses it up, even a refused one                      |
+| Access token       | 1 hour                                                                         |
+| Refresh token      | 90 days unused, like a Session; each refresh replaces it                       |
+
+### `GET /.well-known/oauth-protected-resource`
+
+`200`: `/mcp`'s protected resource metadata (RFC 9728), where a Connector starts.
+
+```json
+{ "resource": "https://api.<DOMAIN>/mcp", "authorization_servers": ["https://api.<DOMAIN>"] }
+```
+
+### `GET /.well-known/oauth-authorization-server`
+
+`200`: the authorization server metadata (RFC 8414).
+
+```json
+{
+  "issuer": "https://api.<DOMAIN>",
+  "authorization_endpoint": "https://api.<DOMAIN>/oauth/authorize",
+  "token_endpoint": "https://api.<DOMAIN>/oauth/token",
+  "registration_endpoint": "https://api.<DOMAIN>/oauth/register",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256"],
+  "token_endpoint_auth_methods_supported": ["none"]
+}
+```
+
+### `POST /oauth/register`
+
+Dynamic client registration (RFC 7591).
+
+```json
+{
+  "client_name": "Claude",
+  "redirect_uris": ["https://claude.ai/api/mcp/auth_callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none"
+}
+```
+
+- `201`: the registration as kept: the fields above plus `client_id` and `client_id_issued_at`. It is always a public client, `token_endpoint_auth_method: "none"` with no `client_secret`, whatever was asked. `client_name` defaults to the first redirect URI's host, and is the Connector's name. `grant_types` defaults to `["authorization_code"]` and `response_types` to `["code"]`.
+- `400` `invalid_redirect_uri`: no redirect URI, or one that isn't `https:`, or `http:` to `localhost` or `127.0.0.1` on any port (for local apps such as Claude Code). Fragments and user info are refused.
+- `400` `invalid_client_metadata`: the body isn't JSON, more than 10 redirect URIs, a name over 100 characters, or a grant or response type other than those above.
+
+### `GET /oauth/authorize`
+
+The Connector sends the Owner's browser here with `response_type=code`, `client_id`, `redirect_uri` (exactly as registered), `code_challenge`, `code_challenge_method=S256` and `state`.
+
+- `302` to `https://web.<DOMAIN>/connect?request=<id>`, the consent page, with the pending request.
+- `400`, plain text: an unknown or expired `client_id`, or a `redirect_uri` it didn't register. These are never redirected, since the redirect URI can't be trusted.
+- `302` back to the redirect URI with `error` and `state`: `unsupported_response_type` for a `response_type` other than `code`, and `invalid_request` for no `response_type`, no `code_challenge`, a method other than `S256`, or no `state`.
+
+### `GET /auth/connect/{request}`
+
+For the consent page, which may run in a browser without a Session. `200`: which app asks.
+
+```json
+{ "clientName": "Claude", "redirectHost": "claude.ai" }
+```
+
+`404`: the request is unknown, already approved or denied, or expired.
+
+### `POST /auth/connect/{request}/begin`
+
+Starts approving the request with a Passkey. `200`: `{ "publicKey": PublicKeyCredentialRequestOptionsJSON }`, as `POST /auth/signin/begin` answers. `404` as above.
+
+### `POST /auth/connect/{request}/finish`
+
+Body: the `PublicKeyCredential` from `navigator.credentials.get`, as `credential.toJSON()`. It doesn't start a Session.
+
+- `200`: the Connector is created and its registration kept. Send the browser to `redirect`, the Connector's redirect URI with a single-use authorization code.
+
+  ```json
+  { "redirect": "https://claude.ai/api/mcp/auth_callback?code=…&state=…" }
+  ```
+
+- `400`: the body isn't a `PublicKeyCredential`, or its challenge wasn't begun for approving this request (a sign-in's, or another request's).
+- `401`: the challenge is unknown, used or expired, or the Passkey couldn't be verified.
+- `404`: the request was approved, denied or expired in the meantime.
+
+An approval's challenge can't sign in either: `POST /auth/signin/finish` answers it `400`.
+
+### `POST /auth/connect/{request}/deny`
+
+`200`: `{ "redirect": "<redirect_uri>?error=access_denied&state=…" }`. The request is gone. `404` as above.
+
+### `POST /oauth/token`
+
+Form-encoded (`application/x-www-form-urlencoded`). Every answer has `Cache-Control: no-store`.
+
+- `grant_type=authorization_code` with `code`, `redirect_uri`, `client_id` and `code_verifier`: the code must be unused and under a minute old, issued to this `client_id` and `redirect_uri`, and SHA-256 of `code_verifier` must match its `code_challenge`.
+- `grant_type=refresh_token` with `refresh_token` and `client_id`: the Connector's current refresh token, used within 90 days.
+
+`200`: new tokens. A refresh replaces both the access token and the refresh token.
+
+```json
+{ "access_token": "…", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "…" }
+```
+
+- `400` `invalid_grant`: the code or refresh token is unknown, used, expired, another client's, or its Connector was removed. A refresh token that was already replaced, used again, removes its Connector, since it may have been stolen; the Owner then approves the app again.
+- `400` `invalid_request`: no `grant_type`, or the body isn't a form.
+- `400` `unsupported_grant_type`: any other `grant_type`.
+
+### `POST /mcp`
+
+MCP over Streamable HTTP, stateless, answering `application/json`, so each request can reach any instance. It needs `Authorization: Bearer <access token>`, never a Session cookie. It serves `tools/list` and `tools/call` for the Tools Core and every Module add. Each Tool says whether it is read-only (`readOnlyHint`) and whether it deletes, merges or moves data (`destructiveHint`). A Tool's result comes back as JSON text, and also as `structuredContent` when it is a JSON object. A Tool that fails comes back with `isError: true` and its message.
+
+`401` without a valid, unexpired access token, with where to start:
+
+```
+WWW-Authenticate: Bearer resource_metadata="https://api.<DOMAIN>/.well-known/oauth-protected-resource"
+```
+
+A Connector's access token works only here; under `/api/` it gets `401`.
+
+### `GET /api/connectors`
+
+`200`: every Connector, oldest approved first.
+
+```json
+[
+  {
+    "id": "7XQ2…",
+    "name": "Claude",
+    "approvedAt": "2026-11-10T10:00:00Z",
+    "lastUsedAt": "2026-11-10T12:30:00Z"
+  }
+]
+```
+
+`lastUsedAt` is its last call to `/mcp`, or `null` if it has never made one.
+
+### `DELETE /api/connectors/{id}`
+
+`204`: removes the Connector and its tokens. Its next call to `/mcp` gets `401`, and its refresh token `invalid_grant`. Deleting one that doesn't exist also answers `204`.

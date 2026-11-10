@@ -219,3 +219,80 @@ func TestAnUnknownTokenIsUnauthorized(t *testing.T) {
 		}
 	}
 }
+
+// TestAConnectorGoesFromRegistrationToRemoval is the whole life of a
+// Connector: it registers, the Owner approves it with a Passkey, it
+// exchanges its code with PKCE, lists and calls a Tool, refreshes its
+// tokens, and is removed.
+func TestAConnectorGoesFromRegistrationToRemoval(t *testing.T) {
+	n := newNando(t)
+	n.core.AddToolProvider(testTools{})
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+
+	// Claude finds where to register, and registers.
+	server := getMetadata[authorizationServerJSON](n, "/.well-known/oauth-authorization-server")
+	if server.RegistrationEndpoint != "https://api.example.com/oauth/register" {
+		t.Fatalf("registration_endpoint = %q", server.RegistrationEndpoint)
+	}
+	client := n.mustRegister(claude)
+
+	// It sends the Owner to authorize; the Owner approves with a Passkey.
+	request := requestOf(t, n.authorize(authorizeQuery(client, "xyz")))
+	back := redirectIn(t, phone.approve(request))
+	if back.Query().Get("state") != "xyz" {
+		t.Fatalf("approval redirects to %s, want state xyz", back)
+	}
+
+	// It exchanges the code with its PKCE verifier.
+	tokens := tokensIn(t, n.token(codeExchange(client, back.Query().Get("code"), verifier)))
+
+	// It lists and calls a Tool.
+	session := n.mustConnectMCP(tokens.AccessToken)
+	listed, err := session.ListTools(context.Background(), nil)
+	if err != nil || len(listed.Tools) != 2 {
+		t.Fatalf("tools/list: %v, %+v", err, listed)
+	}
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "test_echo", Arguments: map[string]any{"text": "足跡"}})
+	if err != nil || result.IsError || !reflect.DeepEqual(result.StructuredContent, map[string]any{"echoed": "足跡"}) {
+		t.Fatalf("tools/call test_echo: %v, %+v", err, result)
+	}
+
+	// An hour later its access token has expired, so it refreshes.
+	n.clock.Advance(time.Hour)
+	if rec := n.mcpWithToken(tokens.AccessToken); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("tools/list with an hour-old access token: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	tokens = n.mustRefresh(client, tokens.RefreshToken)
+	if _, err := n.mustConnectMCP(tokens.AccessToken).ListTools(context.Background(), nil); err != nil {
+		t.Fatalf("tools/list after refreshing: %v", err)
+	}
+
+	// The Owner removes it, and it is cut off.
+	connectors := phone.listConnectors()
+	if len(connectors) != 1 || connectors[0].Name != "Claude" {
+		t.Fatalf("Connectors = %+v, want Claude", connectors)
+	}
+	if rec := phone.do(http.MethodDelete, "/api/connectors/"+connectors[0].ID, nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("DELETE the Connector: status = %d", rec.Code)
+	}
+	if _, err := n.connectMCP(tokens.AccessToken); err == nil {
+		t.Errorf("connect to /mcp after removal: no error, want 401")
+	}
+	if rec := n.mcpWithToken(tokens.AccessToken); rec.Code != http.StatusUnauthorized {
+		t.Errorf("tools/list after removal: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestASessionCookieDoesNotOpenMCP(t *testing.T) {
+	n := newNando(t)
+	n.core.AddToolProvider(testTools{})
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+
+	rec := phone.do(http.MethodPost, "/mcp", []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("POST /mcp with the Session cookie: status = %d, body %q; want %d", rec.Code, rec.Body, http.StatusUnauthorized)
+	}
+}
