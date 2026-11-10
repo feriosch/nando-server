@@ -30,12 +30,6 @@ func (s *WeighInsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/weigh-ins/{week}", s.deleteWeighIn)
 }
 
-// weighInJSON is a Weigh-in as the API lists it.
-type weighInJSON struct {
-	Week model.Day `json:"week"`
-	Kg   float64   `json:"kg"`
-}
-
 // listWeighIns lists every Weigh-in, newest first.
 func (s *WeighInsService) listWeighIns(w http.ResponseWriter, r *http.Request) {
 	weighIns, err := s.weighIns.List(r.Context())
@@ -43,9 +37,9 @@ func (s *WeighInsService) listWeighIns(w http.ResponseWriter, r *http.Request) {
 		utils.ServerError(w, err)
 		return
 	}
-	list := make([]weighInJSON, len(weighIns))
+	list := make([]model.WeighInJSON, len(weighIns))
 	for i, weighIn := range weighIns {
-		list[i] = weighInJSON{Week: weighIn.Week, Kg: weighIn.Kg}
+		list[i] = model.WeighInJSON{Week: weighIn.Week, Kg: weighIn.Kg}
 	}
 	utils.WriteJSON(w, http.StatusOK, list)
 }

@@ -7,13 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
-)
 
-// weighInJSON is one Weigh-in as GET /api/weigh-ins lists it.
-type weighInJSON struct {
-	Week string  `json:"week"`
-	Kg   float64 `json:"kg"`
-}
+	"github.com/feriosch/nando-server/internal/core/model"
+)
 
 // wednesday is a Wednesday at noon UTC, in the week starting Monday 2026-10-19.
 var wednesday = time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
@@ -31,13 +27,13 @@ func (d *browser) mustPutWeighIn(week string, kg float64) {
 	}
 }
 
-func (d *browser) listWeighIns() []weighInJSON {
+func (d *browser) listWeighIns() []model.WeighInJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/weigh-ins", nil)
 	if rec.Code != http.StatusOK {
 		d.nando.t.Fatalf("GET /api/weigh-ins: status = %d, body %q", rec.Code, rec.Body)
 	}
-	var weighIns []weighInJSON
+	var weighIns []model.WeighInJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &weighIns); err != nil {
 		d.nando.t.Fatalf("GET /api/weigh-ins: %v in %q", err, rec.Body)
 	}
@@ -50,7 +46,7 @@ func TestOwnerLogsThisWeeksWeighIn(t *testing.T) {
 	phone.mustPutWeighIn("2026-10-19", 72.4)
 
 	got := phone.listWeighIns()
-	if len(got) != 1 || got[0] != (weighInJSON{Week: "2026-10-19", Kg: 72.4}) {
+	if len(got) != 1 || got[0] != (model.WeighInJSON{Week: "2026-10-19", Kg: 72.4}) {
 		t.Errorf("Weigh-ins = %+v, want only 72.4 kg in the week of 2026-10-19", got)
 	}
 }
@@ -62,7 +58,7 @@ func TestALaterWeighInReplacesTheWeeksEarlierOne(t *testing.T) {
 	phone.mustPutWeighIn("2026-10-19", 71.9)
 
 	got := phone.listWeighIns()
-	if len(got) != 1 || got[0] != (weighInJSON{Week: "2026-10-19", Kg: 71.9}) {
+	if len(got) != 1 || got[0] != (model.WeighInJSON{Week: "2026-10-19", Kg: 71.9}) {
 		t.Errorf("Weigh-ins = %+v, want only 71.9 kg in the week of 2026-10-19", got)
 	}
 }
@@ -139,7 +135,7 @@ func TestWeighInsBeforeLastWeekCanNoLongerBeChanged(t *testing.T) {
 	}
 
 	got := phone.listWeighIns()
-	if len(got) != 1 || got[0] != (weighInJSON{Week: "2026-10-19", Kg: 72.4}) {
+	if len(got) != 1 || got[0] != (model.WeighInJSON{Week: "2026-10-19", Kg: 72.4}) {
 		t.Errorf("Weigh-ins = %+v, want the one from two weeks ago unchanged", got)
 	}
 }
@@ -155,7 +151,7 @@ func TestChangingTheTimeZoneDoesNotMoveWeighIns(t *testing.T) {
 	phone.saveTimeZone("Asia/Tokyo")
 
 	got := phone.listWeighIns()
-	if len(got) != 1 || got[0] != (weighInJSON{Week: "2026-10-19", Kg: 72.4}) {
+	if len(got) != 1 || got[0] != (model.WeighInJSON{Week: "2026-10-19", Kg: 72.4}) {
 		t.Errorf("Weigh-ins after moving to Asia/Tokyo = %+v, want 72.4 kg still in the week of 2026-10-19", got)
 	}
 	// What moves is which week is this week.

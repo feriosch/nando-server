@@ -41,11 +41,7 @@ func bmi(kg float64, heightCm int) float64 {
 // getBody answers the Body Home Card: the latest Weigh-in, its BMI (once the
 // height is set) and its change since the week before (if that week has one).
 func (s *BodyService) getBody(w http.ResponseWriter, r *http.Request) {
-	var card struct {
-		Latest *weighInJSON `json:"latest"`
-		BMI    *float64     `json:"bmi"`
-		Change *float64     `json:"change"`
-	}
+	var card model.BodyCardJSON
 	latest, err := s.weighIns.FindLatest(r.Context())
 	if errors.Is(err, utils.ErrNotFound) {
 		utils.WriteJSON(w, http.StatusOK, card)
@@ -55,7 +51,7 @@ func (s *BodyService) getBody(w http.ResponseWriter, r *http.Request) {
 		utils.ServerError(w, err)
 		return
 	}
-	card.Latest = &weighInJSON{Week: latest.Week, Kg: latest.Kg}
+	card.Latest = &model.WeighInJSON{Week: latest.Week, Kg: latest.Kg}
 
 	settings, err := s.settings.Settings(r.Context())
 	if err != nil {
