@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -19,9 +20,14 @@ import (
 // Connector get tokens for /mcp. It serves the metadata a Connector starts
 // from under /.well-known/, and the OAuth endpoints under /oauth/.
 type OAuthService struct {
+	clients  model.OAuthClientsRepository
+	requests model.AuthorizationRequestsRepository
 	// apiURL is the API's own URL, https://api.<domain>: the issuer.
 	apiURL string
-	now    func() time.Time
+	// consentURL is the web app's consent page, where the Owner approves a
+	// Connector.
+	consentURL string
+	now        func() time.Time
 }
 
 const (
@@ -29,11 +35,29 @@ const (
 	maxClientNameLength = 100
 	// maxRedirectURIs is the most redirect URIs a Connector may register.
 	maxRedirectURIs = 10
+	// unapprovedClientLifetime is how long a registration is kept before the
+	// Owner approves a Connector for it.
+	unapprovedClientLifetime = 24 * time.Hour
+	// authorizationRequestLifetime is how long the Owner has to approve a
+	// Connector on the consent page.
+	authorizationRequestLifetime = 10 * time.Minute
 )
 
-// NewOAuth returns the OAuthService of the API at apiURL, with now as its clock.
-func NewOAuth(apiURL string, now func() time.Time) *OAuthService {
-	return &OAuthService{apiURL: apiURL, now: now}
+// NewOAuth returns the OAuthService of the API at apiURL, whose consent page
+// is on the web app at webURL, with now as its clock.
+func NewOAuth(
+	clients model.OAuthClientsRepository,
+	requests model.AuthorizationRequestsRepository,
+	apiURL, webURL string,
+	now func() time.Time,
+) *OAuthService {
+	return &OAuthService{
+		clients:    clients,
+		requests:   requests,
+		apiURL:     apiURL,
+		consentURL: webURL + "/connect",
+		now:        now,
+	}
 }
 
 // Routes adds the metadata documents and the OAuth endpoints to mux.
@@ -41,6 +65,7 @@ func (s *OAuthService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /.well-known/oauth-protected-resource", s.protectedResourceMetadata)
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.authorizationServerMetadata)
 	mux.HandleFunc("POST /oauth/register", s.register)
+	mux.HandleFunc("GET /oauth/authorize", s.authorize)
 }
 
 // protectedResourceMetadata answers that /mcp takes tokens from this server.
@@ -117,11 +142,93 @@ func (s *OAuthService) register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metadata.TokenEndpointAuthMethod = "none"
+	now := s.now()
+	client := model.OAuthClient{
+		ID:           rand.Text(),
+		Name:         metadata.ClientName,
+		RedirectURIs: metadata.RedirectURIs,
+		CreatedAt:    now,
+		ExpiresAt:    now.Add(unapprovedClientLifetime),
+	}
+	if err := s.clients.Insert(r.Context(), client); err != nil {
+		utils.ServerError(w, err)
+		return
+	}
 	utils.WriteJSON(w, http.StatusCreated, model.ClientJSON{
-		ClientID:           rand.Text(),
-		ClientIDIssuedAt:   s.now().Unix(),
+		ClientID:           client.ID,
+		ClientIDIssuedAt:   now.Unix(),
 		ClientMetadataJSON: metadata,
 	})
+}
+
+// authorize starts a Connector's authorization (RFC 6749 section 4.1.1, with
+// PKCE): it keeps the request and sends the Owner's browser to the consent
+// page. An unknown client or a redirect URI it didn't register is shown as a
+// plain error, since redirecting there could hand the error to anyone; every
+// other error is sent back to the Connector at its redirect URI.
+func (s *OAuthService) authorize(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	client, err := s.clients.Find(r.Context(), q.Get("client_id"), s.now())
+	if errors.Is(err, utils.ErrNotFound) {
+		http.Error(w, "this app isn't registered, or its registration has expired; connect it again", http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	redirectURI := q.Get("redirect_uri")
+	if !slices.Contains(client.RedirectURIs, redirectURI) {
+		http.Error(w, "redirect_uri isn't one this app registered", http.StatusBadRequest)
+		return
+	}
+	state := q.Get("state")
+	switch {
+	case q.Get("response_type") == "":
+		redirectError(w, r, redirectURI, "invalid_request", "response_type is required", state)
+		return
+	case q.Get("response_type") != "code":
+		redirectError(w, r, redirectURI, "unsupported_response_type", "response_type must be code", state)
+		return
+	case q.Get("code_challenge") == "" || q.Get("code_challenge_method") != "S256":
+		redirectError(w, r, redirectURI, "invalid_request", "a code_challenge with code_challenge_method S256 is required", state)
+		return
+	case state == "":
+		redirectError(w, r, redirectURI, "invalid_request", "state is required", state)
+		return
+	}
+
+	request := model.AuthorizationRequest{
+		ID:            rand.Text(),
+		ClientID:      client.ID,
+		RedirectURI:   redirectURI,
+		CodeChallenge: q.Get("code_challenge"),
+		State:         state,
+		ExpiresAt:     s.now().Add(authorizationRequestLifetime),
+	}
+	if err := s.requests.Insert(r.Context(), request); err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	http.Redirect(w, r, s.consentURL+"?"+url.Values{"request": {request.ID}}.Encode(), http.StatusFound)
+}
+
+// redirectError sends the browser back to a trusted redirectURI with an OAuth
+// error and the Connector's state, if it sent one.
+func redirectError(w http.ResponseWriter, r *http.Request, redirectURI, code, description, state string) {
+	u, err := url.Parse(redirectURI)
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	q := u.Query()
+	q.Set("error", code)
+	q.Set("error_description", description)
+	if state != "" {
+		q.Set("state", state)
+	}
+	u.RawQuery = q.Encode()
+	http.Redirect(w, r, u.String(), http.StatusFound)
 }
 
 // checkRedirectURI accepts an https: URL, or plain http: to localhost or

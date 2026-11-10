@@ -2,13 +2,17 @@ package tests
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // protectedResourceMetadata is where a Connector learns how to get a token
@@ -253,5 +257,142 @@ func TestInvalidRegistrationsAreRejected(t *testing.T) {
 		if rec.Code != http.StatusBadRequest || got.Error != "invalid_client_metadata" {
 			t.Errorf("%s: status = %d, body %q; want 400 invalid_client_metadata", name, rec.Code, rec.Body)
 		}
+	}
+}
+
+// verifier is a PKCE code verifier, as a Connector makes one up for each
+// authorization.
+const verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+
+// challengeOf is the S256 code challenge of a code verifier (RFC 7636).
+func challengeOf(verifier string) string {
+	sum := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// authorizeQuery is the query a Connector sends the Owner's browser to
+// /oauth/authorize with.
+func authorizeQuery(client clientJSON, state string) url.Values {
+	return url.Values{
+		"response_type":         {"code"},
+		"client_id":             {client.ClientID},
+		"redirect_uri":          {client.RedirectURIs[0]},
+		"code_challenge":        {challengeOf(verifier)},
+		"code_challenge_method": {"S256"},
+		"state":                 {state},
+	}
+}
+
+// authorize opens /oauth/authorize with query in the Owner's browser, which
+// sends no Origin on a top-level navigation.
+func (n *nando) authorize(query url.Values) *httptest.ResponseRecorder {
+	n.t.Helper()
+	return n.connectorDo(http.MethodGet, "/oauth/authorize?"+query.Encode(), nil)
+}
+
+// redirectOf is where a response redirects the browser, or fails the test.
+func redirectOf(t *testing.T, rec *httptest.ResponseRecorder) *url.URL {
+	t.Helper()
+	if rec.Code != http.StatusFound {
+		t.Fatalf("status = %d, body %q; want a redirect, %d", rec.Code, rec.Body, http.StatusFound)
+	}
+	u, err := url.Parse(rec.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("Location %q: %v", rec.Header().Get("Location"), err)
+	}
+	return u
+}
+
+func TestAuthorizeSendsTheOwnerToTheConsentPage(t *testing.T) {
+	n := newNando(t)
+	client := n.mustRegister(claude)
+
+	first := redirectOf(t, n.authorize(authorizeQuery(client, "xyz")))
+	second := redirectOf(t, n.authorize(authorizeQuery(client, "xyz")))
+
+	for _, u := range []*url.URL{first, second} {
+		if u.Scheme != "https" || u.Host != "web.example.com" || u.Path != "/connect" || u.Query().Get("request") == "" {
+			t.Errorf("authorize redirects to %s, want https://web.example.com/connect?request=…", u)
+		}
+	}
+	if first.Query().Get("request") == second.Query().Get("request") {
+		t.Errorf("two authorizations share request %q", first.Query().Get("request"))
+	}
+}
+
+func TestAuthorizeShowsAnErrorRatherThanRedirectToAnUntrustedURI(t *testing.T) {
+	n := newNando(t)
+	client := n.mustRegister(claude)
+	with := func(key, value string) url.Values {
+		q := authorizeQuery(client, "xyz")
+		if value == "" {
+			q.Del(key)
+		} else {
+			q.Set(key, value)
+		}
+		return q
+	}
+
+	for name, query := range map[string]url.Values{
+		"no client_id":             with("client_id", ""),
+		"unknown client_id":        with("client_id", "unknown"),
+		"no redirect_uri":          with("redirect_uri", ""),
+		"unregistered redirect":    with("redirect_uri", "https://evil.example.com/callback"),
+		"redirect with extra path": with("redirect_uri", claude.RedirectURIs[0]+"/more"),
+		"redirect with a query":    with("redirect_uri", claude.RedirectURIs[0]+"?next=evil"),
+	} {
+		rec := n.authorize(query)
+		if rec.Code != http.StatusBadRequest || rec.Header().Get("Location") != "" {
+			t.Errorf("%s: status = %d, Location %q; want %d and no redirect", name, rec.Code, rec.Header().Get("Location"), http.StatusBadRequest)
+		}
+	}
+}
+
+func TestAuthorizeSendsOtherErrorsBackToTheConnector(t *testing.T) {
+	n := newNando(t)
+	client := n.mustRegister(claude)
+	with := func(key, value string) url.Values {
+		q := authorizeQuery(client, "xyz")
+		if value == "" {
+			q.Del(key)
+		} else {
+			q.Set(key, value)
+		}
+		return q
+	}
+
+	for name, tc := range map[string]struct {
+		query     url.Values
+		wantError string
+		wantState string
+	}{
+		"token response type": {with("response_type", "token"), "unsupported_response_type", "xyz"},
+		"no response type":    {with("response_type", ""), "invalid_request", "xyz"},
+		"no code challenge":   {with("code_challenge", ""), "invalid_request", "xyz"},
+		"no challenge method": {with("code_challenge_method", ""), "invalid_request", "xyz"},
+		"plain challenge":     {with("code_challenge_method", "plain"), "invalid_request", "xyz"},
+		"no state":            {with("state", ""), "invalid_request", ""},
+	} {
+		u := redirectOf(t, n.authorize(tc.query))
+		back := *u
+		back.RawQuery = ""
+		got := u.Query()
+		if back.String() != claude.RedirectURIs[0] || got.Get("error") != tc.wantError || got.Get("state") != tc.wantState {
+			t.Errorf("%s: redirects to %s, want %s?error=%s&state=%s", name, u, claude.RedirectURIs[0], tc.wantError, tc.wantState)
+		}
+	}
+}
+
+func TestARegistrationNotApprovedWithinADayIsForgotten(t *testing.T) {
+	n := newNando(t)
+	client := n.mustRegister(claude)
+
+	n.clock.Advance(23 * time.Hour)
+	redirectOf(t, n.authorize(authorizeQuery(client, "xyz")))
+
+	n.clock.Advance(2 * time.Hour)
+	if rec := n.authorize(authorizeQuery(client, "xyz")); rec.Code != http.StatusBadRequest {
+		t.Errorf("authorize a day after registering: status = %d, Location %q; want %d, an unknown client",
+			rec.Code, rec.Header().Get("Location"), http.StatusBadRequest)
 	}
 }

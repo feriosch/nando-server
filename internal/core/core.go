@@ -98,19 +98,28 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
+	oauthClients, err := repository.NewOAuthClients(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	authorizationRequests, err := repository.NewAuthorizationRequests(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	passkeys := repository.NewPasskeys(db)
 	weighIns := repository.NewWeighIns(db)
 	pushSubscriptions := repository.NewPushSubscriptions(db)
 
-	// apiURL is the API's own URL, which Connectors reach it at.
-	apiURL := "https://api." + cfg.Domain
+	// apiURL is the API's own URL, which Connectors reach it at, and webURL
+	// the web app's.
+	apiURL, webURL := "https://api."+cfg.Domain, "https://web."+cfg.Domain
 	c := &Core{
 		sessions:          service.NewSessions(sessionsRepo, cfg.Domain, now),
 		passkeys:          service.NewPasskeys(passkeys),
 		settings:          service.NewSettings(repository.NewSettings(db), now),
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
 		mcp:               service.NewMCP(apiURL),
-		oauth:             service.NewOAuth(apiURL, now),
+		oauth:             service.NewOAuth(oauthClients, authorizationRequests, apiURL, webURL, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns}
