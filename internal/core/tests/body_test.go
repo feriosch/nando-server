@@ -4,22 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/feriosch/nando-server/internal/core/model"
 )
 
-// bodyJSON is the Body Home Card as GET /api/body answers it.
-type bodyJSON struct {
-	Latest *weighInJSON `json:"latest"`
-	BMI    *float64     `json:"bmi"`
-	Change *float64     `json:"change"`
-}
-
-func (d *browser) getBody() bodyJSON {
+func (d *browser) getBody() model.BodyCardJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/body", nil)
 	if rec.Code != http.StatusOK {
 		d.nando.t.Fatalf("GET /api/body: status = %d, body %q", rec.Code, rec.Body)
 	}
-	var b bodyJSON
+	var b model.BodyCardJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &b); err != nil {
 		d.nando.t.Fatalf("GET /api/body: %v in %q", err, rec.Body)
 	}
@@ -44,7 +39,7 @@ func TestBodyCardShowsTheLatestWeighInWithBMIAndChange(t *testing.T) {
 
 	got := phone.getBody()
 
-	if got.Latest == nil || *got.Latest != (weighInJSON{Week: "2026-10-19", Kg: 72.4}) {
+	if got.Latest == nil || *got.Latest != (model.WeighInJSON{Week: "2026-10-19", Kg: 72.4}) {
 		t.Errorf("latest = %+v, want 72.4 kg in the week of 2026-10-19", got.Latest)
 	}
 	// 72.4 kg / (1.75 m)² = 23.64…

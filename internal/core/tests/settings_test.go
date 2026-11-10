@@ -4,28 +4,17 @@ import (
 	"encoding/json"
 	"net/http"
 	"testing"
+
+	"github.com/feriosch/nando-server/internal/core/model"
 )
 
-// settingsJSON is Core's settings as GET /api/settings answers them.
-type settingsJSON struct {
-	TimeZone        string       `json:"timeZone"`
-	HeightCm        *int         `json:"heightCm"`
-	WeighInReminder reminderJSON `json:"weighInReminder"`
-}
-
-type reminderJSON struct {
-	Enabled bool   `json:"enabled"`
-	Weekday string `json:"weekday"`
-	Time    string `json:"time"`
-}
-
-func (d *browser) getSettings() settingsJSON {
+func (d *browser) getSettings() model.SettingsJSON {
 	d.nando.t.Helper()
 	rec := d.do(http.MethodGet, "/api/settings", nil)
 	if rec.Code != http.StatusOK {
 		d.nando.t.Fatalf("GET /api/settings: status = %d, body %q", rec.Code, rec.Body)
 	}
-	var s settingsJSON
+	var s model.SettingsJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &s); err != nil {
 		d.nando.t.Fatalf("GET /api/settings: %v in %q", err, rec.Body)
 	}
@@ -39,10 +28,10 @@ func TestSettingsStartAsDefaults(t *testing.T) {
 
 	got := phone.getSettings()
 
-	want := settingsJSON{
+	want := model.SettingsJSON{
 		TimeZone:        "UTC",
 		HeightCm:        nil,
-		WeighInReminder: reminderJSON{Enabled: false, Weekday: "monday", Time: "08:00"},
+		WeighInReminder: model.ReminderJSON{Enabled: false, Weekday: "monday", Time: "08:00"},
 	}
 	if got.TimeZone != want.TimeZone || got.HeightCm != nil || got.WeighInReminder != want.WeighInReminder {
 		t.Errorf("settings before any are saved = %+v, want %+v", got, want)
@@ -54,10 +43,10 @@ func TestOwnerSavesTheirSettings(t *testing.T) {
 	phone := n.newBrowser("iPhone")
 	phone.mustEnroll()
 	height := 175
-	saved := settingsJSON{
+	saved := model.SettingsJSON{
 		TimeZone:        "Asia/Tokyo",
 		HeightCm:        &height,
-		WeighInReminder: reminderJSON{Enabled: true, Weekday: "sunday", Time: "07:30"},
+		WeighInReminder: model.ReminderJSON{Enabled: true, Weekday: "sunday", Time: "07:30"},
 	}
 
 	if rec := phone.do(http.MethodPut, "/api/settings", mustJSON(t, saved)); rec.Code != http.StatusNoContent {
