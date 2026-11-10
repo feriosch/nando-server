@@ -66,6 +66,10 @@ type WordsRepository interface {
 	// GetManyByKanji returns up to limit Words whose spelling contains
 	// kanji (a Kanji's character), shorter ones first, filled in as by GetManyBySearch.
 	GetManyByKanji(ctx context.Context, kanji string, limit int) ([]Word, error)
+	// GetManyForJLPTDeck returns, oldest first, every Word studied for the JLPT,
+	// as the JLPT deck file exports it: those in the JLPT Groups, and any other
+	// Word with the jlpt_n1 Word Tag.
+	GetManyForJLPTDeck(ctx context.Context) ([]AnkiWord, error)
 }
 
 // The JSON shapes below are what the API answers with.

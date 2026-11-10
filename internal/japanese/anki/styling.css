@@ -1,0 +1,219 @@
+/* Shared by both card types: in Anki, styling belongs to the note type. */
+
+.card {
+  --fg: #1f2430;
+  --muted: #6b7280;
+  --bg: #ffffff;
+  --rule: #d5d9e0;
+  --surface: #f6f7f9;
+  --rel-border: #b8c0cc;
+  --rel-type: #aab;
+  --rel-word: #1f2430;
+  --rel-level-bg: #8a94a6;
+  --rel-tag-bg: #e6e9ef;
+  --rel-tag-fg: #55606f;
+  --rel-note: #6b7280;
+
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Yu Gothic", YuGothic,
+    "Noto Sans JP", "Noto Sans CJK JP", Meiryo, system-ui, sans-serif;
+  font-size: 22px;
+  line-height: 1.4;
+  text-align: center;
+  color: var(--fg);
+  background-color: var(--bg);
+  padding: 0 12px;
+}
+
+/* Anki desktop / AnkiMobile use .nightMode, AnkiDroid uses .night_mode */
+.card.nightMode,
+.card.night_mode {
+  --fg: #e8eaed;
+  --muted: #9aa2ad;
+  --bg: #1e1f22;
+  --rule: #3a3f47;
+  --surface: #2a2d33;
+  --rel-border: #4a505a;
+  --rel-type: #7c8494;
+  --rel-word: #e8eaed;
+  --rel-level-bg: #5c6370;
+  --rel-tag-bg: #3a3f47;
+  --rel-tag-fg: #c3c8d0;
+  --rel-note: #9aa2ad;
+}
+
+hr#answer {
+  border: none;
+  border-top: 1px solid var(--rule);
+  margin: 1em auto;
+  max-width: 32em;
+}
+
+.word {
+  font-size: clamp(40px, 11vw, 64px);
+  line-height: 1.25;
+}
+
+.hiragana {
+  font-size: clamp(24px, 6vw, 36px);
+  color: var(--muted);
+}
+
+.spanish {
+  font-size: clamp(26px, 6.5vw, 40px);
+  line-height: 1.25;
+  margin: 0.2em 0;
+}
+
+.type {
+  font-size: 24px;
+  color: var(--muted);
+  margin-bottom: 0.4em;
+}
+
+/* Tags */
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4em;
+  margin: 0.4em auto 0.8em;
+}
+
+.tag {
+  display: inline-block;
+  font-size: 15px;
+  line-height: 1.5;
+  padding: 0.2em 0.85em;
+  border-radius: 999px;
+  color: #fff;
+}
+
+.success {
+  background-color: hsl(153, 53%, 45%);
+}
+
+.info {
+  background-color: hsl(207, 61%, 50%);
+}
+
+.danger {
+  background-color: hsl(348, 86%, 58%);
+}
+
+.usage {
+  background-color: hsl(0, 0%, 48%);
+}
+
+.link {
+  background-color: hsl(217, 71%, 53%);
+}
+
+/* Sentence, notes */
+
+.sentence {
+  text-align: left;
+  max-width: 32em;
+  margin: 1em auto;
+  padding: 0.6em 0.9em;
+  background: var(--surface);
+  border-radius: 10px;
+}
+
+.sentence-ja {
+  font-size: 24px;
+}
+
+.sentence-es {
+  font-size: 18px;
+  color: var(--muted);
+  margin-top: 0.3em;
+}
+
+.notes {
+  font-size: 20px;
+  color: var(--muted);
+  max-width: 32em;
+  margin: 0.8em auto;
+}
+
+/* Related words (HTML built by jap_dev/formatters/word/csv.py) */
+
+.related {
+  margin-top: 1.2em;
+  text-align: left;
+}
+
+.related-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto;
+  max-width: 24em;
+  font-size: clamp(18px, 4.6vw, 24px);
+}
+
+.related-list .rel {
+  background: var(--surface);
+  border-left: 5px solid var(--rel-border);
+  border-radius: 10px;
+  padding: 0.5em 0.8em;
+  margin-bottom: 0.55em;
+}
+
+.related-list .rel-related {
+  border-left-color: #4a90d9;
+}
+
+.related-list .rel-synonym {
+  border-left-color: #35c08a;
+}
+
+.related-list .rel-antonym {
+  border-left-color: #e8506e;
+}
+
+.rel-head {
+  line-height: 1.6;
+}
+
+.rel-type {
+  color: var(--rel-type);
+  font-weight: 700;
+  margin-right: 0.35em;
+}
+
+.rel-word {
+  font-weight: 700;
+  color: var(--rel-word);
+  margin-right: 0.4em;
+}
+
+.rel-level,
+.rel-tag {
+  display: inline-block;
+  font-size: 0.6em;
+  vertical-align: middle;
+  border-radius: 999px;
+  padding: 0.2em 0.7em;
+  margin: 0 0.2em 0.2em 0;
+  line-height: 1.5;
+}
+
+.rel-level {
+  color: #fff;
+  background: var(--rel-level-bg);
+  letter-spacing: 0.03em;
+}
+
+.rel-tag {
+  color: var(--rel-tag-fg);
+  background: var(--rel-tag-bg);
+}
+
+.rel-note {
+  display: block;
+  margin-top: 0.4em;
+  font-size: 0.72em;
+  color: var(--rel-note);
+  line-height: 1.45;
+}

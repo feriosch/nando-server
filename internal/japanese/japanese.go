@@ -3,8 +3,9 @@
 //
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests
-// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page) and repository holds all database
-// code. The services see only the repository interfaces, never a database.
+// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files) and repository holds all database
+// code. The services see only the repository and CoreService interfaces,
+// never a database.
 package japanese
 
 import (
@@ -12,26 +13,30 @@ import (
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
+	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/japanese/repository"
 	"github.com/feriosch/nando-server/internal/japanese/service"
 )
 
-// Module is the Japanese Module. Its only access to data is its own database.
+// Module is the Japanese Module. Its only access to data is its own database
+// and Core's service.
 type Module struct {
 	search *service.SearchService
 	words  *service.WordsService
 	kanji  *service.KanjiService
+	anki   *service.AnkiService
 }
 
 // NewJapaneseModule returns the Japanese Module reading its own data through
-// db.
-func NewJapaneseModule(db *mongo.Database) *Module {
+// db and asking Core for Core's data through core.
+func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService) *Module {
 	words := repository.NewWords(db)
 	kanji := repository.NewKanji(db)
 	return &Module{
 		search: service.NewSearch(words, kanji),
 		words:  service.NewWords(words, repository.NewGroups(db), kanji),
 		kanji:  service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
+		anki:   service.NewAnki(words, core),
 	}
 }
 
@@ -40,4 +45,5 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	m.search.Routes(mux)
 	m.words.Routes(mux)
 	m.kanji.Routes(mux)
+	m.anki.Routes(mux)
 }

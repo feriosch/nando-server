@@ -1,6 +1,6 @@
 # Japanese API
 
-The Japanese Module: searching the Owner's Words and Kanji, and the Word and Kanji pages. Every route is under `/api/japanese/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). The routes are read-only: Words and Kanji are added and improved by Claude, not through this API. Bodies are JSON. Errors are a status code with a short plain-text message.
+The Japanese Module: searching the Owner's Words and Kanji, the Word and Kanji pages, and the JLPT deck for Anki. Every route is under `/api/japanese/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). The routes are read-only: Words and Kanji are added and improved by Claude, not through this API. Bodies are JSON, except the deck file. Errors are a status code with a short plain-text message.
 
 Ids are the 24-character hex ObjectIds the Words and Kanji have had since benkyo, which are also Anki's `Id`. Word Tags and Nuance Tags are returned as stored, in snake_case (`usually_kana`, `jlpt_n1`); the web app writes them for display. Optional strings are `null` when not set, and lists are `[]`, never `null`.
 
@@ -143,3 +143,35 @@ A Kanji is one character the Owner studies, numbered by its place in Heisig's Re
 - `words`: up to 50 Words whose `word` contains the Kanji, as rows, shorter first.
 
 `404`: there's no such Kanji.
+
+## Anki
+
+The Owner studies their Words in Anki. A deck file fills the Owner's note type, Benkyo Note Type V2, documented with its card templates in [`anki/`](anki/README.md); it is the same file benkyo's `GET /words/csv/jlpt` made for the same Words, with two header lines more.
+
+### `GET /api/japanese/anki/jlpt.csv`
+
+`200`: the JLPT deck, as a CSV file to import into Anki, served as `text/csv; charset=utf-8` with `Content-Disposition: attachment; filename="jlpt-<YYYY-MM-DD>.csv"`, dated today in the Owner Time Zone. The name ends in `.csv` so AnkiMobile offers to open it.
+
+It starts with header lines that set up Anki's import screen:
+
+```
+#separator:Comma
+#html:true
+#columns:Id,Word,Pronunciation,Definition,Type,Notes,Japanese Sentence,Translation Sentence,Common,JLPT N1,Expression,Onomatopoeic,Transitive,Intransitive,Related Front,Related Back,Usage
+#notetype:Benkyo Note Type V2
+#deck:JLPT Benkyo Deck V2
+```
+
+Then one row per Word studied for the JLPT: every Word in the JLPT N3, N2 and N1 Groups, and any other Word with the `jlpt_n1` Word Tag, oldest first. A field holding a comma, a quote or a line break is quoted, with its quotes doubled; lines end in `\n`. With no such Words, the file is just the header. The fields:
+
+- `Id`: the Word's id, so re-importing updates the Word's note.
+- `Word`, `Pronunciation`: its spelling and reading. A Word with the `usually_kana` Word Tag is exported in kana: its reading as `Word`, and no `Pronunciation`.
+- `Definition`: its Spanish meaning.
+- `Type`: its parts of speech in the order they are stored, those stored as 1 (or `true`), 4 or 5, joined by `、`: `名` noun, `する` suru, `の形` no_adj, `な形` na_adj, `い形` i_adj, `副` adv, `動` verb, `名形` adj_noun, `副名` adv_noun, `回` counter, followed by `と` or `的` for those forms (`副と`, `な形的`).
+- `Notes`: its notes, without the Word Links benkyo once wrote into them as text (`rel: …`, `sinonimo: …`, `antonimo: …`, up to the next `;`) or the separators that leaves at either end.
+- `Japanese Sentence`, `Translation Sentence`: its first example sentence and its translation; an example sentence stored without one is skipped for that field.
+- `Common`, `JLPT N1`, `Expression`, `Onomatopoeic`, `Transitive`, `Intransitive`: `True` if the Word has that Word Tag (`common`, `jlpt_n1`, `expression`, `onomatopoeic`, `transitive`, `intransitive`), or empty.
+- `Usage`: every other Word Tag except `usually_kana`, each as `<span class="tag usage">Label</span>`, the label being the tag in words with its first letter capitalized (`Elderly speech`), or `Not Joyo` for `joyogai`.
+- `Related Front`, `Related Back`: its Word Links and Hints, in the order they are stored, as `<ul class="related-list">` with one `<li class="rel rel-<kind>">` each. An entry shows the kind's mark (`=` synonym, `✕` antonym, `~` related or any other kind; an entry stored with no kind is related), the other Word (its kanji spelling, as stored, or its kana if it has none, or `?` if it has neither) or the Hint's text, the other Word's JLPT level (`N3` or `N2` for those Groups, `N1` for the JLPT N1 Group or the `jlpt_n1` Word Tag) and this side's Nuance Tags. `Related Front`, on the definition card's front, masks with `■` each Kanji the entry shares with `Word` and leaves out the notes; `Related Back` shows the entry whole, with this side's note. A Word Link to a Word that is no longer stored is left out. Both are empty for a Word with no Word Links or Hints.
+
+The Usage and Related fields are HTML, written as stored, unescaped.
