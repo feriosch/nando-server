@@ -34,9 +34,9 @@ func (s *EntriesService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/calories/entries/{id}", s.deleteEntry)
 }
 
-// toEntry checks all three of v's values and returns an Entry with them, or
-// explains what's wrong.
-func toEntry(v model.EntryValues) (model.Entry, error) {
+// fromEntryValues checks all three of v's values and returns an Entry with
+// them, or explains what's wrong.
+func fromEntryValues(v model.EntryValues) (model.Entry, error) {
 	name, err := utils.CheckName("name", v.Name)
 	if err != nil {
 		return model.Entry{}, err
@@ -110,7 +110,7 @@ func (s *EntriesService) postEntry(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		var err error
-		if entry, err = toEntry(body.EntryValues); err != nil {
+		if entry, err = fromEntryValues(body.EntryValues); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -185,7 +185,7 @@ func (s *EntriesService) putEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the body isn't an Entry", http.StatusBadRequest)
 		return
 	}
-	edited, err := toEntry(body)
+	edited, err := fromEntryValues(body)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
