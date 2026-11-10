@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
+	coremodel "github.com/feriosch/nando-server/internal/core/model"
 )
 
 // wednesday is a Day in the middle of a week, at noon UTC.
@@ -21,9 +22,7 @@ func ptr(s string) *string { return &s }
 func (d *browser) createMeal(meal model.MealBody) string {
 	d.nando.t.Helper()
 	rec := d.must(http.MethodPost, "/api/calories/meals", meal, http.StatusCreated)
-	var created struct {
-		ID string `json:"id"`
-	}
+	var created coremodel.CreatedJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.ID == "" {
 		d.nando.t.Fatalf("POST /api/calories/meals: body %q has no id", rec.Body)
 	}

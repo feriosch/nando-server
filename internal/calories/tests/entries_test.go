@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
+	coremodel "github.com/feriosch/nando-server/internal/core/model"
 )
 
 // logEntry logs entry on day and returns the response.
@@ -21,9 +22,7 @@ func (d *browser) logEntry(day string, entry any) *httptest.ResponseRecorder {
 func (d *browser) mustLogEntry(day string, entry any) string {
 	d.nando.t.Helper()
 	rec := d.must(http.MethodPost, "/api/calories/days/"+day+"/entries", entry, http.StatusCreated)
-	var created struct {
-		ID string `json:"id"`
-	}
+	var created coremodel.CreatedJSON
 	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.ID == "" {
 		d.nando.t.Fatalf("POST entries: body %q has no id", rec.Body)
 	}

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+
+	"github.com/feriosch/nando-server/internal/core/model"
 )
 
 // WriteJSON answers with status and v as JSON, so every part of the API
@@ -17,11 +19,9 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 }
 
 // WriteCreated answers 201 with the ID of what a POST created, as
-// {"id": "…"}.
+// model.CreatedJSON.
 func WriteCreated(w http.ResponseWriter, id string) {
-	WriteJSON(w, http.StatusCreated, struct {
-		ID string `json:"id"`
-	}{id})
+	WriteJSON(w, http.StatusCreated, model.CreatedJSON{ID: id})
 }
 
 // ServerError logs err and answers 500 without revealing it.
