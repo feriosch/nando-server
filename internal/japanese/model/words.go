@@ -67,3 +67,52 @@ type WordsRepository interface {
 	// character, shorter ones first, filled in as by GetManyBySearch.
 	GetManyByCharacter(ctx context.Context, character string, limit int) ([]Word, error)
 }
+
+// The JSON shapes below are what the API answers with.
+
+// WordRowJSON is a Word as a list shows it: a search result, or a Word
+// spelled with a Kanji.
+type WordRowJSON struct {
+	ID       string  `json:"id"`
+	Word     string  `json:"word"`
+	Hiragana *string `json:"hiragana"`
+	Spanish  string  `json:"spanish"`
+	Group    string  `json:"group"`
+}
+
+// WordJSON is a Word as its page shows it.
+type WordJSON struct {
+	ID        string         `json:"id"`
+	Word      string         `json:"word"`
+	Hiragana  *string        `json:"hiragana"`
+	Spanish   string         `json:"spanish"`
+	Type      map[string]int `json:"type"`
+	Group     GroupJSON      `json:"group"`
+	Tags      []string       `json:"tags"`
+	Notes     *string        `json:"notes"`
+	Sentences []SentenceJSON `json:"sentences"`
+	WordLinks []WordLinkJSON `json:"wordLinks"`
+	Hints     []HintJSON     `json:"hints"`
+	Kanji     []KanjiRowJSON `json:"kanji"`
+}
+
+// SentenceJSON is an example sentence as the Word page shows it.
+type SentenceJSON struct {
+	Sentence    string `json:"sentence"`
+	Translation string `json:"translation"`
+}
+
+// WordLinkJSON is a Word's side of a Word Link as its page shows it, with
+// the other Word as a row.
+type WordLinkJSON struct {
+	Kind       string      `json:"kind"`
+	Note       *string     `json:"note"`
+	NuanceTags []string    `json:"nuanceTags"`
+	Word       WordRowJSON `json:"word"`
+}
+
+// HintJSON is a Hint as the Word page shows it.
+type HintJSON struct {
+	Text string  `json:"text"`
+	Note *string `json:"note"`
+}

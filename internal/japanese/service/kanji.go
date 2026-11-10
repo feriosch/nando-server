@@ -32,27 +32,6 @@ func (s *KanjiService) Routes(mux *http.ServeMux) {
 // maxKanjiWords is how many Words spelled with it a Kanji page shows at most.
 const maxKanjiWords = 50
 
-// componentJSON is a Component: its keyword, and the Kanji it is, or null
-// for an irregular shape.
-type componentJSON struct {
-	Name  string              `json:"name"`
-	Kanji *utils.KanjiRowJSON `json:"kanji"`
-}
-
-// kanjiJSON is a Kanji as its page shows it.
-type kanjiJSON struct {
-	ID         string              `json:"id"`
-	Kanji      string              `json:"kanji"`
-	Spanish    string              `json:"spanish"`
-	On         *string             `json:"on"`
-	Kun        *string             `json:"kun"`
-	V1         int                 `json:"v1"`
-	V2         *int                `json:"v2"`
-	Story      *string             `json:"story"`
-	Components []componentJSON     `json:"components"`
-	Words      []utils.WordRowJSON `json:"words"`
-}
-
 func (s *KanjiService) getKanji(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	kanji, err := s.kanji.GetOneByID(ctx, r.PathValue("id"))
@@ -74,7 +53,7 @@ func (s *KanjiService) getKanji(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	j := kanjiJSON{
+	j := model.KanjiJSON{
 		ID:         kanji.ID,
 		Kanji:      kanji.Kanji,
 		Spanish:    kanji.Spanish,
@@ -95,8 +74,8 @@ func (s *KanjiService) getKanji(w http.ResponseWriter, r *http.Request) {
 // worked out a Kanji's radicals, a keyword stored as an irregular shape is
 // that shape even if a Kanji has the same keyword; any other is the Kanji
 // with that keyword if one is stored, or else an irregular shape too.
-func (s *KanjiService) components(ctx context.Context, keywords []string) ([]componentJSON, error) {
-	list := []componentJSON{}
+func (s *KanjiService) components(ctx context.Context, keywords []string) ([]model.ComponentJSON, error) {
+	list := []model.ComponentJSON{}
 	if len(keywords) == 0 {
 		return list, nil
 	}
@@ -108,12 +87,12 @@ func (s *KanjiService) components(ctx context.Context, keywords []string) ([]com
 	if err != nil {
 		return nil, err
 	}
-	byKeyword := map[string]utils.KanjiRowJSON{}
+	byKeyword := map[string]model.KanjiRowJSON{}
 	for _, row := range utils.ToKanjiRowJSONs(kanji) {
 		byKeyword[row.Spanish] = row
 	}
 	for _, keyword := range keywords {
-		c := componentJSON{Name: keyword}
+		c := model.ComponentJSON{Name: keyword}
 		if row, ok := byKeyword[keyword]; ok && !slices.Contains(irregular, keyword) {
 			c.Kanji = &row
 		}

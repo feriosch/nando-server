@@ -11,21 +11,11 @@ func OrNull(s string) *string {
 	return &s
 }
 
-// WordRowJSON is a Word as a list shows it: a search result, or a Word
-// spelled with a Kanji.
-type WordRowJSON struct {
-	ID       string  `json:"id"`
-	Word     string  `json:"word"`
-	Hiragana *string `json:"hiragana"`
-	Spanish  string  `json:"spanish"`
-	Group    string  `json:"group"`
-}
-
 // ToWordRowJSONs returns words as a list shows them.
-func ToWordRowJSONs(words []model.Word) []WordRowJSON {
-	list := make([]WordRowJSON, len(words))
+func ToWordRowJSONs(words []model.Word) []model.WordRowJSON {
+	list := make([]model.WordRowJSON, len(words))
 	for i, w := range words {
-		list[i] = WordRowJSON{
+		list[i] = model.WordRowJSON{
 			ID:       w.ID,
 			Word:     w.Word,
 			Hiragana: OrNull(w.Hiragana),
@@ -36,18 +26,11 @@ func ToWordRowJSONs(words []model.Word) []WordRowJSON {
 	return list
 }
 
-// KanjiRowJSON is a Kanji as a list shows it.
-type KanjiRowJSON struct {
-	ID      string `json:"id"`
-	Kanji   string `json:"kanji"`
-	Spanish string `json:"spanish"`
-}
-
 // ToKanjiRowJSONs returns kanji as a list shows them.
-func ToKanjiRowJSONs(kanji []model.Kanji) []KanjiRowJSON {
-	list := make([]KanjiRowJSON, len(kanji))
+func ToKanjiRowJSONs(kanji []model.Kanji) []model.KanjiRowJSON {
+	list := make([]model.KanjiRowJSON, len(kanji))
 	for i, k := range kanji {
-		list[i] = KanjiRowJSON{ID: k.ID, Kanji: k.Kanji, Spanish: k.Spanish}
+		list[i] = model.KanjiRowJSON{ID: k.ID, Kanji: k.Kanji, Spanish: k.Spanish}
 	}
 	return list
 }

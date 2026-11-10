@@ -28,45 +28,6 @@ func (s *WordsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/japanese/words/{id}", s.getWord)
 }
 
-type groupJSON struct {
-	Key      string  `json:"key"`
-	Name     string  `json:"name"`
-	ImageURL *string `json:"imageUrl"`
-}
-
-type sentenceJSON struct {
-	Sentence    string `json:"sentence"`
-	Translation string `json:"translation"`
-}
-
-type wordLinkJSON struct {
-	Kind       string            `json:"kind"`
-	Note       *string           `json:"note"`
-	NuanceTags []string          `json:"nuanceTags"`
-	Word       utils.WordRowJSON `json:"word"`
-}
-
-type hintJSON struct {
-	Text string  `json:"text"`
-	Note *string `json:"note"`
-}
-
-// wordJSON is a Word as its page shows it.
-type wordJSON struct {
-	ID        string               `json:"id"`
-	Word      string               `json:"word"`
-	Hiragana  *string              `json:"hiragana"`
-	Spanish   string               `json:"spanish"`
-	Type      map[string]int       `json:"type"`
-	Group     groupJSON            `json:"group"`
-	Tags      []string             `json:"tags"`
-	Notes     *string              `json:"notes"`
-	Sentences []sentenceJSON       `json:"sentences"`
-	WordLinks []wordLinkJSON       `json:"wordLinks"`
-	Hints     []hintJSON           `json:"hints"`
-	Kanji     []utils.KanjiRowJSON `json:"kanji"`
-}
-
 func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	word, err := s.words.GetOneByID(ctx, r.PathValue("id"))
@@ -86,30 +47,30 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	j := wordJSON{
+	j := model.WordJSON{
 		ID:        word.ID,
 		Word:      word.Word,
 		Hiragana:  utils.OrNull(word.Hiragana),
 		Spanish:   word.Spanish,
 		Type:      word.Type,
-		Group:     groupJSON{Key: group.Key, Name: group.Name, ImageURL: utils.OrNull(group.ImageURL)},
+		Group:     model.GroupJSON{Key: group.Key, Name: group.Name, ImageURL: utils.OrNull(group.ImageURL)},
 		Tags:      utils.OrEmptyList(word.Tags),
 		Notes:     utils.OrNull(word.Notes),
-		Sentences: []sentenceJSON{},
-		Hints:     []hintJSON{},
+		Sentences: []model.SentenceJSON{},
+		Hints:     []model.HintJSON{},
 	}
 	if j.Type == nil {
 		j.Type = map[string]int{}
 	}
 	for _, sentence := range word.Sentences {
-		j.Sentences = append(j.Sentences, sentenceJSON(sentence))
+		j.Sentences = append(j.Sentences, model.SentenceJSON(sentence))
 	}
 	if j.WordLinks, err = s.wordLinks(ctx, word.Links); err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
 	for _, hint := range word.Hints {
-		j.Hints = append(j.Hints, hintJSON{Text: hint.Text, Note: utils.OrNull(hint.Note)})
+		j.Hints = append(j.Hints, model.HintJSON{Text: hint.Text, Note: utils.OrNull(hint.Note)})
 	}
 	kanji, err := s.kanji.GetManyByCharactersIn(ctx, word.Word)
 	if err != nil {
@@ -122,8 +83,8 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 
 // wordLinks returns links as the Word page shows them, each with the other
 // Word, leaving out any to a Word that isn't stored.
-func (s *WordsService) wordLinks(ctx context.Context, links []model.WordLink) ([]wordLinkJSON, error) {
-	list := []wordLinkJSON{}
+func (s *WordsService) wordLinks(ctx context.Context, links []model.WordLink) ([]model.WordLinkJSON, error) {
+	list := []model.WordLinkJSON{}
 	if len(links) == 0 {
 		return list, nil
 	}
@@ -135,7 +96,7 @@ func (s *WordsService) wordLinks(ctx context.Context, links []model.WordLink) ([
 	if err != nil {
 		return nil, err
 	}
-	byID := map[string]utils.WordRowJSON{}
+	byID := map[string]model.WordRowJSON{}
 	for _, row := range utils.ToWordRowJSONs(others) {
 		byID[row.ID] = row
 	}
@@ -144,7 +105,7 @@ func (s *WordsService) wordLinks(ctx context.Context, links []model.WordLink) ([
 		if !ok {
 			continue
 		}
-		list = append(list, wordLinkJSON{
+		list = append(list, model.WordLinkJSON{
 			Kind:       l.Kind,
 			Note:       utils.OrNull(l.Note),
 			NuanceTags: utils.OrEmptyList(l.NuanceTags),

@@ -37,3 +37,33 @@ type KanjiRepository interface {
 	// in no particular order, filled in as by GetManyBySearch.
 	GetManyByKeywords(ctx context.Context, keywords []string) ([]Kanji, error)
 }
+
+// The JSON shapes below are what the API answers with.
+
+// KanjiRowJSON is a Kanji as a list shows it.
+type KanjiRowJSON struct {
+	ID      string `json:"id"`
+	Kanji   string `json:"kanji"`
+	Spanish string `json:"spanish"`
+}
+
+// KanjiJSON is a Kanji as its page shows it.
+type KanjiJSON struct {
+	ID         string          `json:"id"`
+	Kanji      string          `json:"kanji"`
+	Spanish    string          `json:"spanish"`
+	On         *string         `json:"on"`
+	Kun        *string         `json:"kun"`
+	V1         int             `json:"v1"`
+	V2         *int            `json:"v2"`
+	Story      *string         `json:"story"`
+	Components []ComponentJSON `json:"components"`
+	Words      []WordRowJSON   `json:"words"`
+}
+
+// ComponentJSON is a Component: its keyword, and the Kanji it is, or null
+// for an irregular shape.
+type ComponentJSON struct {
+	Name  string        `json:"name"`
+	Kanji *KanjiRowJSON `json:"kanji"`
+}

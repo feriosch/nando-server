@@ -37,11 +37,6 @@ const (
 	maxQLength = 100
 )
 
-type searchJSON struct {
-	Words []utils.WordRowJSON  `json:"words"`
-	Kanji []utils.KanjiRowJSON `json:"kanji"`
-}
-
 func (s *SearchService) search(w http.ResponseWriter, r *http.Request) {
 	// NFC, so an accent or dakuten sent as a separate combining mark is
 	// matched like the stored, composed letter.
@@ -51,7 +46,7 @@ func (s *SearchService) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if q == "" {
-		coreutils.WriteJSON(w, http.StatusOK, searchJSON{Words: []utils.WordRowJSON{}, Kanji: []utils.KanjiRowJSON{}})
+		coreutils.WriteJSON(w, http.StatusOK, model.SearchJSON{Words: []model.WordRowJSON{}, Kanji: []model.KanjiRowJSON{}})
 		return
 	}
 	words, err := s.words.GetManyBySearch(r.Context(), q, maxWords)
@@ -64,7 +59,7 @@ func (s *SearchService) search(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	coreutils.WriteJSON(w, http.StatusOK, searchJSON{
+	coreutils.WriteJSON(w, http.StatusOK, model.SearchJSON{
 		Words: utils.ToWordRowJSONs(words),
 		Kanji: utils.ToKanjiRowJSONs(kanji),
 	})

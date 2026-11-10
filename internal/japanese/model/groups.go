@@ -17,3 +17,12 @@ type GroupsRepository interface {
 	// GetOneByKey returns the Group with this key, or Core's utils.ErrNotFound.
 	GetOneByKey(ctx context.Context, key string) (Group, error)
 }
+
+// The JSON shapes below are what the API answers with.
+
+// GroupJSON is a Group as the Word page shows it.
+type GroupJSON struct {
+	Key      string  `json:"key"`
+	Name     string  `json:"name"`
+	ImageURL *string `json:"imageUrl"`
+}
