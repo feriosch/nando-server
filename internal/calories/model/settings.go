@@ -44,3 +44,19 @@ type SettingsRepository interface {
 	Find(ctx context.Context) (Settings, error)
 	Save(ctx context.Context, settings Settings) error
 }
+
+// The JSON shapes below are what the API answers with and is sent.
+
+// SettingsJSON is the settings as the API reads and writes them. A missing
+// Notification setting is nil, so it can be rejected.
+type SettingsJSON struct {
+	NoEntriesReminder *NotificationSettingJSON `json:"noEntriesReminder"`
+	EveningSummary    *NotificationSettingJSON `json:"eveningSummary"`
+}
+
+// NotificationSettingJSON is one Notification's setting. Enabled is nil when
+// it wasn't sent, so it can be rejected.
+type NotificationSettingJSON struct {
+	Enabled *bool  `json:"enabled"`
+	Time    string `json:"time"`
+}

@@ -87,3 +87,11 @@ type DailyLimitsRepository interface {
 	// List returns every Daily Limit, oldest first.
 	List(ctx context.Context) (DailyLimits, error)
 }
+
+// The JSON shapes below are what the API answers with.
+
+// DailyLimitJSON is a Daily Limit as the API answers it.
+type DailyLimitJSON struct {
+	Kcal          int           `json:"kcal"`
+	EffectiveFrom coremodel.Day `json:"effectiveFrom"`
+}

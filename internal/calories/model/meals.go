@@ -37,3 +37,30 @@ type MealsRepository interface {
 	// it if archivedAt is nil. Core's utils.ErrNotFound if there's none.
 	SetArchivedAt(ctx context.Context, id string, archivedAt *time.Time) error
 }
+
+// The JSON shapes below are what the API answers with and is sent.
+
+// MealJSON is a Meal as the API reads and writes it. Optional strings are
+// null when not set.
+type MealJSON struct {
+	ID       string   `json:"id"`
+	Name     string   `json:"name"`
+	Kcal     int      `json:"kcal"`
+	Store    *string  `json:"store"`
+	Emoji    *string  `json:"emoji"`
+	ImageURL *string  `json:"imageUrl"`
+	Tags     []string `json:"tags"`
+	Pinned   bool     `json:"pinned"`
+	Archived bool     `json:"archived"`
+}
+
+// MealBody is a Meal as the API is sent it: what the Owner can set of one.
+type MealBody struct {
+	Name     string   `json:"name"`
+	Kcal     *int     `json:"kcal"`
+	Store    *string  `json:"store"`
+	Emoji    *string  `json:"emoji"`
+	ImageURL *string  `json:"imageUrl"`
+	Tags     []string `json:"tags"`
+	Pinned   bool     `json:"pinned"`
+}

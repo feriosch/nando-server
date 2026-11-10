@@ -36,39 +36,25 @@ func (s *SettingsService) savedOrDefault(ctx context.Context) (model.Settings, e
 	return settings, err
 }
 
-// settingsJSON is the settings as the API reads and writes them. A missing
-// Notification setting is nil, so it can be rejected.
-type settingsJSON struct {
-	NoEntriesReminder *notificationSettingJSON `json:"noEntriesReminder"`
-	EveningSummary    *notificationSettingJSON `json:"eveningSummary"`
-}
-
-// notificationSettingJSON is one Notification's setting. Enabled is nil when
-// it wasn't sent, so it can be rejected.
-type notificationSettingJSON struct {
-	Enabled *bool  `json:"enabled"`
-	Time    string `json:"time"`
-}
-
 func (s *SettingsService) getSettings(w http.ResponseWriter, r *http.Request) {
 	settings, err := s.savedOrDefault(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	coreutils.WriteJSON(w, http.StatusOK, settingsJSON{
+	coreutils.WriteJSON(w, http.StatusOK, model.SettingsJSON{
 		NoEntriesReminder: toNotificationSettingJSON(settings.NoEntriesReminder),
 		EveningSummary:    toNotificationSettingJSON(settings.EveningSummary),
 	})
 }
 
-func toNotificationSettingJSON(setting model.NotificationSetting) *notificationSettingJSON {
-	return &notificationSettingJSON{Enabled: &setting.Enabled, Time: setting.Time}
+func toNotificationSettingJSON(setting model.NotificationSetting) *model.NotificationSettingJSON {
+	return &model.NotificationSettingJSON{Enabled: &setting.Enabled, Time: setting.Time}
 }
 
 // fromNotificationSettingJSON checks the Notification setting field was sent,
 // or explains what's wrong with it.
-func fromNotificationSettingJSON(field string, j *notificationSettingJSON) (model.NotificationSetting, error) {
+func fromNotificationSettingJSON(field string, j *model.NotificationSettingJSON) (model.NotificationSetting, error) {
 	if j == nil || j.Enabled == nil {
 		return model.NotificationSetting{}, errors.New(field + " must have enabled and time")
 	}
@@ -80,7 +66,7 @@ func fromNotificationSettingJSON(field string, j *notificationSettingJSON) (mode
 
 // putSettings replaces all of the settings.
 func (s *SettingsService) putSettings(w http.ResponseWriter, r *http.Request) {
-	var j settingsJSON
+	var j model.SettingsJSON
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
 		http.Error(w, "the body isn't settings", http.StatusBadRequest)
 		return
