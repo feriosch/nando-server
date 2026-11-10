@@ -97,7 +97,7 @@ A Word that an Expression is built from, such as 首 in 首にされる. A Part 
 _Avoid_: Component (that is a Kanji's)
 
 **Group**:
-The one place a Word is filed. A Word that jisho.org tags N2 or N3 goes in JLPT N2 or JLPT N3, and one tagged N4 or N5 goes in Basic; any other Word goes in the Group for what the Owner was doing when they found it (Literature, Gaming, Anime, Movie or Miscellaneous), or in JLPT N1 if they were studying for N1. Basic Words are kept so that other Words can be linked to them, not to be studied.
+The one place a Word is filed. A Word that jisho.org tags N2 or N3 goes in JLPT N2 or JLPT N3, and one tagged N4 or N5 goes in Basic; any other Word goes in the Group for what the Owner was doing when they found it (Literature, Gaming, Anime, Movie or Miscellaneous), or in JLPT N1 if they were studying for N1. Basic Words are kept so that other Words can be linked to them, not to be studied. Each Group has a display name and a picture.
 _Avoid_: Collection, deck, category, level
 
 **Word Tag**:
@@ -117,7 +117,7 @@ A one-way, text-only pointer from a Word to an everyday word that isn't stored a
 _Avoid_: Basic link, text link, Word Link
 
 **Kanji**:
-One character the Owner studies, stored with its Spanish meaning, readings, Components and a story to remember it by.
+One character the Owner studies, stored with its Spanish meaning, readings, Components and a story to remember it by, and numbered by its place in Heisig's Remembering the Kanji (volume 1, and volume 2 for some).
 _Avoid_: Character, glyph
 
 **Component**:
