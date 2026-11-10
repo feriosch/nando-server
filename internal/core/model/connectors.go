@@ -32,6 +32,9 @@ type ConnectorsRepository interface {
 	Insert(ctx context.Context, connector Connector) error
 	// SetTokens replaces the tokens of the Connector with id.
 	SetTokens(ctx context.Context, id string, tokens ConnectorTokens) error
+	// FindByAccessToken returns the Connector whose access token has hash,
+	// unless the token has expired at now.
+	FindByAccessToken(ctx context.Context, hash []byte, now time.Time) (Connector, error)
 }
 
 // The JSON shapes below are what the API answers with.

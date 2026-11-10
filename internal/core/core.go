@@ -110,6 +110,10 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
+	connectors, err := repository.NewConnectors(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	passkeys := repository.NewPasskeys(db)
 	weighIns := repository.NewWeighIns(db)
 	pushSubscriptions := repository.NewPushSubscriptions(db)
@@ -122,9 +126,8 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		passkeys:          service.NewPasskeys(passkeys),
 		settings:          service.NewSettings(repository.NewSettings(db), now),
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
-		mcp:               service.NewMCP(apiURL),
-		oauth: service.NewOAuth(oauthClients, authorizationRequests, repository.NewConnectors(db), authorizationCodes,
-			apiURL, webURL, now),
+		mcp:               service.NewMCP(connectors, apiURL, now),
+		oauth:             service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns}
@@ -193,6 +196,12 @@ func (s coreService) LatestWeighIn(ctx context.Context) (model.WeighIn, error) {
 // before serving.
 func (c *Core) AddNotificationProvider(p model.NotificationProvider) {
 	c.notifications.AddNotificationProvider(p)
+}
+
+// AddToolProvider has Core serve p's Tools to every Connector at /mcp. Each
+// Module with Tools adds its provider once, at startup, before serving.
+func (c *Core) AddToolProvider(p model.ToolProvider) {
+	c.mcp.AddToolProvider(p)
 }
 
 // RequireSession lets a request through to next only if it carries a valid
