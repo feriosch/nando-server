@@ -22,4 +22,7 @@ type AuthorizationCode struct {
 // collection.
 type AuthorizationCodesRepository interface {
 	Insert(ctx context.Context, code AuthorizationCode) error
+	// Take deletes and returns the code with hash if it is unexpired at now,
+	// so each one is exchanged only once.
+	Take(ctx context.Context, hash []byte, now time.Time) (AuthorizationCode, error)
 }

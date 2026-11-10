@@ -3,6 +3,9 @@ package service
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -47,6 +50,11 @@ const (
 	// authorizationCodeLifetime is how long an approved Connector has to
 	// exchange its code for tokens.
 	authorizationCodeLifetime = time.Minute
+	// accessTokenLifetime is how long a Connector's access token works on /mcp.
+	accessTokenLifetime = time.Hour
+	// refreshTokenLifetime is how long a Connector's refresh token lasts
+	// unused, the same as a Session.
+	refreshTokenLifetime = sessionLifetime
 )
 
 // NewOAuth returns the OAuthService of the API at apiURL, whose consent page
@@ -78,6 +86,7 @@ func (s *OAuthService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /.well-known/oauth-authorization-server", s.authorizationServerMetadata)
 	mux.HandleFunc("POST /oauth/register", s.register)
 	mux.HandleFunc("GET /oauth/authorize", s.authorize)
+	mux.HandleFunc("POST /oauth/token", s.token)
 	mux.HandleFunc("GET /auth/connect/{request}", s.pendingRequest)
 	mux.HandleFunc("POST /auth/connect/{request}/deny", s.deny)
 }
@@ -329,6 +338,86 @@ func (s *OAuthService) approve(ctx context.Context, requestID string) (redirect 
 		return "", err
 	}
 	return withQuery(request.RedirectURI, url.Values{"code": {code}, "state": {request.State}})
+}
+
+// token answers a Connector's token request (RFC 6749 section 3.2), never
+// to be cached.
+func (s *OAuthService) token(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if err := r.ParseForm(); err != nil {
+		oauthError(w, http.StatusBadRequest, "invalid_request", "the body isn't a form")
+		return
+	}
+	switch grant := r.PostForm.Get("grant_type"); grant {
+	case "authorization_code":
+		s.exchangeCode(w, r)
+	case "":
+		oauthError(w, http.StatusBadRequest, "invalid_request", "grant_type is required")
+	default:
+		oauthError(w, http.StatusBadRequest, "unsupported_grant_type", "grant_type must be authorization_code or refresh_token")
+	}
+}
+
+// exchangeCode gives an approved Connector its first tokens for its
+// authorization code (RFC 6749 section 4.1.3, with PKCE). Any attempt uses
+// the code up, even a refused one, so a wrong code_verifier can't be retried.
+func (s *OAuthService) exchangeCode(w http.ResponseWriter, r *http.Request) {
+	form := r.PostForm
+	now := s.now()
+	code, err := s.codes.Take(r.Context(), sha256Of(form.Get("code")), now)
+	if errors.Is(err, utils.ErrNotFound) {
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "the code is unknown, used or expired")
+		return
+	}
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	if form.Get("client_id") != code.ClientID || form.Get("redirect_uri") != code.RedirectURI {
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "the code was issued to another client or redirect_uri")
+		return
+	}
+	if !pkceMatches(form.Get("code_verifier"), code.CodeChallenge) {
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "code_verifier doesn't match the code_challenge")
+		return
+	}
+	s.issueTokens(w, r, code.ConnectorID, now)
+}
+
+// pkceMatches reports whether verifier is the one the S256 challenge was
+// made from (RFC 7636 section 4.6).
+func pkceMatches(verifier, challenge string) bool {
+	if len(verifier) < 43 || len(verifier) > 128 {
+		return false
+	}
+	sum := sha256.Sum256([]byte(verifier))
+	return subtle.ConstantTimeCompare([]byte(base64.RawURLEncoding.EncodeToString(sum[:])), []byte(challenge)) == 1
+}
+
+// issueTokens gives the Connector with id a new access token and refresh
+// token, replacing any it had, and answers with them.
+func (s *OAuthService) issueTokens(w http.ResponseWriter, r *http.Request, connectorID string, now time.Time) {
+	access, refresh := rand.Text(), rand.Text()
+	err := s.connectors.SetTokens(r.Context(), connectorID, model.ConnectorTokens{
+		AccessTokenHash:  sha256Of(access),
+		AccessExpiresAt:  now.Add(accessTokenLifetime),
+		RefreshTokenHash: sha256Of(refresh),
+		RefreshExpiresAt: now.Add(refreshTokenLifetime),
+	})
+	if errors.Is(err, utils.ErrNotFound) {
+		oauthError(w, http.StatusBadRequest, "invalid_grant", "the Connector has been removed")
+		return
+	}
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, model.TokenJSON{
+		AccessToken:  access,
+		TokenType:    "Bearer",
+		ExpiresIn:    int(accessTokenLifetime / time.Second),
+		RefreshToken: refresh,
+	})
 }
 
 // withQuery is uri with params added to its query.

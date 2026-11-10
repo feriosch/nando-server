@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"time"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/feriosch/nando-server/internal/core/model"
@@ -27,4 +29,10 @@ type authorizationCodes struct {
 func (r authorizationCodes) Insert(ctx context.Context, code model.AuthorizationCode) error {
 	_, err := r.collection.InsertOne(ctx, code)
 	return err
+}
+
+func (r authorizationCodes) Take(ctx context.Context, hash []byte, now time.Time) (model.AuthorizationCode, error) {
+	var code model.AuthorizationCode
+	err := r.collection.FindOneAndDelete(ctx, bson.D{{Key: "_id", Value: hash}, utils.Unexpired(now)}).Decode(&code)
+	return code, utils.NotFound(err)
 }

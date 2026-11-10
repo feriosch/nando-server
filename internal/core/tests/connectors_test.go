@@ -538,3 +538,153 @@ func TestAnApprovedRegistrationIsKept(t *testing.T) {
 
 	requestOf(t, n.authorize(authorizeQuery(client, "abc")))
 }
+
+// tokenJSON is the token endpoint's answer (RFC 6749 section 5.1).
+type tokenJSON struct {
+	AccessToken  string `json:"access_token"`
+	TokenType    string `json:"token_type"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+}
+
+// mustApprove approves request with this browser's Passkey and returns the
+// authorization code the Connector is sent back with.
+func (d *browser) mustApprove(request string) string {
+	d.nando.t.Helper()
+	code := redirectIn(d.nando.t, d.approve(request)).Query().Get("code")
+	if code == "" {
+		d.nando.t.Fatal("approval sent no code")
+	}
+	return code
+}
+
+// codeExchange is the form a Connector posts to exchange code for tokens.
+func codeExchange(client clientJSON, code, verifier string) url.Values {
+	return url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {client.RedirectURIs[0]},
+		"client_id":     {client.ClientID},
+		"code_verifier": {verifier},
+	}
+}
+
+// token posts form to the token endpoint as a Connector does.
+func (n *nando) token(form url.Values) *httptest.ResponseRecorder {
+	n.t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	n.handler.ServeHTTP(rec, req)
+	return rec
+}
+
+// tokensIn decodes the tokens a token endpoint response gives, or fails the test.
+func tokensIn(t *testing.T, rec *httptest.ResponseRecorder) tokenJSON {
+	t.Helper()
+	var tokens tokenJSON
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &tokens) != nil {
+		t.Fatalf("POST /oauth/token: status = %d, body %q; want %d and tokens", rec.Code, rec.Body, http.StatusOK)
+	}
+	return tokens
+}
+
+// oauthErrorIn is the OAuth error a response gives, or "".
+func oauthErrorIn(rec *httptest.ResponseRecorder) string {
+	var got oauthErrorJSON
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	return got.Error
+}
+
+// approvedConnector registers claude, has the Owner approve it with a
+// Passkey, and returns its registration and authorization code.
+func approvedConnector(t *testing.T, n *nando) (clientJSON, string) {
+	t.Helper()
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	client, request := n.mustAuthorize()
+	return client, phone.mustApprove(request)
+}
+
+func TestAnApprovedConnectorExchangesItsCodeForTokens(t *testing.T) {
+	n := newNando(t)
+	client, code := approvedConnector(t, n)
+
+	rec := n.token(codeExchange(client, code, verifier))
+
+	got := tokensIn(t, rec)
+	if got.AccessToken == "" || got.RefreshToken == "" || got.AccessToken == got.RefreshToken {
+		t.Errorf("tokens = %+v, want an access token and a different refresh token", got)
+	}
+	if got.TokenType != "Bearer" || got.ExpiresIn != 3600 {
+		t.Errorf("token_type %q, expires_in %d; want Bearer, 3600 (an hour)", got.TokenType, got.ExpiresIn)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "no-store" {
+		t.Errorf("Cache-Control = %q, want no-store", cc)
+	}
+}
+
+func TestACodeExchangeThatDoesNotMatchTheApprovalIsRefused(t *testing.T) {
+	n := newNando(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	other := n.mustRegister(clientJSON{ClientName: "Other", RedirectURIs: []string{"https://other.example.org/callback"}})
+
+	for name, change := range map[string]func(form url.Values){
+		"wrong code_verifier":  func(form url.Values) { form.Set("code_verifier", "wrong-"+verifier) },
+		"no code_verifier":     func(form url.Values) { form.Del("code_verifier") },
+		"another client":       func(form url.Values) { form.Set("client_id", other.ClientID) },
+		"another redirect_uri": func(form url.Values) { form.Set("redirect_uri", "https://claude.ai/elsewhere") },
+		"no redirect_uri":      func(form url.Values) { form.Del("redirect_uri") },
+		"unknown code":         func(form url.Values) { form.Set("code", "unknown") },
+	} {
+		client, request := n.mustAuthorize()
+		form := codeExchange(client, phone.mustApprove(request), verifier)
+		change(form)
+		if rec := n.token(form); rec.Code != http.StatusBadRequest || oauthErrorIn(rec) != "invalid_grant" {
+			t.Errorf("%s: status = %d, body %q; want 400 invalid_grant", name, rec.Code, rec.Body)
+		}
+	}
+}
+
+func TestACodeIsUsedUpByItsFirstExchange(t *testing.T) {
+	n := newNando(t)
+	client, code := approvedConnector(t, n)
+	tokensIn(t, n.token(codeExchange(client, code, verifier)))
+
+	if rec := n.token(codeExchange(client, code, verifier)); rec.Code != http.StatusBadRequest || oauthErrorIn(rec) != "invalid_grant" {
+		t.Errorf("exchange a used code: status = %d, body %q; want 400 invalid_grant", rec.Code, rec.Body)
+	}
+}
+
+func TestARefusedExchangeAlsoUsesUpTheCode(t *testing.T) {
+	n := newNando(t)
+	client, code := approvedConnector(t, n)
+	n.token(codeExchange(client, code, "wrong-"+verifier))
+
+	if rec := n.token(codeExchange(client, code, verifier)); rec.Code != http.StatusBadRequest || oauthErrorIn(rec) != "invalid_grant" {
+		t.Errorf("exchange after a wrong verifier: status = %d, body %q; want 400 invalid_grant", rec.Code, rec.Body)
+	}
+}
+
+func TestACodeExpiresAfterAMinute(t *testing.T) {
+	n := newNando(t)
+	client, code := approvedConnector(t, n)
+
+	n.clock.Advance(61 * time.Second)
+
+	if rec := n.token(codeExchange(client, code, verifier)); rec.Code != http.StatusBadRequest || oauthErrorIn(rec) != "invalid_grant" {
+		t.Errorf("exchange a code after 61 seconds: status = %d, body %q; want 400 invalid_grant", rec.Code, rec.Body)
+	}
+}
+
+func TestATokenRequestWithoutAKnownGrantIsRefused(t *testing.T) {
+	n := newNando(t)
+
+	for grant, want := range map[string]string{"": "invalid_request", "password": "unsupported_grant_type"} {
+		form := url.Values{"grant_type": {grant}, "username": {"owner"}, "password": {"secret"}}
+		if rec := n.token(form); rec.Code != http.StatusBadRequest || oauthErrorIn(rec) != want {
+			t.Errorf("grant_type %q: status = %d, body %q; want 400 %s", grant, rec.Code, rec.Body, want)
+		}
+	}
+}
