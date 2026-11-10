@@ -28,7 +28,7 @@ type groupDocument struct {
 	ImageURL string `bson:"image_url"`
 }
 
-func (r groups) Find(ctx context.Context, key string) (model.Group, error) {
+func (r groups) GetOneByKey(ctx context.Context, key string) (model.Group, error) {
 	var d groupDocument
 	err := r.collection.FindOne(ctx, bson.D{{Key: "collection_name", Value: key}}).Decode(&d)
 	return model.Group(d), utils.NotFound(err)

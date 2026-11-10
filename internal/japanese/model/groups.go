@@ -14,6 +14,6 @@ type Group struct {
 
 // GroupsRepository reads the groups collection.
 type GroupsRepository interface {
-	// Find returns the Group with this key, or Core's utils.ErrNotFound.
-	Find(ctx context.Context, key string) (Group, error)
+	// GetOneByKey returns the Group with this key, or Core's utils.ErrNotFound.
+	GetOneByKey(ctx context.Context, key string) (Group, error)
 }

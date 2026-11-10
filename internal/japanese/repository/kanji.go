@@ -53,7 +53,7 @@ func (d kanjiDocument) toKanji() model.Kanji {
 // kanjiRowFields projects what a list shows of a Kanji.
 var kanjiRowFields = bson.D{{Key: "kanji", Value: 1}, {Key: "spanish", Value: 1}}
 
-func (r kanji) Search(ctx context.Context, q string, limit int) ([]model.Kanji, error) {
+func (r kanji) GetManyBySearch(ctx context.Context, q string, limit int) ([]model.Kanji, error) {
 	pattern := utils.SearchPattern(q)
 	// A Kanji whose character is in q matches it exactly.
 	inQ := bson.D{{Key: "$in", Value: bson.A{"$kanji", strings.Split(q, "")}}}
@@ -78,7 +78,7 @@ func (r kanji) Search(ctx context.Context, q string, limit int) ([]model.Kanji, 
 	return toKanji(ctx, cursor)
 }
 
-func (r kanji) InText(ctx context.Context, text string) ([]model.Kanji, error) {
+func (r kanji) GetManyByCharactersIn(ctx context.Context, text string) ([]model.Kanji, error) {
 	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: bson.D{{Key: "kanji", Value: bson.D{{Key: "$in", Value: strings.Split(text, "")}}}}}},
 		{{Key: "$addFields", Value: bson.D{{Key: "_position", Value: bson.D{{Key: "$indexOfCP", Value: bson.A{text, "$kanji"}}}}}}},
@@ -91,7 +91,7 @@ func (r kanji) InText(ctx context.Context, text string) ([]model.Kanji, error) {
 	return toKanji(ctx, cursor)
 }
 
-func (r kanji) Find(ctx context.Context, id string) (model.Kanji, error) {
+func (r kanji) GetOneByID(ctx context.Context, id string) (model.Kanji, error) {
 	oid, err := bson.ObjectIDFromHex(id)
 	if err != nil {
 		return model.Kanji{}, coreutils.ErrNotFound
@@ -103,7 +103,7 @@ func (r kanji) Find(ctx context.Context, id string) (model.Kanji, error) {
 	return d.toKanji(), nil
 }
 
-func (r kanji) WithKeywords(ctx context.Context, keywords []string) ([]model.Kanji, error) {
+func (r kanji) GetManyByKeywords(ctx context.Context, keywords []string) ([]model.Kanji, error) {
 	cursor, err := r.collection.Find(ctx, bson.D{{Key: "spanish", Value: bson.D{{Key: "$in", Value: keywords}}}}, options.Find().SetProjection(kanjiRowFields))
 	if err != nil {
 		return nil, err

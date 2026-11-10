@@ -25,15 +25,15 @@ type Kanji struct {
 
 // KanjiRepository reads the kanji collection.
 type KanjiRepository interface {
-	// Search returns up to limit Kanji that match q, best first. Only what a
+	// GetManyBySearch returns up to limit Kanji that match q, best first. Only what a
 	// search result shows is filled in: ID, Kanji and Spanish.
-	Search(ctx context.Context, q string, limit int) ([]Kanji, error)
-	// InText returns the stored Kanji whose character is in text, in the
-	// order they first appear there, filled in as by Search.
-	InText(ctx context.Context, text string) ([]Kanji, error)
-	// Find returns the Kanji with this ID, or Core's utils.ErrNotFound.
-	Find(ctx context.Context, id string) (Kanji, error)
-	// WithKeywords returns the stored Kanji whose Spanish is one of keywords,
-	// in no particular order, filled in as by Search.
-	WithKeywords(ctx context.Context, keywords []string) ([]Kanji, error)
+	GetManyBySearch(ctx context.Context, q string, limit int) ([]Kanji, error)
+	// GetManyByCharactersIn returns the stored Kanji whose character is in text, in the
+	// order they first appear there, filled in as by GetManyBySearch.
+	GetManyByCharactersIn(ctx context.Context, text string) ([]Kanji, error)
+	// GetOneByID returns the Kanji with this ID, or Core's utils.ErrNotFound.
+	GetOneByID(ctx context.Context, id string) (Kanji, error)
+	// GetManyByKeywords returns the stored Kanji whose Spanish is one of keywords,
+	// in no particular order, filled in as by GetManyBySearch.
+	GetManyByKeywords(ctx context.Context, keywords []string) ([]Kanji, error)
 }

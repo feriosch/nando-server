@@ -42,12 +42,12 @@ func (s *SearchService) search(w http.ResponseWriter, r *http.Request) {
 		coreutils.WriteJSON(w, http.StatusOK, searchJSON{Words: []utils.WordRowJSON{}, Kanji: []utils.KanjiRowJSON{}})
 		return
 	}
-	words, err := s.words.Search(r.Context(), q, maxWords)
+	words, err := s.words.GetManyBySearch(r.Context(), q, maxWords)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	kanji, err := s.kanji.Search(r.Context(), q, maxKanji)
+	kanji, err := s.kanji.GetManyBySearch(r.Context(), q, maxKanji)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return

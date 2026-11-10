@@ -72,7 +72,7 @@ func (d wordDocument) toWord() model.Word {
 	return w
 }
 
-func (r words) Search(ctx context.Context, q string, limit int) ([]model.Word, error) {
+func (r words) GetManyBySearch(ctx context.Context, q string, limit int) ([]model.Word, error) {
 	pattern := utils.SearchPattern(q)
 	fields := []string{"word", "hiragana", "spanish"}
 	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
@@ -107,7 +107,7 @@ func toWords(ctx context.Context, cursor *mongo.Cursor) ([]model.Word, error) {
 // rowFields projects what a list shows of a Word.
 var rowFields = bson.D{{Key: "word", Value: 1}, {Key: "hiragana", Value: 1}, {Key: "spanish", Value: 1}, {Key: "group", Value: 1}}
 
-func (r words) Find(ctx context.Context, id string) (model.Word, error) {
+func (r words) GetOneByID(ctx context.Context, id string) (model.Word, error) {
 	oid, err := bson.ObjectIDFromHex(id)
 	if err != nil {
 		return model.Word{}, coreutils.ErrNotFound
@@ -119,7 +119,7 @@ func (r words) Find(ctx context.Context, id string) (model.Word, error) {
 	return d.toWord(), nil
 }
 
-func (r words) FindMany(ctx context.Context, ids []string) ([]model.Word, error) {
+func (r words) GetManyByIDs(ctx context.Context, ids []string) ([]model.Word, error) {
 	oids := bson.A{}
 	for _, id := range ids {
 		if oid, err := bson.ObjectIDFromHex(id); err == nil {
@@ -133,7 +133,7 @@ func (r words) FindMany(ctx context.Context, ids []string) ([]model.Word, error)
 	return toWords(ctx, cursor)
 }
 
-func (r words) SpelledWith(ctx context.Context, character string, limit int) ([]model.Word, error) {
+func (r words) GetManyByCharacter(ctx context.Context, character string, limit int) ([]model.Word, error) {
 	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: bson.D{{Key: "word", Value: bson.D{{Key: "$regex", Value: regexp.QuoteMeta(character)}}}}}},
 		{{Key: "$addFields", Value: bson.D{{Key: "_length", Value: bson.D{{Key: "$strLenCP", Value: "$word"}}}}}},

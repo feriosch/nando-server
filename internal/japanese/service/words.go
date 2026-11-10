@@ -69,7 +69,7 @@ type wordJSON struct {
 
 func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	word, err := s.words.Find(ctx, r.PathValue("id"))
+	word, err := s.words.GetOneByID(ctx, r.PathValue("id"))
 	if errors.Is(err, coreutils.ErrNotFound) {
 		http.Error(w, "there's no such Word", http.StatusNotFound)
 		return
@@ -78,7 +78,7 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	group, err := s.groups.Find(ctx, word.Group)
+	group, err := s.groups.GetOneByKey(ctx, word.Group)
 	if errors.Is(err, coreutils.ErrNotFound) {
 		// Every Word's Group is stored; if one isn't, its key is all there is to show.
 		group = model.Group{Key: word.Group, Name: word.Group}
@@ -111,7 +111,7 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 	for _, hint := range word.Hints {
 		j.Hints = append(j.Hints, hintJSON{Text: hint.Text, Note: utils.OrNull(hint.Note)})
 	}
-	kanji, err := s.kanji.InText(ctx, word.Word)
+	kanji, err := s.kanji.GetManyByCharactersIn(ctx, word.Word)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
@@ -127,7 +127,7 @@ func (s *WordsService) wordLinks(ctx context.Context, links []model.WordLink) ([
 	for i, l := range links {
 		ids[i] = l.WordID
 	}
-	others, err := s.words.FindMany(ctx, ids)
+	others, err := s.words.GetManyByIDs(ctx, ids)
 	if err != nil {
 		return nil, err
 	}

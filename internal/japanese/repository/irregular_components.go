@@ -21,7 +21,7 @@ type irregularComponents struct {
 	collection *mongo.Collection
 }
 
-func (r irregularComponents) Stored(ctx context.Context, keywords []string) ([]string, error) {
+func (r irregularComponents) GetManyByKeywords(ctx context.Context, keywords []string) ([]string, error) {
 	var stored []string
 	err := r.collection.Distinct(ctx, "component", bson.D{{Key: "component", Value: bson.D{{Key: "$in", Value: keywords}}}}).Decode(&stored)
 	return stored, err

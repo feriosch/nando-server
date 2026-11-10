@@ -54,16 +54,16 @@ type Sentence struct {
 
 // WordsRepository reads the words collection.
 type WordsRepository interface {
-	// Search returns up to limit Words that match q, best first: exact
+	// GetManyBySearch returns up to limit Words that match q, best first: exact
 	// matches, then shorter ones, then longer ones. Only what a search result
 	// shows is filled in: ID, Word, Hiragana, Spanish and Group.
-	Search(ctx context.Context, q string, limit int) ([]Word, error)
-	// Find returns the Word with this ID, or Core's utils.ErrNotFound.
-	Find(ctx context.Context, id string) (Word, error)
-	// FindMany returns the Words with these IDs that are stored, in no
-	// particular order, filled in as by Search.
-	FindMany(ctx context.Context, ids []string) ([]Word, error)
-	// SpelledWith returns up to limit Words whose spelling contains
-	// character, shorter ones first, filled in as by Search.
-	SpelledWith(ctx context.Context, character string, limit int) ([]Word, error)
+	GetManyBySearch(ctx context.Context, q string, limit int) ([]Word, error)
+	// GetOneByID returns the Word with this ID, or Core's utils.ErrNotFound.
+	GetOneByID(ctx context.Context, id string) (Word, error)
+	// GetManyByIDs returns the Words with these IDs that are stored, in no
+	// particular order, filled in as by GetManyBySearch.
+	GetManyByIDs(ctx context.Context, ids []string) ([]Word, error)
+	// GetManyByCharacter returns up to limit Words whose spelling contains
+	// character, shorter ones first, filled in as by GetManyBySearch.
+	GetManyByCharacter(ctx context.Context, character string, limit int) ([]Word, error)
 }

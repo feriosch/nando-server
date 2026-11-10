@@ -55,7 +55,7 @@ type kanjiJSON struct {
 
 func (s *KanjiService) getKanji(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	kanji, err := s.kanji.Find(ctx, r.PathValue("id"))
+	kanji, err := s.kanji.GetOneByID(ctx, r.PathValue("id"))
 	if errors.Is(err, coreutils.ErrNotFound) {
 		http.Error(w, "there's no such Kanji", http.StatusNotFound)
 		return
@@ -69,7 +69,7 @@ func (s *KanjiService) getKanji(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	words, err := s.words.SpelledWith(ctx, kanji.Kanji, maxKanjiWords)
+	words, err := s.words.GetManyByCharacter(ctx, kanji.Kanji, maxKanjiWords)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
@@ -100,11 +100,11 @@ func (s *KanjiService) components(ctx context.Context, keywords []string) ([]com
 	if len(keywords) == 0 {
 		return list, nil
 	}
-	irregular, err := s.irregular.Stored(ctx, keywords)
+	irregular, err := s.irregular.GetManyByKeywords(ctx, keywords)
 	if err != nil {
 		return nil, err
 	}
-	kanji, err := s.kanji.WithKeywords(ctx, keywords)
+	kanji, err := s.kanji.GetManyByKeywords(ctx, keywords)
 	if err != nil {
 		return nil, err
 	}
