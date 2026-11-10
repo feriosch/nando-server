@@ -156,21 +156,35 @@ func readmeRestore(t *testing.T) string {
 	return commands
 }
 
-func TestBackupRestoresCoreAndCalories(t *testing.T) {
+func TestBackupRestoresEveryDatabase(t *testing.T) {
 	source := startMongo(t)
 	source.insert(t, "core", "settings", bson.D{{Key: "_id", Value: "owner"}, {Key: "timeZone", Value: "Asia/Tokyo"}})
 	source.insert(t, "calories", "meals", bson.D{{Key: "_id", Value: "onigiri"}, {Key: "name", Value: "Onigiri"}, {Key: "kcal", Value: int32(180)}})
+	// A Word's ObjectId is Anki's Id for it, so it must come back unchanged.
+	wordID := bson.NewObjectID()
+	relatedID := bson.NewObjectID()
+	source.insert(t, "japanese", "words", bson.D{
+		{Key: "_id", Value: wordID},
+		{Key: "word", Value: "天気"},
+		{Key: "related", Value: bson.A{bson.D{{Key: "wordId", Value: relatedID}, {Key: "type", Value: "related"}}}},
+	})
 
 	target := backupAndRestore(t, source, uriInContainer)
 
 	assertDocs(t, target.find(t, "core", "settings"), []bson.M{{"_id": "owner", "timeZone": "Asia/Tokyo"}})
 	assertDocs(t, target.find(t, "calories", "meals"), []bson.M{{"_id": "onigiri", "name": "Onigiri", "kcal": int32(180)}})
+	assertDocs(t, target.find(t, "japanese", "words"), []bson.M{{
+		"_id":     wordID,
+		"word":    "天気",
+		"related": bson.A{bson.D{{Key: "wordId", Value: relatedID}, {Key: "type", Value: "related"}}},
+	}})
 }
 
 func TestBackupLeavesOutOtherDatabases(t *testing.T) {
 	source := startMongo(t)
 	source.insert(t, "core", "settings", bson.D{{Key: "_id", Value: "owner"}})
 	source.insert(t, "calories", "meals", bson.D{{Key: "_id", Value: "onigiri"}})
+	source.insert(t, "japanese", "words", bson.D{{Key: "_id", Value: "tenki"}})
 	source.insert(t, "benkyo", "decks", bson.D{{Key: "_id", Value: "kanji"}})
 
 	target := backupAndRestore(t, source, uriInContainer)
@@ -180,23 +194,29 @@ func TestBackupLeavesOutOtherDatabases(t *testing.T) {
 		t.Fatalf("list databases: %v", err)
 	}
 	for _, name := range names {
-		if name != "core" && name != "calories" && name != "admin" && name != "config" && name != "local" {
-			t.Errorf("restored database %q, want only core and calories", name)
+		switch name {
+		case "core", "calories", "japanese", "admin", "config", "local":
+		default:
+			t.Errorf("restored database %q, want only core, calories and japanese", name)
 		}
 	}
 }
 
-// Production's Atlas user may only readWrite core and calories (#5).
-func TestBackupNeedsOnlyNandosDatabaseUser(t *testing.T) {
+// The backup needs no more than readWrite on Nando's own databases. Production's
+// Atlas user (nando-server) has readWriteAnyDatabase, but the backup mustn't
+// come to depend on it.
+func TestBackupNeedsOnlyNandosDatabases(t *testing.T) {
 	source := startMongo(t, mongodb.WithUsername("root"), mongodb.WithPassword("root"))
 	source.insert(t, "core", "settings", bson.D{{Key: "_id", Value: "owner"}})
 	source.insert(t, "calories", "meals", bson.D{{Key: "_id", Value: "onigiri"}})
+	source.insert(t, "japanese", "words", bson.D{{Key: "_id", Value: "tenki"}})
 	err := source.client.Database("admin").RunCommand(context.Background(), bson.D{
 		{Key: "createUser", Value: "nando"},
 		{Key: "pwd", Value: "nando"},
 		{Key: "roles", Value: bson.A{
 			bson.D{{Key: "role", Value: "readWrite"}, {Key: "db", Value: "core"}},
 			bson.D{{Key: "role", Value: "readWrite"}, {Key: "db", Value: "calories"}},
+			bson.D{{Key: "role", Value: "readWrite"}, {Key: "db", Value: "japanese"}},
 		}},
 	}).Err()
 	if err != nil {
@@ -207,6 +227,7 @@ func TestBackupNeedsOnlyNandosDatabaseUser(t *testing.T) {
 
 	assertDocs(t, target.find(t, "core", "settings"), []bson.M{{"_id": "owner"}})
 	assertDocs(t, target.find(t, "calories", "meals"), []bson.M{{"_id": "onigiri"}})
+	assertDocs(t, target.find(t, "japanese", "words"), []bson.M{{"_id": "tenki"}})
 }
 
 func assertDocs(t *testing.T, got, want []bson.M) {
