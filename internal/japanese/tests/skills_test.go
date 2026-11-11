@@ -5,24 +5,25 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
 
 // skillsDir holds the skills Claude follows to work with the Owner's Words,
-// in the repo's skills/japanese folder.
+// in the repo's skills/japanese folder, each in its own folder.
 const skillsDir = "../../../skills/japanese"
 
-// skills are the skills that must exist, each in its own folder.
-var skills = []string{"add-word", "suggest-related"}
+// requiredSkills are the skills that must exist among them.
+var requiredSkills = []string{"add-word", "suggest-related"}
 
-// toolName is how a skill names a Japanese Tool.
-var toolName = regexp.MustCompile(`japanese_[a-z_]+`)
+// skillToolName is how a skill names a Japanese Tool.
+var skillToolName = regexp.MustCompile(`japanese_[a-z_]+`)
 
 // oldAccess is what a skill must no longer use or mention: benkyo's direct
-// database access and the Owner's PC. Every lookup and write goes through
-// the Tools.
-var oldAccess = []string{"mongosh", "curl ", "db.words", "claude-db.env", "MONGODB_URI", `C:\`, "/c/Users", "Boogs", ".benkyo", "word-log"}
+// database access and paths on the Owner's PC. Every lookup and write goes
+// through the Tools.
+var oldAccess = []string{"mongosh", "curl ", "db.words", "claude-db.env", "MONGODB_URI", `C:\`, "/c/Users", ".benkyo", "word-log"}
 
 func TestTheSkillsUseOnlyTheToolsNandoServes(t *testing.T) {
 	_, phone := signedInBrowser(t)
@@ -35,6 +36,22 @@ func TestTheSkillsUseOnlyTheToolsNandoServes(t *testing.T) {
 		served[tool.Name] = true
 	}
 
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		t.Fatalf("list the skills: %v", err)
+	}
+	var skills []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			skills = append(skills, entry.Name())
+		}
+	}
+	for _, skill := range requiredSkills {
+		if !slices.Contains(skills, skill) {
+			t.Errorf("the %s skill is missing from %s", skill, skillsDir)
+		}
+	}
+
 	for _, skill := range skills {
 		t.Run(skill, func(t *testing.T) {
 			b, err := os.ReadFile(filepath.Join(skillsDir, skill, "SKILL.md"))
@@ -45,7 +62,7 @@ func TestTheSkillsUseOnlyTheToolsNandoServes(t *testing.T) {
 			if !strings.HasPrefix(text, "---\nname: "+skill+"\ndescription:") {
 				t.Errorf("SKILL.md must start with frontmatter naming %s and describing it, for claude.ai to load it", skill)
 			}
-			names := toolName.FindAllString(text, -1)
+			names := skillToolName.FindAllString(text, -1)
 			if len(names) == 0 {
 				t.Errorf("the skill names no Tool; it must look up and write through them")
 			}

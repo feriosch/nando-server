@@ -13,7 +13,7 @@ Every lookup and write goes through the Japanese Tools of the Nando Connector. N
 - **One Word per spelling and reading.** `japanese_add_word` refuses a Word already stored; another reading of the same spelling is a different Word.
 - **Readings.** A spelling with a Kanji needs its reading in kana; a kana Word has none, and a reading equal to its kana spelling counts as none.
 - **Word Links are two-sided.** `japanese_add_word_link` writes both sides and gives the way back the opposite Nuance Tags (`formal`↔`casual`, `spoken`↔`written`, `expression`↔`part`). It skips a side that already exists.
-- **Groups and tags.** A Word goes in a stored Group; Word Tags and Nuance Tags are snake_case.
+- **Groups, Word Tags and Nuance Tags.** A Word goes in a stored Group; Word Tags and Nuance Tags are snake_case.
 
 A Tool that refuses says why; read its message and adjust.
 
@@ -38,7 +38,7 @@ Use jisho's JLPT tag, then what the Owner was doing:
 
 Activity → Group: reading (books, manga, articles) → `literature`, games → `gaming`, anime → `anime`, movies, dramas or series → `movie`, anything else → `miscellaneous`.
 
-If the Word is N1 or has no JLPT tag and the Owner didn't say what they were doing, ask. N4 and N5 Words go in `basic`: there are no N4 or N5 Groups.
+If the Word is N1 or has no JLPT tag and the Owner didn't say what they were doing, ask. N4 and N5 Words go in `basic`: there are no N4 or N5 Groups. A stored Word in `jlpt_n2` with no JLPT tag on jisho stays in `jlpt_n2`.
 
 ## 3. Expressions and their Parts
 
@@ -49,7 +49,7 @@ An Expression is a set phrase such as 首にされる or 腹が立つ. Store it 
 Then look at its main **Parts** (首, する):
 
 - **All Parts are basic or known** (N4/N5 on jisho, or already stored): add **only** the Expression.
-- **One or more Parts are unknown** (not stored and above N4): add **each unknown Part as its own Word** (steps 1–5) **plus** the Expression, and link them with `japanese_add_word_link` from the Expression to the Part: `kind: "related"`, `nuanceTags: ["part", …]`, `note` saying what the Part means on its own, and `noteBack` saying what the Expression means. The way back gets `expression` on its own.
+- **One or more Parts are unknown** (not stored and above N4): add **each unknown Part as its own Word** (steps 1–5) **plus** the Expression, and link them with `japanese_add_word_link` from the Expression to the Part: `kind: "related"`, `nuanceTags: ["part", …]`, `note` saying what the Part means on its own, and `noteBack` saying what the Expression means. On the way back, `part` becomes `expression`; any other Nuance Tags you give stay as they are, so add only those that hold both ways.
   - **Exception: Parts that barely live outside the Expression.** If an unknown Part is rarely used on its own and almost only appears in this Expression or compound (通牒 → 最後通牒, 屈託 → 屈託のない), store only the Expression or compound and explain the Part in its `notes` (e.g. `屈託: preocupación (casi solo se usa en esta expresión)`). The Owner wants no useless standalone Words. Mention the choice afterwards so they can ask for the Part.
 - Also link the Expression to any of its Parts already stored outside `basic`, the same way.
 - **Sentences:** a Part's example sentences show the Part used on its own. Uses of the Expression go only in the Expression's sentences.
@@ -123,7 +123,7 @@ Word Tags tell the Owner, who meets Words they have never heard, **whether and w
 - Dialect: `kansai_dialect` (and other `<region>_dialect`)
 - Other: `idiomatic`, `yojijukugo`
 
-You may invent a Word Tag when none of these captures something useful. First check `japanese_list_tags`, and reuse an existing tag over a near-duplicate (`rare`, not `uncommon`). Keep tags lowercase snake_case English, one idea each.
+You may invent a Word Tag when none of these captures something useful. First check `japanese_list_tags`, and reuse an existing Word Tag over a near-duplicate (`rare`, not `uncommon`). Keep Word Tags lowercase snake_case English, one idea each.
 
 Usage Word Tags show on the Anki cards, in the `Usage` field.
 
@@ -141,32 +141,32 @@ For each real synonym, antonym, near-synonym or Expression ↔ Part pair, call `
 
 - `kind`: `synonym`, `antonym` or `related`.
 - `note`, in English: how **the other** Word differs from this one. Leave out its JLPT level: the Anki card shows it as a badge.
-- `nuanceTags`: how **the other** Word is used compared with this one. The common ones are `formal`, `casual`, `spoken`, `written`, `technical`, `literary`, `polite`, `archaic`, `humble`; every usage Word Tag from step 4 is welcome too (`rare`, `feminine`, `elderly_speech`, `dated`…), and so are `expression` and `part`. Anki shows them on both sides of the card. Be generous where a tag genuinely tells the two Words apart.
+- `nuanceTags`: how **the other** Word is used compared with this one. The common ones are `formal`, `casual`, `spoken`, `written`, `technical`, `literary`, `polite`, `archaic`, `humble`; every usage Word Tag from step 4 is welcome too (`rare`, `feminine`, `elderly_speech`, `dated`…), and so are `expression` and `part`. Anki shows them on both sides of the card. Be generous where a Nuance Tag genuinely tells the two Words apart.
 - `noteBack`: the way back's note, about this Word, when it needs its own wording; it is the same note otherwise. The way back's Nuance Tags are set for you.
 
 Skip plain compounds that only share the Kanji (～家, ～客).
 
-An everyday N4/N5 word that isn't stored gets a **Hint** instead: `japanese_add_hint` with the word (天気) and an optional note. A Hint is one-way; a stored Word always gets a Word Link.
+An everyday N4/N5 word that isn't stored gets a **Hint** instead: `japanese_add_hint` with `word` set to the stored Word's `id`, `text` to the everyday word (天気), and an optional `note`. A Hint is one-way; a stored Word always gets a Word Link.
 
 ## Repeated Words
 
 If the Word is already stored, review the whole Word and improve it:
 - Is the `spanish` accurate, and does it tell the Word apart from its synonyms?
-- Are the type, Group and Word Tags right under the current rules? Add any missing usage Word Tags.
+- Are the type, Group and Word Tags right under the current rules? Add any missing usage Word Tags, and run the **Jōyō check** for a missing `joyogai`. A Group change goes through step 6.
 - Is it stored in kana although it has a kanji spelling? Move it to the kanji spelling with its reading and `usually_kana` (see **Kanji spelling**), unless another, more common reading owns that spelling.
 - Are the sentences natural and at the right level? Does a Part use its own Expression in its sentences?
 - Is `notes` clean?
 - Look for missing Word Links, missing ways back, and weak or missing Word Link notes and Nuance Tags.
 
-Apply the improvements directly: `japanese_update_word` changes only the fields you send (`tags` and `sentences` are whole lists), `japanese_update_word_link` changes one side of a Word Link, and `japanese_add_word_link` adds what's missing. Show the Owner a before → after of what changed: `japanese_get_word` before, and each Tool answers the Word as it is after.
+Apply the improvements directly: `japanese_update_word` changes only the fields you send (`tags` and `sentences` are whole lists), `japanese_update_word_link` changes one side of a Word Link, and `japanese_add_word_link` adds what's missing. Show the Owner a before → after of what changed: `japanese_get_word` before, and `japanese_get_word` again after (`japanese_update_word` also answers the Word as it is after).
 
 ## 6. Approval
 
 **Adding and improving needs no approval.** Go straight to step 7 and show the Owner what was written afterwards when:
 - you didn't need to ask the Owner anything (Group, homograph, meaning, which reading gets the kanji spelling, known or unknown Parts);
-- the changes are new Words, Word Links, Hints, and improvements to stored Words (spanish, type, Word Tags, notes, sentences, spelling or reading, Word Links and their notes and Nuance Tags).
+- the changes are new Words, Word Links, Hints, and improvements to stored Words (spanish, type, Word Tags, notes, sentences, spelling or reading, Word Links and their kind, notes and Nuance Tags), including splitting one Word into two (大家 おおや/たいか: change its reading, then add the other).
 
-**Ask first** for the destructive Tools, which the Claude app is also set to confirm: deleting a Word (`japanese_delete_word`), merging two (`japanese_merge_words`: merge first, then set the kept Word's fields with `japanese_update_word`), splitting one into two (大家 おおや/たいか), moving a Word to another Group (`japanese_change_group`), and any change across many Words at once.
+**Ask first** for the destructive Tools, which the Claude app is also set to confirm: deleting a Word (`japanese_delete_word`), merging two (`japanese_merge_words`: merge first, then set the kept Word's fields with `japanese_update_word`), and moving a Word to another Group (`japanese_change_group`).
 
 When you ask, show one compact draft of everything:
 - each Word's spelling, reading, spanish, type, Group (and why), Word Tags, notes and sentences;

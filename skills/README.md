@@ -44,6 +44,6 @@ The skills need the Connector to reach the Tools. Connecting sends you to Nando'
 
   Then run `/mcp` in Claude Code, choose `nando`, and authenticate: your browser opens Nando's page to approve it.
 
-In the Connector's settings in claude.ai, set the three destructive Tools to ask every time: `japanese_delete_word`, `japanese_merge_words` and `japanese_change_group`. The skills ask before using them too.
+In the Connector's settings in claude.ai, set the three destructive Tools to ask every time: `japanese_delete_word`, `japanese_merge_words` and `japanese_change_group`.
 
 A Connector is listed in Nando's Settings, where removing it cuts it off at once.
