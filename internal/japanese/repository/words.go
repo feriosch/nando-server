@@ -356,6 +356,62 @@ func (r words) RemoveHint(ctx context.Context, id, text string) (bool, error) {
 	return res.ModifiedCount == 1, nil
 }
 
+func (r words) SetGroup(ctx context.Context, id, group string) error {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return coreutils.ErrNotFound
+	}
+	res, err := r.collection.UpdateByID(ctx, oid, bson.D{{Key: "$set", Value: bson.D{{Key: "group", Value: group}}}})
+	return coreutils.Matched(res, err)
+}
+
+// pullSideTo is an update removing a side of a Word Link to the Word with oid.
+func pullSideTo(oid bson.ObjectID) bson.D {
+	return bson.D{{Key: "$pull", Value: bson.D{{Key: "related", Value: bson.D{{Key: "wordId", Value: oid}}}}}}
+}
+
+func (r words) RemoveWordLinksTo(ctx context.Context, id string) error {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return coreutils.ErrNotFound
+	}
+	_, err = r.collection.UpdateMany(ctx, bson.D{{Key: "related.wordId", Value: oid}}, pullSideTo(oid))
+	return err
+}
+
+func (r words) RepointWordLinks(ctx context.Context, fromID, toID string) error {
+	from, to, err := objectIDs(fromID, toID)
+	if err != nil {
+		return err
+	}
+	// A Word with sides to both keeps its side to toID.
+	both := bson.D{{Key: "_id", Value: bson.D{{Key: "$ne", Value: to}}}, {Key: "$and", Value: bson.A{
+		bson.D{{Key: "related.wordId", Value: from}},
+		bson.D{{Key: "related.wordId", Value: to}},
+	}}}
+	if _, err := r.collection.UpdateMany(ctx, both, pullSideTo(from)); err != nil {
+		return err
+	}
+	_, err = r.collection.UpdateMany(ctx,
+		bson.D{{Key: "_id", Value: bson.D{{Key: "$ne", Value: to}}}, {Key: "related.wordId", Value: from}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "related.$[side].wordId", Value: to}}}},
+		options.UpdateMany().SetArrayFilters([]any{bson.D{{Key: "side.wordId", Value: from}}}),
+	)
+	if err != nil {
+		return err
+	}
+	_, err = r.collection.UpdateByID(ctx, to, pullSideTo(from))
+	return err
+}
+
+func (r words) Delete(ctx context.Context, id string) error {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return coreutils.ErrNotFound
+	}
+	return coreutils.Deleted(r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: oid}}))
+}
+
 // objectIDs are the ObjectIds of two Words' ids, or Core's utils.ErrNotFound
 // if either isn't one.
 func objectIDs(id, otherID string) (bson.ObjectID, bson.ObjectID, error) {

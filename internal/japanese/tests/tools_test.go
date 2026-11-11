@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"reflect"
 	"slices"
 	"sync"
@@ -713,4 +714,138 @@ func TestAConnectorRemovesAHint(t *testing.T) {
 		t.Errorf("囁く = %+v, want no Hints and both Word Links left", page)
 	}
 	toolFails(t, session, "japanese_remove_hint", map[string]any{"word": id(whispering), "text": "小声"})
+}
+
+// pageStatus is the status of a Word's page: 404 once it is deleted.
+func pageStatus(phone *browser, wordID string) int {
+	return phone.do(http.MethodGet, "/api/japanese/words/"+wordID, nil).Code
+}
+
+func TestAConnectorDeletesAWordAndEveryWordLinkToIt(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	doomed := word("首", "くび", "cuello", "basic")
+	partner := word("首にされる", "くびにされる", "ser despedido", "gaming")
+	bystander := word("解雇", "かいこ", "despido", "jlpt_n2")
+	other := word("会社", "かいしゃ", "empresa", "basic")
+	doomed["related"] = bson.A{bson.M{"wordId": partner["_id"], "type": "related", "note": "", "tags": bson.A{"expression"}}}
+	partner["related"] = bson.A{
+		bson.M{"wordId": doomed["_id"], "type": "related", "note": "", "tags": bson.A{"part"}},
+		bson.M{"wordId": bystander["_id"], "type": "synonym", "note": "", "tags": bson.A{}},
+	}
+	bystander["related"] = bson.A{
+		bson.M{"wordId": doomed["_id"], "type": "related", "note": "", "tags": bson.A{}},
+		bson.M{"wordId": other["_id"], "type": "related", "note": "", "tags": bson.A{}},
+	}
+	n.store("words", doomed, partner, bystander, other)
+	session := phone.connect()
+
+	callTool[map[string]any](t, session, "japanese_delete_word", map[string]any{"id": id(doomed)})
+
+	if status := pageStatus(phone, id(doomed)); status != http.StatusNotFound {
+		t.Errorf("the deleted Word's page: status %d, want 404", status)
+	}
+	if got := wordLinksOf(phone, id(partner)); len(got) != 1 || got[0].Word.Word != "解雇" {
+		t.Errorf("首にされる's Word Links = %+v, want only 解雇 left", got)
+	}
+	if got := wordLinksOf(phone, id(bystander)); len(got) != 1 || got[0].Word.Word != "会社" {
+		t.Errorf("解雇's Word Links = %+v, want only 会社 left", got)
+	}
+	toolFails(t, session, "japanese_delete_word", map[string]any{"id": id(doomed)})
+}
+
+func TestAConnectorMergesTwoWordsIntoOne(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	keep := word("大家", "おおや", "casero, dueño", "jlpt_n2")
+	remove := word("大屋", "おおや", "casero", "literature")
+	x := word("家主", "やぬし", "propietario", "jlpt_n1")
+	y := word("借家", "しゃくや", "casa alquilada", "jlpt_n2")
+	keep["related"] = bson.A{
+		bson.M{"wordId": y["_id"], "type": "related", "note": "keep's own", "tags": bson.A{}},
+		bson.M{"wordId": remove["_id"], "type": "synonym", "note": "", "tags": bson.A{}},
+		bson.M{"word": "天気", "type": "related", "note": "", "tags": bson.A{}},
+	}
+	remove["related"] = bson.A{
+		bson.M{"wordId": x["_id"], "type": "synonym", "note": "from remove", "tags": bson.A{"formal"}},
+		bson.M{"wordId": keep["_id"], "type": "synonym", "note": "", "tags": bson.A{}},
+		bson.M{"wordId": y["_id"], "type": "related", "note": "remove's", "tags": bson.A{}},
+		bson.M{"word": "天気", "type": "related", "note": "", "tags": bson.A{}},
+		bson.M{"word": "楽しみ", "type": "related", "note": "", "tags": bson.A{}},
+	}
+	x["related"] = bson.A{bson.M{"wordId": remove["_id"], "type": "synonym", "note": "to remove", "tags": bson.A{"casual"}}}
+	y["related"] = bson.A{
+		bson.M{"wordId": keep["_id"], "type": "related", "note": "to keep", "tags": bson.A{}},
+		bson.M{"wordId": remove["_id"], "type": "related", "note": "to remove", "tags": bson.A{}},
+	}
+	n.store("words", keep, remove, x, y)
+	session := phone.connect()
+
+	merged := callTool[wordJSON](t, session, "japanese_merge_words", map[string]any{"keep": id(keep), "remove": id(remove)})
+
+	if status := pageStatus(phone, id(remove)); status != http.StatusNotFound {
+		t.Errorf("the removed Word's page: status %d, want 404", status)
+	}
+	type side struct{ word, note string }
+	sides := func(links []wordLinkJSON) []side {
+		list := []side{}
+		for _, l := range links {
+			list = append(list, side{l.Word.Word, *l.Note})
+		}
+		return list
+	}
+	// keep keeps its own side to 借家, gains 家主 from remove, and has no link to itself.
+	if got, want := sides(wordLinksOf(phone, id(keep))), []side{{"借家", "keep's own"}, {"家主", "from remove"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("大家's Word Links = %v, want %v", got, want)
+	}
+	if !reflect.DeepEqual(sides(merged.WordLinks), sides(wordLinksOf(phone, id(keep)))) {
+		t.Errorf("merge answered Word Links %+v, want the kept Word as it is now", merged.WordLinks)
+	}
+	if got, want := hintsOf(phone, id(keep)), []hintJSON{{Text: "天気"}, {Text: "楽しみ"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("大家's Hints = %+v, want %+v", got, want)
+	}
+	// 家主's side to the removed Word now points at the kept one.
+	if got, want := sides(wordLinksOf(phone, id(x))), []side{{"大家", "to remove"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("家主's Word Links = %v, want %v", got, want)
+	}
+	// 借家 already linked to the kept Word, so its side to the removed one goes.
+	if got, want := sides(wordLinksOf(phone, id(y))), []side{{"大家", "to keep"}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("借家's Word Links = %v, want %v", got, want)
+	}
+}
+
+func TestAConnectorMovesAWordToAnotherGroup(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("jlpt_n2", "JLPT N2", n2Picture), group("gaming", "Gaming", "https://storage.googleapis.com/benkyo/gaming.png"))
+	whispering := word("囁く", "ささやく", "susurrar", "gaming")
+	n.store("words", whispering)
+	session := phone.connect()
+
+	moved := callTool[wordJSON](t, session, "japanese_change_group", map[string]any{"id": id(whispering), "group": "jlpt_n2"})
+
+	if got := get[wordJSON](phone, "/api/japanese/words/"+id(whispering)); got.Group.Key != "jlpt_n2" || moved.Group.Key != "jlpt_n2" {
+		t.Errorf("Group after moving = %+v (answered %+v), want jlpt_n2", got.Group, moved.Group)
+	}
+	for name, args := range map[string]map[string]any{
+		"a Group not stored": {"id": id(whispering), "group": "jlpt_n4"},
+		"an unknown Word":    {"id": "6af05d493ea403a78bf5997b", "group": "gaming"},
+	} {
+		t.Run(name, func(t *testing.T) { toolFails(t, session, "japanese_change_group", args) })
+	}
+}
+
+func TestAMergeThatCantBeMadeIsRefused(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	keep := word("大家", "おおや", "casero", "jlpt_n2")
+	n.store("words", keep)
+	session := phone.connect()
+
+	for name, args := range map[string]map[string]any{
+		"a Word into itself": {"keep": id(keep), "remove": id(keep)},
+		"an unknown Word":    {"keep": id(keep), "remove": "6af05d493ea403a78bf5997b"},
+		"no keep":            {"remove": id(keep)},
+	} {
+		t.Run(name, func(t *testing.T) { toolFails(t, session, "japanese_merge_words", args) })
+	}
+	if status := pageStatus(phone, id(keep)); status != http.StatusOK {
+		t.Errorf("the Word after refused merges: status %d, want 200", status)
+	}
 }

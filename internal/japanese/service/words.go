@@ -236,7 +236,141 @@ func (s *WordsService) Tools() []coremodel.Tool {
 			`"word":{"type":"string","description":"The id of the Word with the Hint."},"text":{"type":"string"}},` +
 			`"required":["word","text"]}`),
 		Handle: s.removeHintTool,
+	}, {
+		Name: "japanese_delete_word",
+		Description: "Deletes a Word and every Word Link to it, on every other Word. It can't be undone: ask the Owner first. " +
+			"To keep what a duplicate holds, use japanese_merge_words instead.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
+		Destructive: true,
+		Handle:      s.deleteWordTool,
+	}, {
+		Name: "japanese_merge_words",
+		Description: "Merges two Words that are the same: keeps one and deletes the other. First set the kept Word's fields with " +
+			"japanese_update_word. The removed Word's Word Links and Hints move to the kept one, except those it already has " +
+			"and any link between the two; Word Links on other Words that pointed at the removed Word now point at the kept one. " +
+			"It can't be undone: ask the Owner first. Answers the kept Word as it is now.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"keep":{"type":"string","description":"The id of the Word that stays."},` +
+			`"remove":{"type":"string","description":"The id of the Word merged into it and deleted."}},` +
+			`"required":["keep","remove"]}`),
+		Destructive: true,
+		Handle:      s.mergeWordsTool,
+	}, {
+		Name: "japanese_change_group",
+		Description: "Moves a Word to another stored Group, such as from gaming to jlpt_n2 once jisho tags it N2. " +
+			"Ask the Owner first. Answers the Word as it is now.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"id":{"type":"string"},"group":{"type":"string","description":"A stored Group's key."}},"required":["id","group"]}`),
+		Destructive: true,
+		Handle:      s.changeGroupTool,
 	}}
+}
+
+// deleteWordTool answers japanese_delete_word. It removes the Word Links to
+// the Word first, so that a delete that fails halfway can be run again.
+func (s *WordsService) deleteWordTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	word, err := s.storedWord(ctx, args.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.words.RemoveWordLinksTo(ctx, word.ID); err != nil {
+		return nil, err
+	}
+	if err := s.words.Delete(ctx, word.ID); err != nil {
+		return nil, err
+	}
+	return model.WordDeletedJSON{Deleted: word.ID}, nil
+}
+
+// mergeWordsTool answers japanese_merge_words. Its steps are separate
+// writes; each can be run again, so a merge that fails halfway is finished
+// by merging again.
+func (s *WordsService) mergeWordsTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		Keep   string `json:"keep"`
+		Remove string `json:"remove"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	if args.Keep == args.Remove {
+		return nil, errors.New("keep and remove must be two different Words")
+	}
+	keep, err := s.storedWord(ctx, args.Keep)
+	if err != nil {
+		return nil, err
+	}
+	remove, err := s.storedWord(ctx, args.Remove)
+	if err != nil {
+		return nil, err
+	}
+	for _, side := range remove.WordLinks {
+		if side.WordID == keep.ID {
+			continue
+		}
+		if _, err := s.words.AddWordLinkSide(ctx, keep.ID, side); err != nil {
+			return nil, err
+		}
+	}
+	for _, hint := range remove.Hints {
+		if _, err := s.words.AddHint(ctx, keep.ID, hint); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.words.RepointWordLinks(ctx, remove.ID, keep.ID); err != nil {
+		return nil, err
+	}
+	if err := s.words.Delete(ctx, remove.ID); err != nil {
+		return nil, err
+	}
+	merged, err := s.words.GetOneByID(ctx, keep.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.wordJSON(ctx, merged)
+}
+
+// changeGroupTool answers japanese_change_group.
+func (s *WordsService) changeGroupTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		ID    string `json:"id"`
+		Group string `json:"group"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	if _, err := s.groups.GetOneByKey(ctx, args.Group); errors.Is(err, coreutils.ErrNotFound) {
+		return nil, fmt.Errorf("%q isn't a stored Group", args.Group)
+	} else if err != nil {
+		return nil, err
+	}
+	err := s.words.SetGroup(ctx, args.ID, args.Group)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return nil, fmt.Errorf("there's no Word with id %s", args.ID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	word, err := s.words.GetOneByID(ctx, args.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.wordJSON(ctx, word)
+}
+
+// storedWord is the Word with id, or an error saying there's none.
+func (s *WordsService) storedWord(ctx context.Context, id string) (model.Word, error) {
+	word, err := s.words.GetOneByID(ctx, id)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return word, fmt.Errorf("there's no Word with id %q", id)
+	}
+	return word, err
 }
 
 // addHintTool answers japanese_add_hint.

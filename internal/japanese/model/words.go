@@ -122,6 +122,19 @@ type WordsRepository interface {
 	// RemoveHint removes the Word with id's Hint with text, and reports
 	// whether it had one.
 	RemoveHint(ctx context.Context, id, text string) (bool, error)
+	// SetGroup files the Word with id in group, or returns Core's
+	// utils.ErrNotFound.
+	SetGroup(ctx context.Context, id, group string) error
+	// RemoveWordLinksTo removes every other Word's side of a Word Link to the
+	// Word with id.
+	RemoveWordLinksTo(ctx context.Context, id string) error
+	// RepointWordLinks makes every other Word's side of a Word Link to the
+	// Word with fromID a side to the Word with toID, unless that Word already
+	// has a side to it: then its side to fromID is removed. The Word with
+	// toID loses its side to fromID, which would be a link to itself.
+	RepointWordLinks(ctx context.Context, fromID, toID string) error
+	// Delete deletes the Word with id, or returns Core's utils.ErrNotFound.
+	Delete(ctx context.Context, id string) error
 	// GetManyBySpellingOrReading returns every Word spelled text or read as
 	// text, oldest first, with all its fields.
 	GetManyBySpellingOrReading(ctx context.Context, text string) ([]Word, error)
@@ -185,6 +198,11 @@ type WordLinkRemovedJSON struct {
 // Hint, or the Word already had one with that text.
 type HintWrittenJSON struct {
 	Written bool `json:"written"`
+}
+
+// WordDeletedJSON is what japanese_delete_word answers: the deleted Word's id.
+type WordDeletedJSON struct {
+	Deleted string `json:"deleted"`
 }
 
 // WordsJSON is the Words a Tool found, such as every Word with a spelling
