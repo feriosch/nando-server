@@ -70,3 +70,19 @@ type ComponentJSON struct {
 	Name  string        `json:"name"`
 	Kanji *KanjiRowJSON `json:"kanji"`
 }
+
+// JoyoJSON is what japanese_check_joyo answers: each Kanji in a text, once,
+// in the order it first appears.
+type JoyoJSON struct {
+	Kanji []KanjiJoyoJSON `json:"kanji"`
+}
+
+// KanjiJoyoJSON is whether a Kanji is stored, and whether it is jōyō as
+// kanjiapi.dev grades it. Joyo is null when kanjiapi.dev couldn't tell, as
+// when it rate-limits, never false then. Grade is null when it has none.
+type KanjiJoyoJSON struct {
+	Kanji  string `json:"kanji"`
+	Stored bool   `json:"stored"`
+	Joyo   *bool  `json:"joyo"`
+	Grade  *int   `json:"grade"`
+}

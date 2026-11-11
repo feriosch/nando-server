@@ -11,6 +11,7 @@ package japanese
 import (
 	"net/http"
 	"slices"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
@@ -34,6 +35,11 @@ type Module struct {
 type Config struct {
 	// JishoURL is jisho.org, whose search API is at /api/v1/search/words.
 	JishoURL string
+	// KanjiAPIURL is kanjiapi.dev, which grades a Kanji at /v1/kanji/<kanji>.
+	KanjiAPIURL string
+	// KanjiAPIPace is how far apart kanjiapi.dev is asked; 0 means a
+	// second, which it allows.
+	KanjiAPIPace time.Duration
 }
 
 // NewJapaneseModule returns the Japanese Module reading its own data through
@@ -42,6 +48,12 @@ func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService, cfg Confi
 	if cfg.JishoURL == "" {
 		cfg.JishoURL = "https://jisho.org"
 	}
+	if cfg.KanjiAPIURL == "" {
+		cfg.KanjiAPIURL = "https://kanjiapi.dev"
+	}
+	if cfg.KanjiAPIPace == 0 {
+		cfg.KanjiAPIPace = time.Second
+	}
 	words := repository.NewWords(db)
 	kanji := repository.NewKanji(db)
 	return &Module{
@@ -49,7 +61,7 @@ func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService, cfg Confi
 		words:  service.NewWords(words, repository.NewGroups(db), kanji),
 		kanji:  service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
 		anki:   service.NewAnki(words, core),
-		lookup: service.NewLookup(cfg.JishoURL),
+		lookup: service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
 	}
 }
 
