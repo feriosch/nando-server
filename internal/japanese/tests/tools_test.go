@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -847,5 +848,48 @@ func TestAMergeThatCantBeMadeIsRefused(t *testing.T) {
 	}
 	if status := pageStatus(phone, id(keep)); status != http.StatusOK {
 		t.Errorf("the Word after refused merges: status %d, want 200", status)
+	}
+}
+
+// hints is what a Tool's annotations tell the Connector.
+type hints struct{ readOnly, destructive bool }
+
+func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.connect()
+
+	listed, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+
+	got := map[string]hints{}
+	for _, tool := range listed.Tools {
+		if !strings.HasPrefix(tool.Name, "japanese_") {
+			t.Errorf("Tool %s: a Module's Tool names start with the Module's name", tool.Name)
+		}
+		got[tool.Name] = hints{tool.Annotations.ReadOnlyHint, tool.Annotations.DestructiveHint != nil && *tool.Annotations.DestructiveHint}
+	}
+	lookUp, write, destroy := hints{readOnly: true}, hints{}, hints{destructive: true}
+	want := map[string]hints{
+		"japanese_get_word":         lookUp,
+		"japanese_search":           lookUp,
+		"japanese_get_kanji":        lookUp,
+		"japanese_list_tags":        lookUp,
+		"japanese_lookup_jisho":     lookUp,
+		"japanese_check_joyo":       lookUp,
+		"japanese_add_word":         write,
+		"japanese_update_word":      write,
+		"japanese_add_word_link":    write,
+		"japanese_update_word_link": write,
+		"japanese_remove_word_link": write,
+		"japanese_add_hint":         write,
+		"japanese_remove_hint":      write,
+		"japanese_delete_word":      destroy,
+		"japanese_merge_words":      destroy,
+		"japanese_change_group":     destroy,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("Tools and their hints =\n%v\nwant\n%v", got, want)
 	}
 }
