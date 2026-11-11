@@ -219,7 +219,84 @@ func (s *WordsService) Tools() []coremodel.Tool {
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"from":{"type":"string"},"to":{"type":"string"}},"required":["from","to"]}`),
 		Handle: s.removeWordLinkTool,
+	}, {
+		Name: "japanese_add_hint",
+		Description: "Adds a Hint to a Word: a one-way, text-only pointer to an everyday word that isn't stored as a Word, " +
+			"such as 天気, with an optional note. It has no other side. A stored Word gets a Word Link instead (japanese_add_word_link), " +
+			"so text that a stored Word is spelled or read as is refused. A Hint with the same text is skipped. Answers {\"written\"}.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"word":{"type":"string","description":"The id of the Word that gets the Hint."},` +
+			`"text":{"type":"string","description":"The everyday word, such as 天気."},"note":{"type":"string"}},` +
+			`"required":["word","text"]}`),
+		Handle: s.addHintTool,
+	}, {
+		Name:        "japanese_remove_hint",
+		Description: "Removes a Word's Hint with that text.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"word":{"type":"string","description":"The id of the Word with the Hint."},"text":{"type":"string"}},` +
+			`"required":["word","text"]}`),
+		Handle: s.removeHintTool,
 	}}
+}
+
+// addHintTool answers japanese_add_hint.
+func (s *WordsService) addHintTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		Word string `json:"word"`
+		Text string `json:"text"`
+		Note string `json:"note"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	text, err := checkSpelling(args.Text)
+	if err != nil {
+		return nil, errors.New("text is required, at most 100 characters")
+	}
+	note, err := checkNotes(args.Note)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.words.GetOneByID(ctx, args.Word); errors.Is(err, coreutils.ErrNotFound) {
+		return nil, fmt.Errorf("there's no Word with id %s", args.Word)
+	} else if err != nil {
+		return nil, err
+	}
+	stored, err := s.words.GetManyBySpellingOrReading(ctx, text)
+	if err != nil {
+		return nil, err
+	}
+	if len(stored) > 0 {
+		return nil, fmt.Errorf("%s is a stored Word (id %s): link it with japanese_add_word_link instead", text, stored[0].ID)
+	}
+	written, err := s.words.AddHint(ctx, args.Word, model.Hint{Text: text, Note: note})
+	if err != nil {
+		return nil, err
+	}
+	return model.HintWrittenJSON{Written: written}, nil
+}
+
+// removeHintTool answers japanese_remove_hint with the Word as it is now.
+func (s *WordsService) removeHintTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		Word string `json:"word"`
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	removed, err := s.words.RemoveHint(ctx, args.Word, strings.TrimSpace(args.Text))
+	if err != nil {
+		return nil, err
+	}
+	if !removed {
+		return nil, fmt.Errorf("the Word with id %s has no Hint %q", args.Word, args.Text)
+	}
+	word, err := s.words.GetOneByID(ctx, args.Word)
+	if err != nil {
+		return nil, err
+	}
+	return s.wordJSON(ctx, word)
 }
 
 // updateWordLinkTool answers japanese_update_word_link.

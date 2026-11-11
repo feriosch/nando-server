@@ -319,6 +319,43 @@ func (r words) RemoveWordLinkSide(ctx context.Context, id, otherID string) (bool
 	return res.ModifiedCount == 1, nil
 }
 
+// hintWith matches a Hint with text in related: an entry with no wordId.
+func hintWith(text string) bson.D {
+	return bson.D{{Key: "word", Value: text}, {Key: "wordId", Value: bson.D{{Key: "$exists", Value: false}}}}
+}
+
+func (r words) AddHint(ctx context.Context, id string, hint model.Hint) (bool, error) {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return false, coreutils.ErrNotFound
+	}
+	filter := bson.D{{Key: "_id", Value: oid}, {Key: "related", Value: bson.D{{Key: "$not", Value: bson.D{{Key: "$elemMatch", Value: hintWith(hint.Text)}}}}}}
+	// Stored as benkyo stored Hints, which the Anki export reads.
+	push := bson.D{{Key: "$push", Value: bson.D{{Key: "related", Value: bson.D{
+		{Key: "word", Value: hint.Text},
+		{Key: "type", Value: "related"},
+		{Key: "note", Value: hint.Note},
+		{Key: "tags", Value: bson.A{}},
+	}}}}}
+	res, err := r.collection.UpdateOne(ctx, filter, push)
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
+}
+
+func (r words) RemoveHint(ctx context.Context, id, text string) (bool, error) {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return false, nil
+	}
+	res, err := r.collection.UpdateByID(ctx, oid, bson.D{{Key: "$pull", Value: bson.D{{Key: "related", Value: hintWith(text)}}}})
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
+}
+
 // objectIDs are the ObjectIds of two Words' ids, or Core's utils.ErrNotFound
 // if either isn't one.
 func objectIDs(id, otherID string) (bson.ObjectID, bson.ObjectID, error) {

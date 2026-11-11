@@ -654,3 +654,63 @@ func TestRemovingAOneSidedWordLinkRemovesTheSideThereIs(t *testing.T) {
 		t.Errorf("sides removed = %+v, want only 囁く's", got)
 	}
 }
+
+// hintWrittenJSON is what japanese_add_hint answers.
+type hintWrittenJSON struct {
+	Written bool `json:"written"`
+}
+
+// hintsOf is the Hints on a Word's page.
+func hintsOf(phone *browser, wordID string) []hintJSON {
+	return get[wordJSON](phone, "/api/japanese/words/"+wordID).Hints
+}
+
+func TestAConnectorAddsAHintOnce(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	expect := word("期待", "きたい", "expectativa", "jlpt_n2")
+	n.store("words", expect)
+	session := phone.connect()
+	hint := map[string]any{"word": id(expect), "text": "天気", "note": "Se espera buen tiempo."}
+
+	first := callTool[hintWrittenJSON](t, session, "japanese_add_hint", hint)
+	again := callTool[hintWrittenJSON](t, session, "japanese_add_hint", hint)
+	callTool[hintWrittenJSON](t, session, "japanese_add_hint", map[string]any{"word": id(expect), "text": "楽しみ"})
+
+	if !first.Written || again.Written {
+		t.Errorf("written: first %v, again %v; want true, then false", first.Written, again.Written)
+	}
+	want := []hintJSON{{Text: "天気", Note: ptr("Se espera buen tiempo.")}, {Text: "楽しみ"}}
+	if got := hintsOf(phone, id(expect)); !reflect.DeepEqual(got, want) {
+		t.Errorf("Hints = %+v, want %+v", got, want)
+	}
+}
+
+func TestAHintThatCantBeAddedIsRefused(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	expect := word("期待", "きたい", "expectativa", "jlpt_n2")
+	n.store("words", expect, word("希望", "きぼう", "esperanza", "basic"))
+	session := phone.connect()
+
+	for name, args := range map[string]map[string]any{
+		"a stored Word's spelling": {"word": id(expect), "text": "希望"},
+		"an unknown Word":          {"word": "6af05d493ea403a78bf5997b", "text": "天気"},
+		"blank text":               {"word": id(expect), "text": " "},
+	} {
+		t.Run(name, func(t *testing.T) { toolFails(t, session, "japanese_add_hint", args) })
+	}
+	if got := hintsOf(phone, id(expect)); len(got) != 0 {
+		t.Errorf("Hints after refused adds = %+v, want none", got)
+	}
+}
+
+func TestAConnectorRemovesAHint(t *testing.T) {
+	phone, session, whispering, _ := linkedPair(t)
+
+	callTool[map[string]any](t, session, "japanese_remove_hint", map[string]any{"word": id(whispering), "text": "小声"})
+
+	page := get[wordJSON](phone, "/api/japanese/words/"+id(whispering))
+	if len(page.Hints) != 0 || len(page.WordLinks) != 2 {
+		t.Errorf("囁く = %+v, want no Hints and both Word Links left", page)
+	}
+	toolFails(t, session, "japanese_remove_hint", map[string]any{"word": id(whispering), "text": "小声"})
+}

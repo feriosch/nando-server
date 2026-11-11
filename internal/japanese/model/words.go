@@ -116,6 +116,12 @@ type WordsRepository interface {
 	// RemoveWordLinkSide removes the Word with id's side of its Word Link to
 	// the Word with otherID, and reports whether it had one.
 	RemoveWordLinkSide(ctx context.Context, id, otherID string) (bool, error)
+	// AddHint adds hint to the Word with id, unless it has a Hint with the
+	// same text, checked inside the write. It reports whether it added it.
+	AddHint(ctx context.Context, id string, hint Hint) (bool, error)
+	// RemoveHint removes the Word with id's Hint with text, and reports
+	// whether it had one.
+	RemoveHint(ctx context.Context, id, text string) (bool, error)
 	// GetManyBySpellingOrReading returns every Word spelled text or read as
 	// text, oldest first, with all its fields.
 	GetManyBySpellingOrReading(ctx context.Context, text string) ([]Word, error)
@@ -173,6 +179,12 @@ type WordLinkWrittenJSON struct {
 type WordLinkRemovedJSON struct {
 	FromSideRemoved bool `json:"fromSideRemoved"`
 	BackSideRemoved bool `json:"backSideRemoved"`
+}
+
+// HintWrittenJSON is what japanese_add_hint answers: whether it wrote the
+// Hint, or the Word already had one with that text.
+type HintWrittenJSON struct {
+	Written bool `json:"written"`
 }
 
 // WordsJSON is the Words a Tool found, such as every Word with a spelling
