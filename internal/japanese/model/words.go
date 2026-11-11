@@ -65,6 +65,14 @@ type WordChanges struct {
 	Sentences *[]Sentence
 }
 
+// WordLinkChanges are the fields of one side of a Word Link to change; a nil
+// one is left as it is.
+type WordLinkChanges struct {
+	Kind       *string
+	Note       *string
+	NuanceTags *[]string
+}
+
 // TagCount is a tag and how many times it is used.
 type TagCount struct {
 	Tag   string
@@ -101,6 +109,13 @@ type WordsRepository interface {
 	// has a side of a Word Link to side's other Word, checked inside the
 	// write. It reports whether it added it.
 	AddWordLinkSide(ctx context.Context, id string, side WordLink) (bool, error)
+	// UpdateWordLinkSide changes only the fields set in changes of the Word
+	// with id's side of its Word Link to the Word with otherID, or returns
+	// Core's utils.ErrNotFound if it has none.
+	UpdateWordLinkSide(ctx context.Context, id, otherID string, changes WordLinkChanges) error
+	// RemoveWordLinkSide removes the Word with id's side of its Word Link to
+	// the Word with otherID, and reports whether it had one.
+	RemoveWordLinkSide(ctx context.Context, id, otherID string) (bool, error)
 	// GetManyBySpellingOrReading returns every Word spelled text or read as
 	// text, oldest first, with all its fields.
 	GetManyBySpellingOrReading(ctx context.Context, text string) ([]Word, error)
@@ -151,6 +166,13 @@ type TagCountJSON struct {
 type WordLinkWrittenJSON struct {
 	FromSideWritten bool `json:"fromSideWritten"`
 	BackSideWritten bool `json:"backSideWritten"`
+}
+
+// WordLinkRemovedJSON is what japanese_remove_word_link answers: which sides
+// of the Word Link it removed.
+type WordLinkRemovedJSON struct {
+	FromSideRemoved bool `json:"fromSideRemoved"`
+	BackSideRemoved bool `json:"backSideRemoved"`
 }
 
 // WordsJSON is the Words a Tool found, such as every Word with a spelling

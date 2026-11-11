@@ -564,3 +564,93 @@ func TestAWordLinkThatCantBeMadeIsRefused(t *testing.T) {
 		t.Errorf("囁く's Word Links after refused links = %+v, want none", got)
 	}
 }
+
+// linkedPair is two stored Words with a Word Link both ways, as benkyo
+// stored them, and the session of a Connector.
+func linkedPair(t *testing.T) (*browser, *mcp.ClientSession, bson.M, bson.M) {
+	t.Helper()
+	n, phone := signedInBrowser(t)
+	whispering := word("囁く", "ささやく", "susurrar", "jlpt_n2")
+	murmur := word("呟く", "つぶやく", "murmurar", "jlpt_n2")
+	hope := word("希望", "きぼう", "esperanza", "basic")
+	whispering["related"] = bson.A{
+		bson.M{"wordId": murmur["_id"], "type": "related", "note": "To oneself.", "tags": bson.A{"spoken"}},
+		bson.M{"wordId": hope["_id"], "type": "related", "note": "Unrelated link.", "tags": bson.A{}},
+		bson.M{"word": "小声", "type": "related", "note": "", "tags": bson.A{}},
+	}
+	murmur["related"] = bson.A{bson.M{"wordId": whispering["_id"], "type": "related", "note": "To someone.", "tags": bson.A{"written"}}}
+	n.store("words", whispering, murmur, hope)
+	return phone, phone.connect(), whispering, murmur
+}
+
+func TestAConnectorUpdatesOneSideOfAWordLink(t *testing.T) {
+	phone, session, whispering, murmur := linkedPair(t)
+	backBefore := wordLinksOf(phone, id(murmur))
+
+	callTool[map[string]any](t, session, "japanese_update_word_link", map[string]any{
+		"from": id(whispering), "to": id(murmur), "kind": "synonym", "nuanceTags": []string{"spoken", "rare"},
+	})
+
+	got := wordLinksOf(phone, id(whispering))
+	if len(got) != 2 || got[0].Kind != "synonym" || *got[0].Note != "To oneself." || !reflect.DeepEqual(got[0].NuanceTags, []string{"spoken", "rare"}) {
+		t.Errorf("囁く's Word Links = %+v, want 呟く now a synonym tagged spoken, rare, its note kept", got)
+	}
+	if got[1].Word.Word != "希望" || *got[1].Note != "Unrelated link." {
+		t.Errorf("囁く's other Word Link = %+v, want it unchanged", got[1])
+	}
+	if got := wordLinksOf(phone, id(murmur)); !reflect.DeepEqual(got, backBefore) {
+		t.Errorf("呟く's side = %+v, want it left as it was: %+v", got, backBefore)
+	}
+}
+
+func TestAWordLinkUpdateThatCantBeMadeIsRefused(t *testing.T) {
+	phone, session, whispering, murmur := linkedPair(t)
+	update := map[string]any{"from": id(whispering), "to": id(murmur)}
+
+	for name, args := range map[string]map[string]any{
+		"no Word Link to it": {"from": id(murmur), "to": "6af05d493ea403a78bf5997b", "note": "x"},
+		"nothing to change":  update,
+		"an unknown kind":    with(update, "kind", "similar"),
+		"a camelCase tag":    with(update, "nuanceTags", []string{"moreFormal"}),
+	} {
+		t.Run(name, func(t *testing.T) { toolFails(t, session, "japanese_update_word_link", args) })
+	}
+	if got := wordLinksOf(phone, id(whispering)); got[0].Kind != "related" || *got[0].Note != "To oneself." {
+		t.Errorf("囁く's side after refused updates = %+v, want it unchanged", got[0])
+	}
+}
+
+// unlinkedJSON is what japanese_remove_word_link answers: which sides it removed.
+type unlinkedJSON struct {
+	FromSideRemoved bool `json:"fromSideRemoved"`
+	BackSideRemoved bool `json:"backSideRemoved"`
+}
+
+func TestAConnectorRemovesBothSidesOfAWordLink(t *testing.T) {
+	phone, session, whispering, murmur := linkedPair(t)
+
+	got := callTool[unlinkedJSON](t, session, "japanese_remove_word_link", map[string]any{"from": id(murmur), "to": id(whispering)})
+
+	if !got.FromSideRemoved || !got.BackSideRemoved {
+		t.Errorf("sides removed = %+v, want both", got)
+	}
+	if links := wordLinksOf(phone, id(murmur)); len(links) != 0 {
+		t.Errorf("呟く's Word Links = %+v, want none", links)
+	}
+	page := get[wordJSON](phone, "/api/japanese/words/"+id(whispering))
+	if len(page.WordLinks) != 1 || page.WordLinks[0].Word.Word != "希望" || len(page.Hints) != 1 {
+		t.Errorf("囁く = %+v, want only its link to 希望 and its Hint left", page)
+	}
+	toolFails(t, session, "japanese_remove_word_link", map[string]any{"from": id(murmur), "to": id(whispering)})
+}
+
+func TestRemovingAOneSidedWordLinkRemovesTheSideThereIs(t *testing.T) {
+	phone, session, whispering, _ := linkedPair(t)
+	hope := wordLinksOf(phone, id(whispering))[1].Word.ID
+
+	got := callTool[unlinkedJSON](t, session, "japanese_remove_word_link", map[string]any{"from": id(whispering), "to": hope})
+
+	if !got.FromSideRemoved || got.BackSideRemoved {
+		t.Errorf("sides removed = %+v, want only 囁く's", got)
+	}
+}

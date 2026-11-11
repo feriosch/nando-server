@@ -284,6 +284,55 @@ func (r words) AddWordLinkSide(ctx context.Context, id string, side model.WordLi
 	return res.ModifiedCount == 1, nil
 }
 
+func (r words) UpdateWordLinkSide(ctx context.Context, id, otherID string, changes model.WordLinkChanges) error {
+	oid, other, err := objectIDs(id, otherID)
+	if err != nil {
+		return err
+	}
+	set := bson.D{}
+	if changes.Kind != nil {
+		set = append(set, bson.E{Key: "related.$[side].type", Value: *changes.Kind})
+	}
+	if changes.Note != nil {
+		set = append(set, bson.E{Key: "related.$[side].note", Value: *changes.Note})
+	}
+	if changes.NuanceTags != nil {
+		set = append(set, bson.E{Key: "related.$[side].tags", Value: *changes.NuanceTags})
+	}
+	res, err := r.collection.UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: oid}, {Key: "related.wordId", Value: other}},
+		bson.D{{Key: "$set", Value: set}},
+		options.UpdateOne().SetArrayFilters([]any{bson.D{{Key: "side.wordId", Value: other}}}),
+	)
+	return coreutils.Matched(res, err)
+}
+
+func (r words) RemoveWordLinkSide(ctx context.Context, id, otherID string) (bool, error) {
+	oid, other, err := objectIDs(id, otherID)
+	if err != nil {
+		return false, nil
+	}
+	res, err := r.collection.UpdateByID(ctx, oid, bson.D{{Key: "$pull", Value: bson.D{{Key: "related", Value: bson.D{{Key: "wordId", Value: other}}}}}})
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
+}
+
+// objectIDs are the ObjectIds of two Words' ids, or Core's utils.ErrNotFound
+// if either isn't one.
+func objectIDs(id, otherID string) (bson.ObjectID, bson.ObjectID, error) {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return oid, oid, coreutils.ErrNotFound
+	}
+	other, err := bson.ObjectIDFromHex(otherID)
+	if err != nil {
+		return oid, other, coreutils.ErrNotFound
+	}
+	return oid, other, nil
+}
+
 func (r words) GetManyBySpellingOrReading(ctx context.Context, text string) ([]model.Word, error) {
 	filter := bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "word", Value: text}}, bson.D{{Key: "hiragana", Value: text}}}}}
 	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))

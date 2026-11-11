@@ -203,7 +203,106 @@ func (s *WordsService) Tools() []coremodel.Tool {
 			`"noteBack":{"type":"string","description":"The way back's note, about the from Word."}},` +
 			`"required":["from","to","kind"]}`),
 		Handle: s.addWordLinkTool,
+	}, {
+		Name: "japanese_update_word_link",
+		Description: "Changes only from's side of its Word Link to to: the kind, note or nuanceTags given (nuanceTags is the whole list). " +
+			"The way back is left as it is; change it with another call, from the other Word. Answers the from Word as it is now.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"from":{"type":"string"},"to":{"type":"string"},` +
+			`"kind":{"type":"string","enum":["synonym","antonym","related"]},` +
+			`"note":{"type":"string"},"nuanceTags":{"type":"array","items":{"type":"string"}}},` +
+			`"required":["from","to"]}`),
+		Handle: s.updateWordLinkTool,
+	}, {
+		Name:        "japanese_remove_word_link",
+		Description: "Removes the Word Link between two Words: both sides. Answers {\"fromSideRemoved\", \"backSideRemoved\"}.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"from":{"type":"string"},"to":{"type":"string"}},"required":["from","to"]}`),
+		Handle: s.removeWordLinkTool,
 	}}
+}
+
+// updateWordLinkTool answers japanese_update_word_link.
+func (s *WordsService) updateWordLinkTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var given map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &given); err != nil {
+		return nil, err
+	}
+	var args struct {
+		From       string   `json:"from"`
+		To         string   `json:"to"`
+		Kind       string   `json:"kind"`
+		Note       string   `json:"note"`
+		NuanceTags []string `json:"nuanceTags"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	if args.From == "" || args.To == "" {
+		return nil, errors.New("from and to are required")
+	}
+	var changes model.WordLinkChanges
+	if _, ok := given["kind"]; ok {
+		if !slices.Contains(wordLinkKinds, args.Kind) {
+			return nil, fmt.Errorf("kind must be one of %s", strings.Join(wordLinkKinds, ", "))
+		}
+		changes.Kind = &args.Kind
+	}
+	if _, ok := given["note"]; ok {
+		note, err := checkNotes(args.Note)
+		if err != nil {
+			return nil, err
+		}
+		changes.Note = &note
+	}
+	if _, ok := given["nuanceTags"]; ok {
+		tags, err := checkTags(args.NuanceTags)
+		if err != nil {
+			return nil, err
+		}
+		changes.NuanceTags = &tags
+	}
+	if changes == (model.WordLinkChanges{}) {
+		return nil, errors.New("give at least one of kind, note and nuanceTags to change")
+	}
+	err := s.words.UpdateWordLinkSide(ctx, args.From, args.To, changes)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return nil, errors.New("from has no Word Link to to: add one with japanese_add_word_link")
+	}
+	if err != nil {
+		return nil, err
+	}
+	word, err := s.words.GetOneByID(ctx, args.From)
+	if err != nil {
+		return nil, err
+	}
+	return s.wordJSON(ctx, word)
+}
+
+// removeWordLinkTool answers japanese_remove_word_link.
+func (s *WordsService) removeWordLinkTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		From string `json:"from"`
+		To   string `json:"to"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	if args.From == "" || args.To == "" {
+		return nil, errors.New("from and to are required")
+	}
+	var removed model.WordLinkRemovedJSON
+	var err error
+	if removed.FromSideRemoved, err = s.words.RemoveWordLinkSide(ctx, args.From, args.To); err != nil {
+		return nil, err
+	}
+	if removed.BackSideRemoved, err = s.words.RemoveWordLinkSide(ctx, args.To, args.From); err != nil {
+		return nil, err
+	}
+	if !removed.FromSideRemoved && !removed.BackSideRemoved {
+		return nil, errors.New("there's no Word Link between them")
+	}
+	return removed, nil
 }
 
 // wordLinkKinds are the kinds a Word Link can be.
