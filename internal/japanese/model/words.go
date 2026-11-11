@@ -60,6 +60,9 @@ type WordsRepository interface {
 	GetManyBySearch(ctx context.Context, q string, limit int) ([]Word, error)
 	// GetOneByID returns the Word with this ID, or Core's utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (Word, error)
+	// GetManyBySpellingOrReading returns every Word spelled text or read as
+	// text, oldest first, with all its fields.
+	GetManyBySpellingOrReading(ctx context.Context, text string) ([]Word, error)
 	// GetManyByIDs returns the Words with these IDs that are stored, in no
 	// particular order, filled in as by GetManyBySearch.
 	GetManyByIDs(ctx context.Context, ids []string) ([]Word, error)
@@ -82,6 +85,12 @@ type WordRowJSON struct {
 	Hiragana *string `json:"hiragana"`
 	Spanish  string  `json:"spanish"`
 	Group    string  `json:"group"`
+}
+
+// WordsJSON is the Words a Tool found, such as every Word with a spelling
+// or reading.
+type WordsJSON struct {
+	Words []WordJSON `json:"words"`
 }
 
 // WordJSON is a Word as its page shows it.

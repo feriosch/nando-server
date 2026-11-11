@@ -68,6 +68,8 @@ func newNando(t *testing.T) *nando {
 		t.Fatalf("core.New: %v", err)
 	}
 	db := client.Database("japanese")
+	module := japanese.NewJapaneseModule(db, c.Service())
+	c.AddToolProvider(module.ToolProvider())
 	return &nando{
 		t:        t,
 		core:     c,
@@ -76,7 +78,7 @@ func newNando(t *testing.T) *nando {
 		handler: server.New(server.Config{
 			AllowedOrigins: []string{webOrigin},
 			Core:           c,
-			Modules:        []server.Module{japanese.NewJapaneseModule(db, c.Service())},
+			Modules:        []server.Module{module},
 		}),
 	}
 }
@@ -93,6 +95,8 @@ func (n *nando) store(collection string, docs ...any) {
 type browser struct {
 	nando   *nando
 	session *http.Cookie
+	// passkey is the Owner's, on the iPhone.
+	passkey *testpasskey.Passkey
 }
 
 // signedInBrowser returns Nando with a browser on the Owner's iPhone that has
@@ -100,14 +104,13 @@ type browser struct {
 func signedInBrowser(t *testing.T) (*nando, *browser) {
 	t.Helper()
 	n := newNando(t)
-	phone := &browser{nando: n}
+	phone := &browser{nando: n, passkey: testpasskey.New()}
 	code, err := n.core.IssueEnrollmentCode(context.Background())
 	if err != nil {
 		t.Fatalf("IssueEnrollmentCode: %v", err)
 	}
-	passkey := testpasskey.New()
 	rec := phone.must(http.MethodPost, "/auth/register/begin", map[string]string{"code": code}, http.StatusOK)
-	phone.must(http.MethodPost, "/auth/register/finish", json.RawMessage(passkey.Create(t, webOrigin, rec.Body.Bytes())), http.StatusNoContent)
+	phone.must(http.MethodPost, "/auth/register/finish", json.RawMessage(phone.passkey.Create(t, webOrigin, rec.Body.Bytes())), http.StatusNoContent)
 	return n, phone
 }
 

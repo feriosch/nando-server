@@ -40,6 +40,19 @@ func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService) *Module {
 	}
 }
 
+// ToolProvider is what the Module offers Connectors: its Tools, for
+// Core.AddToolProvider.
+func (m *Module) ToolProvider() coremodel.ToolProvider {
+	return toolProvider{m}
+}
+
+// toolProvider gathers the Tools of the Module's services.
+type toolProvider struct{ m *Module }
+
+func (p toolProvider) Tools() []coremodel.Tool {
+	return p.m.words.Tools()
+}
+
 // Routes adds the Module's routes to mux, all under /api/japanese/.
 func (m *Module) Routes(mux *http.ServeMux) {
 	m.search.Routes(mux)

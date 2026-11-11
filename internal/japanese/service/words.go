@@ -2,9 +2,11 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 
+	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 	"github.com/feriosch/nando-server/internal/japanese/model"
 	"github.com/feriosch/nando-server/internal/japanese/utils"
@@ -29,8 +31,7 @@ func (s *WordsService) Routes(mux *http.ServeMux) {
 }
 
 func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	word, err := s.words.GetOneByID(ctx, r.PathValue("id"))
+	word, err := s.words.GetOneByID(r.Context(), r.PathValue("id"))
 	if errors.Is(err, coreutils.ErrNotFound) {
 		http.Error(w, "there's no such Word", http.StatusNotFound)
 		return
@@ -39,13 +40,23 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
+	j, err := s.wordJSON(r.Context(), word)
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	coreutils.WriteJSON(w, http.StatusOK, j)
+}
+
+// wordJSON is word as its page shows it, with its Group, the other Word of
+// each Word Link, and the Kanji in its spelling.
+func (s *WordsService) wordJSON(ctx context.Context, word model.Word) (model.WordJSON, error) {
 	group, err := s.groups.GetOneByKey(ctx, word.Group)
 	if errors.Is(err, coreutils.ErrNotFound) {
 		// Every Word's Group is stored; if one isn't, its key is all there is to show.
 		group = model.Group{Key: word.Group, Name: word.Group}
 	} else if err != nil {
-		coreutils.ServerError(w, err)
-		return
+		return model.WordJSON{}, err
 	}
 	j := model.WordJSON{
 		ID:        word.ID,
@@ -66,19 +77,17 @@ func (s *WordsService) getWord(w http.ResponseWriter, r *http.Request) {
 		j.Sentences = append(j.Sentences, model.SentenceJSON(sentence))
 	}
 	if j.WordLinks, err = s.wordLinkJSONs(ctx, word.WordLinks); err != nil {
-		coreutils.ServerError(w, err)
-		return
+		return model.WordJSON{}, err
 	}
 	for _, hint := range word.Hints {
 		j.Hints = append(j.Hints, model.HintJSON{Text: hint.Text, Note: utils.OrNull(hint.Note)})
 	}
 	kanji, err := s.kanji.GetManyBySpelling(ctx, word.Word)
 	if err != nil {
-		coreutils.ServerError(w, err)
-		return
+		return model.WordJSON{}, err
 	}
 	j.Kanji = utils.ToKanjiRowJSONs(kanji)
-	coreutils.WriteJSON(w, http.StatusOK, j)
+	return j, nil
 }
 
 // wordLinkJSONs returns wordLinks as the Word page shows them, each with the other
@@ -113,4 +122,58 @@ func (s *WordsService) wordLinkJSONs(ctx context.Context, wordLinks []model.Word
 		})
 	}
 	return list, nil
+}
+
+// Tools are the WordsService's Tools for Connectors.
+func (s *WordsService) Tools() []coremodel.Tool {
+	return []coremodel.Tool{{
+		Name: "japanese_get_word",
+		Description: "Gets the stored Words with an id, or with a spelling or reading (\"word\" matches either), " +
+			"with every field: reading, Spanish meaning, type, Group, Word Tags, notes, example sentences, " +
+			"Word Links (with the other Word's spelling, reading, Spanish meaning and Group), Hints, and the Kanji in its spelling. " +
+			"Use it to see whether a Word is already stored before adding it. Answers {\"words\": [...]}, empty if none match.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"id":{"type":"string","description":"A Word's id."},` +
+			`"word":{"type":"string","description":"A spelling or a reading, such as 足跡 or あしあと."}}}`),
+		ReadOnly: true,
+		Handle:   s.getWordTool,
+	}}
+}
+
+// getWordTool answers japanese_get_word.
+func (s *WordsService) getWordTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		ID   string `json:"id"`
+		Word string `json:"word"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	var found []model.Word
+	switch {
+	case args.ID != "" && args.Word != "", args.ID == "" && args.Word == "":
+		return nil, errors.New(`give either "id" or "word"`)
+	case args.ID != "":
+		word, err := s.words.GetOneByID(ctx, args.ID)
+		if err != nil && !errors.Is(err, coreutils.ErrNotFound) {
+			return nil, err
+		}
+		if err == nil {
+			found = []model.Word{word}
+		}
+	default:
+		var err error
+		if found, err = s.words.GetManyBySpellingOrReading(ctx, args.Word); err != nil {
+			return nil, err
+		}
+	}
+	answer := model.WordsJSON{Words: []model.WordJSON{}}
+	for _, word := range found {
+		j, err := s.wordJSON(ctx, word)
+		if err != nil {
+			return nil, err
+		}
+		answer.Words = append(answer.Words, j)
+	}
+	return answer, nil
 }

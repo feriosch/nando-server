@@ -119,6 +119,23 @@ func (r words) GetOneByID(ctx context.Context, id string) (model.Word, error) {
 	return d.toWord(), nil
 }
 
+func (r words) GetManyBySpellingOrReading(ctx context.Context, text string) ([]model.Word, error) {
+	filter := bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "word", Value: text}}, bson.D{{Key: "hiragana", Value: text}}}}}
+	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []wordDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	list := make([]model.Word, len(docs))
+	for i, d := range docs {
+		list[i] = d.toWord()
+	}
+	return list, nil
+}
+
 func (r words) GetManyByIDs(ctx context.Context, ids []string) ([]model.Word, error) {
 	oids := bson.A{}
 	for _, id := range ids {
