@@ -42,13 +42,26 @@ func TestAllowedOriginMayCallWithCredentials(t *testing.T) {
 	}
 }
 
+func TestAllowedOriginMayReadTheFileNameOfADownload(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("Origin", "https://web.example.com")
+	rec := httptest.NewRecorder()
+	newHandler().ServeHTTP(rec, req)
+
+	// The web app names a file it downloads, such as the JLPT deck, from Content-Disposition, which
+	// a browser hides from another origin unless it is exposed.
+	if got := rec.Header().Get("Access-Control-Expose-Headers"); !strings.Contains(got, "Content-Disposition") {
+		t.Errorf("Access-Control-Expose-Headers = %q, want it to include Content-Disposition", got)
+	}
+}
+
 func TestOtherOriginGetsNoCORSHeaders(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	req.Header.Set("Origin", "https://evil.example.net")
 	rec := httptest.NewRecorder()
 	newHandler().ServeHTTP(rec, req)
 
-	for _, h := range []string{"Access-Control-Allow-Origin", "Access-Control-Allow-Credentials"} {
+	for _, h := range []string{"Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Expose-Headers"} {
 		if got := rec.Header().Get(h); got != "" {
 			t.Errorf("%s = %q, want none", h, got)
 		}

@@ -71,6 +71,8 @@ func cors(allowedOrigins []string, next http.Handler) http.Handler {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
+			// So the web app can read a download's file name, such as the JLPT deck's.
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition")
 		}
 		next.ServeHTTP(w, r)
 	})
