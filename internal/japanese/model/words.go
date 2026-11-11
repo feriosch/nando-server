@@ -53,6 +53,18 @@ type Hint struct {
 	Note string
 }
 
+// WordChanges are the fields of a Word to change; a nil one is left as it
+// is. An empty Hiragana or Notes removes it.
+type WordChanges struct {
+	Word      *string
+	Hiragana  *string
+	Spanish   *string
+	Type      map[string]int
+	Tags      *[]string
+	Notes     *string
+	Sentences *[]Sentence
+}
+
 // TagCount is a tag and how many times it is used.
 type TagCount struct {
 	Tag   string
@@ -81,6 +93,10 @@ type WordsRepository interface {
 	// reading is stored, checked by a unique index so that it holds when
 	// several chats add at once.
 	Insert(ctx context.Context, word Word) (string, error)
+	// Update changes only the fields set in changes of the Word with id, or
+	// returns Core's utils.ErrNotFound. It returns ErrWordExists if the new
+	// spelling and reading are another Word's.
+	Update(ctx context.Context, id string, changes WordChanges) error
 	// GetManyBySpellingOrReading returns every Word spelled text or read as
 	// text, oldest first, with all its fields.
 	GetManyBySpellingOrReading(ctx context.Context, text string) ([]Word, error)

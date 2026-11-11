@@ -209,6 +209,58 @@ func (r words) Insert(ctx context.Context, word model.Word) (string, error) {
 	return id.Hex(), nil
 }
 
+func (r words) Update(ctx context.Context, id string, changes model.WordChanges) error {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return coreutils.ErrNotFound
+	}
+	set, unset := bson.D{}, bson.D{}
+	// setOrUnset sets field to value, or removes it if value is "", as benkyo
+	// stored a kana Word with no hiragana and a Word without notes.
+	setOrUnset := func(field string, value *string) {
+		switch {
+		case value == nil:
+		case *value == "":
+			unset = append(unset, bson.E{Key: field, Value: ""})
+		default:
+			set = append(set, bson.E{Key: field, Value: *value})
+		}
+	}
+	if changes.Word != nil {
+		set = append(set, bson.E{Key: "word", Value: *changes.Word})
+	}
+	setOrUnset("hiragana", changes.Hiragana)
+	if changes.Spanish != nil {
+		set = append(set, bson.E{Key: "spanish", Value: *changes.Spanish})
+	}
+	if changes.Type != nil {
+		set = append(set, bson.E{Key: "type", Value: changes.Type})
+	}
+	if changes.Tags != nil {
+		set = append(set, bson.E{Key: "tags", Value: *changes.Tags})
+	}
+	setOrUnset("notes", changes.Notes)
+	if changes.Sentences != nil {
+		sentences := bson.A{}
+		for _, s := range *changes.Sentences {
+			sentences = append(sentences, bson.D{{Key: "sentence", Value: s.Sentence}, {Key: "translation", Value: s.Translation}})
+		}
+		set = append(set, bson.E{Key: "sentences", Value: sentences})
+	}
+	update := bson.D{}
+	if len(set) > 0 {
+		update = append(update, bson.E{Key: "$set", Value: set})
+	}
+	if len(unset) > 0 {
+		update = append(update, bson.E{Key: "$unset", Value: unset})
+	}
+	res, err := r.collection.UpdateByID(ctx, oid, update)
+	if mongo.IsDuplicateKeyError(err) {
+		return model.ErrWordExists
+	}
+	return coreutils.Matched(res, err)
+}
+
 func (r words) GetManyBySpellingOrReading(ctx context.Context, text string) ([]model.Word, error) {
 	filter := bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "word", Value: text}}, bson.D{{Key: "hiragana", Value: text}}}}}
 	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))

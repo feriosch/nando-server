@@ -364,3 +364,94 @@ func TestAnInvalidWordIsRefused(t *testing.T) {
 		t.Errorf("Words after only invalid adds: %+v, want none", got.Words)
 	}
 }
+
+func TestAConnectorUpdatesOnlyTheFieldsItSends(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("jlpt_n2", "JLPT N2", n2Picture))
+	murmur := word("呟く", "つぶやく", "murmurar", "jlpt_n2")
+	whispering := word("囁く", "ささやく", "susurrar", "jlpt_n2")
+	whispering["tags"] = bson.A{"common"}
+	whispering["notes"] = "JLPT N2"
+	whispering["sentences"] = bson.A{bson.M{"sentence": "彼は耳元で囁いた。", "translation": "He whispered in my ear."}}
+	whispering["related"] = bson.A{
+		bson.M{"wordId": murmur["_id"], "type": "related", "note": "more to oneself", "tags": bson.A{"spoken"}},
+		bson.M{"word": "小声", "type": "related", "note": "", "tags": bson.A{}},
+	}
+	n.store("words", whispering, murmur)
+	session := phone.connect()
+	before := get[wordJSON](phone, "/api/japanese/words/"+id(whispering))
+
+	callTool[map[string]any](t, session, "japanese_update_word", map[string]any{
+		"id":      id(whispering),
+		"spanish": "susurrar (a alguien, en voz baja)",
+		"tags":    []string{"common", "usually_kana"},
+	})
+
+	want := before
+	want.Spanish = "susurrar (a alguien, en voz baja)"
+	want.Tags = []string{"common", "usually_kana"}
+	if got := get[wordJSON](phone, "/api/japanese/words/"+id(whispering)); !reflect.DeepEqual(got, want) {
+		t.Errorf("after updating spanish and tags, the Word = %+v,\nwant %+v", got, want)
+	}
+}
+
+func TestAKanaWordIsMovedToItsKanjiSpelling(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	where := word("どこ", "", "dónde", "basic")
+	where["notes"] = "kana"
+	n.store("words", where)
+	session := phone.connect()
+
+	callTool[map[string]any](t, session, "japanese_update_word", map[string]any{
+		"id": id(where), "word": "何処", "hiragana": "どこ", "tags": []string{"common", "usually_kana"}, "notes": "",
+	})
+
+	got := get[wordJSON](phone, "/api/japanese/words/"+id(where))
+	if got.Word != "何処" || got.Hiragana == nil || *got.Hiragana != "どこ" || got.Notes != nil || got.Spanish != "dónde" {
+		t.Errorf("the Word = %+v, want 何処 read どこ, no notes, Spanish unchanged", got)
+	}
+	if found := callTool[wordsJSON](t, session, "japanese_get_word", map[string]any{"word": "どこ"}); len(found.Words) != 1 {
+		t.Errorf("Words read どこ: %d, want 1", len(found.Words))
+	}
+}
+
+func TestAnUpdateChecksOnlyTheFieldsItSends(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	// A stray form benkyo stored that the add rules don't allow any more.
+	stray := word("どんどん", "", "rápidamente", "basic")
+	stray["type"] = bson.M{"adv": 9}
+	n.store("words", stray)
+	session := phone.connect()
+
+	callTool[map[string]any](t, session, "japanese_update_word", map[string]any{"id": id(stray), "spanish": "rápidamente, sin parar"})
+
+	if got := get[wordJSON](phone, "/api/japanese/words/"+id(stray)); got.Spanish != "rápidamente, sin parar" || got.Type["adv"] != 9 {
+		t.Errorf("the Word = %+v, want the new Spanish and its type left as stored", got)
+	}
+}
+
+func TestAnUpdateThatCantBeMadeIsRefused(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("jlpt_n2", "JLPT N2", n2Picture))
+	whispering := word("囁く", "ささやく", "susurrar", "jlpt_n2")
+	n.store("words", whispering, word("呟く", "つぶやく", "murmurar", "jlpt_n2"))
+	session := phone.connect()
+	update := func(fields map[string]any) map[string]any { return with(fields, "id", id(whispering)) }
+
+	for name, args := range map[string]map[string]any{
+		"no id":                               {"spanish": "x"},
+		"an unknown id":                       {"id": "6af05d493ea403a78bf5997b", "spanish": "x"},
+		"nothing to change":                   update(map[string]any{}),
+		"a Group":                             update(map[string]any{"group": "basic"}),
+		"Word Links":                          update(map[string]any{"related": []any{}}),
+		"another Word's spelling and reading": update(map[string]any{"word": "呟く", "hiragana": "つぶやく"}),
+		"a blank spelling":                    update(map[string]any{"word": " "}),
+		"a camelCase tag":                     update(map[string]any{"tags": []string{"usuallyKana"}}),
+		"an unknown type":                     update(map[string]any{"type": map[string]any{"verbo": 1}}),
+	} {
+		t.Run(name, func(t *testing.T) { toolFails(t, session, "japanese_update_word", args) })
+	}
+	if got := get[wordJSON](phone, "/api/japanese/words/"+id(whispering)); got.Word != "囁く" || got.Spanish != "susurrar" || got.Group.Key != "jlpt_n2" {
+		t.Errorf("the Word after refused updates = %+v, want it unchanged", got)
+	}
+}

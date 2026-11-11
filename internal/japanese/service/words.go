@@ -172,22 +172,40 @@ func (s *WordsService) Tools() []coremodel.Tool {
 			`"required":["sentence","translation"]}}},` +
 			`"required":["word","spanish","type","group"]}`),
 		Handle: s.addWordTool,
+	}, {
+		Name: "japanese_update_word",
+		Description: "Changes only the fields given of the Word with id, leaving the rest as they are: word, hiragana, spanish, type, " +
+			"tags (the whole list), notes, sentences (the whole list). An empty hiragana makes it a kana Word; empty notes removes them. " +
+			"Use it to improve a Word already stored, such as moving a kana Word to its kanji spelling with usually_kana. " +
+			"It never changes the Group (japanese_change_group) or Word Links and Hints (their own Tools). " +
+			"Refused if the new spelling and reading are another Word's. Answers the Word as it is now.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"id":{"type":"string"},"word":{"type":"string"},"hiragana":{"type":"string"},"spanish":{"type":"string"},` +
+			`"type":{"type":"object","additionalProperties":{"type":"integer","minimum":1,"maximum":8}},` +
+			`"tags":{"type":"array","items":{"type":"string"}},"notes":{"type":"string"},` +
+			`"sentences":{"type":"array","items":{"type":"object","properties":{` +
+			`"sentence":{"type":"string"},"translation":{"type":"string"}},"required":["sentence","translation"]}}},` +
+			`"required":["id"]}`),
+		Handle: s.updateWordTool,
 	}}
 }
 
 // wordFields are a Word's own fields as a Tool is sent them.
 type wordFields struct {
-	Word      string         `json:"word"`
-	Hiragana  string         `json:"hiragana"`
-	Spanish   string         `json:"spanish"`
-	Type      map[string]int `json:"type"`
-	Group     string         `json:"group"`
-	Tags      []string       `json:"tags"`
-	Notes     string         `json:"notes"`
-	Sentences []struct {
-		Sentence    string `json:"sentence"`
-		Translation string `json:"translation"`
-	} `json:"sentences"`
+	Word      string           `json:"word"`
+	Hiragana  string           `json:"hiragana"`
+	Spanish   string           `json:"spanish"`
+	Type      map[string]int   `json:"type"`
+	Group     string           `json:"group"`
+	Tags      []string         `json:"tags"`
+	Notes     string           `json:"notes"`
+	Sentences []sentenceFields `json:"sentences"`
+}
+
+// sentenceFields is an example sentence as a Tool is sent it.
+type sentenceFields struct {
+	Sentence    string `json:"sentence"`
+	Translation string `json:"translation"`
 }
 
 // addWordTool answers japanese_add_word.
@@ -230,58 +248,212 @@ var snakeCase = regexp.MustCompile(`^[a-z0-9]+(_[a-z0-9]+)*$`)
 // checkNewWord checks fields as a new Word and returns it, or explains
 // what's wrong.
 func (s *WordsService) checkNewWord(ctx context.Context, fields wordFields) (model.Word, error) {
-	word := model.Word{
-		Word:     strings.TrimSpace(fields.Word),
-		Hiragana: strings.TrimSpace(fields.Hiragana),
-		Spanish:  strings.TrimSpace(fields.Spanish),
-		Type:     fields.Type,
-		Group:    fields.Group,
-		Tags:     utils.OrEmptyList(fields.Tags),
-		Notes:    strings.TrimSpace(fields.Notes),
+	var word model.Word
+	var err error
+	if word.Word, err = checkSpelling(fields.Word); err != nil {
+		return word, err
 	}
-	switch {
-	case word.Word == "" || utf8.RuneCountInString(word.Word) > maxSpellingLength:
-		return word, fmt.Errorf("word is required, at most %d characters", maxSpellingLength)
-	case utf8.RuneCountInString(word.Hiragana) > maxSpellingLength:
-		return word, fmt.Errorf("hiragana must be at most %d characters", maxSpellingLength)
-	case word.Spanish == "" || utf8.RuneCountInString(word.Spanish) > maxSpanishLength:
-		return word, fmt.Errorf("spanish is required, at most %d characters", maxSpanishLength)
-	case utf8.RuneCountInString(word.Notes) > maxNotesLength:
-		return word, fmt.Errorf("notes must be at most %d characters", maxNotesLength)
-	case len(word.Type) == 0:
-		return word, fmt.Errorf("type needs at least one of %s", strings.Join(wordTypes, ", "))
-	case len(word.Tags) > maxTags:
-		return word, fmt.Errorf("at most %d Word Tags", maxTags)
-	case len(fields.Sentences) > maxSentences:
-		return word, fmt.Errorf("at most %d sentences", maxSentences)
+	if word.Hiragana, err = checkReading(fields.Hiragana); err != nil {
+		return word, err
 	}
-	for kind, form := range word.Type {
-		if !slices.Contains(wordTypes, kind) {
-			return word, fmt.Errorf("type %q isn't one of %s", kind, strings.Join(wordTypes, ", "))
-		}
-		if form < 1 || form > 8 {
-			return word, fmt.Errorf("type %s is %d; the form must be 1 to 8", kind, form)
-		}
+	if word.Spanish, err = checkSpanish(fields.Spanish); err != nil {
+		return word, err
 	}
-	for _, tag := range word.Tags {
-		if !snakeCase.MatchString(tag) || len(tag) > maxTagLength {
-			return word, fmt.Errorf("Word Tag %q must be snake_case, such as usually_kana", tag)
-		}
+	if word.Type, err = checkType(fields.Type); err != nil {
+		return word, err
 	}
-	for _, sentence := range fields.Sentences {
-		sentence.Sentence, sentence.Translation = strings.TrimSpace(sentence.Sentence), strings.TrimSpace(sentence.Translation)
-		if sentence.Sentence == "" || sentence.Translation == "" ||
-			utf8.RuneCountInString(sentence.Sentence) > maxSentenceLength || utf8.RuneCountInString(sentence.Translation) > maxSentenceLength {
-			return word, fmt.Errorf("each sentence needs its translation, each at most %d characters", maxSentenceLength)
-		}
-		word.Sentences = append(word.Sentences, model.Sentence(sentence))
+	if word.Tags, err = checkTags(fields.Tags); err != nil {
+		return word, err
 	}
+	if word.Notes, err = checkNotes(fields.Notes); err != nil {
+		return word, err
+	}
+	if word.Sentences, err = checkSentences(fields.Sentences); err != nil {
+		return word, err
+	}
+	word.Group = fields.Group
 	if _, err := s.groups.GetOneByKey(ctx, word.Group); errors.Is(err, coreutils.ErrNotFound) {
 		return word, fmt.Errorf("%q isn't a stored Group", word.Group)
 	} else if err != nil {
 		return word, err
 	}
 	return word, nil
+}
+
+// The checks below each check one field as sent, and return it as stored.
+
+func checkSpelling(spelling string) (string, error) {
+	spelling = strings.TrimSpace(spelling)
+	if spelling == "" || utf8.RuneCountInString(spelling) > maxSpellingLength {
+		return "", fmt.Errorf("word is required, at most %d characters", maxSpellingLength)
+	}
+	return spelling, nil
+}
+
+func checkReading(reading string) (string, error) {
+	reading = strings.TrimSpace(reading)
+	if utf8.RuneCountInString(reading) > maxSpellingLength {
+		return "", fmt.Errorf("hiragana must be at most %d characters", maxSpellingLength)
+	}
+	return reading, nil
+}
+
+func checkSpanish(spanish string) (string, error) {
+	spanish = strings.TrimSpace(spanish)
+	if spanish == "" || utf8.RuneCountInString(spanish) > maxSpanishLength {
+		return "", fmt.Errorf("spanish is required, at most %d characters", maxSpanishLength)
+	}
+	return spanish, nil
+}
+
+func checkNotes(notes string) (string, error) {
+	notes = strings.TrimSpace(notes)
+	if utf8.RuneCountInString(notes) > maxNotesLength {
+		return "", fmt.Errorf("notes must be at most %d characters", maxNotesLength)
+	}
+	return notes, nil
+}
+
+func checkType(partsOfSpeech map[string]int) (map[string]int, error) {
+	if len(partsOfSpeech) == 0 {
+		return nil, fmt.Errorf("type needs at least one of %s", strings.Join(wordTypes, ", "))
+	}
+	for kind, form := range partsOfSpeech {
+		if !slices.Contains(wordTypes, kind) {
+			return nil, fmt.Errorf("type %q isn't one of %s", kind, strings.Join(wordTypes, ", "))
+		}
+		if form < 1 || form > 8 {
+			return nil, fmt.Errorf("type %s is %d; the form must be 1 to 8", kind, form)
+		}
+	}
+	return partsOfSpeech, nil
+}
+
+func checkTags(tags []string) ([]string, error) {
+	tags = utils.OrEmptyList(tags)
+	if len(tags) > maxTags {
+		return nil, fmt.Errorf("at most %d Word Tags", maxTags)
+	}
+	for _, tag := range tags {
+		if !snakeCase.MatchString(tag) || len(tag) > maxTagLength {
+			return nil, fmt.Errorf("Word Tag %q must be snake_case, such as usually_kana", tag)
+		}
+	}
+	return tags, nil
+}
+
+func checkSentences(sent []sentenceFields) ([]model.Sentence, error) {
+	if len(sent) > maxSentences {
+		return nil, fmt.Errorf("at most %d sentences", maxSentences)
+	}
+	sentences := []model.Sentence{}
+	for _, s := range sent {
+		s.Sentence, s.Translation = strings.TrimSpace(s.Sentence), strings.TrimSpace(s.Translation)
+		if s.Sentence == "" || s.Translation == "" ||
+			utf8.RuneCountInString(s.Sentence) > maxSentenceLength || utf8.RuneCountInString(s.Translation) > maxSentenceLength {
+			return nil, fmt.Errorf("each sentence needs its translation, each at most %d characters", maxSentenceLength)
+		}
+		sentences = append(sentences, model.Sentence(s))
+	}
+	return sentences, nil
+}
+
+// updatable are the fields japanese_update_word changes.
+var updatable = []string{"word", "hiragana", "spanish", "type", "tags", "notes", "sentences"}
+
+// updateWordTool answers japanese_update_word with the Word as it is now.
+func (s *WordsService) updateWordTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var given map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &given); err != nil {
+		return nil, err
+	}
+	var id string
+	if err := json.Unmarshal(given["id"], &id); err != nil || id == "" {
+		return nil, errors.New("id is required")
+	}
+	delete(given, "id")
+	if _, ok := given["group"]; ok {
+		return nil, errors.New("a Word's Group is changed with japanese_change_group")
+	}
+	for field := range given {
+		if !slices.Contains(updatable, field) {
+			return nil, fmt.Errorf("%q isn't a field japanese_update_word changes: only %s; Word Links and Hints have their own Tools",
+				field, strings.Join(updatable, ", "))
+		}
+	}
+	if len(given) == 0 {
+		return nil, fmt.Errorf("give at least one of %s to change", strings.Join(updatable, ", "))
+	}
+	var fields wordFields
+	if err := json.Unmarshal(arguments, &fields); err != nil {
+		return nil, err
+	}
+	changes, err := checkChanges(given, fields)
+	if err != nil {
+		return nil, err
+	}
+	err = s.words.Update(ctx, id, changes)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return nil, fmt.Errorf("there's no Word with id %s", id)
+	}
+	if errors.Is(err, model.ErrWordExists) {
+		return nil, errors.New("another Word already has that spelling and reading: merge them with japanese_merge_words instead")
+	}
+	if err != nil {
+		return nil, err
+	}
+	word, err := s.words.GetOneByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.wordJSON(ctx, word)
+}
+
+// checkChanges checks only the fields given and returns them as changes.
+func checkChanges(given map[string]json.RawMessage, fields wordFields) (model.WordChanges, error) {
+	var changes model.WordChanges
+	sent := func(field string) bool { _, ok := given[field]; return ok }
+	check := func(field string, value string, check func(string) (string, error), into **string) error {
+		if !sent(field) {
+			return nil
+		}
+		checked, err := check(value)
+		*into = &checked
+		return err
+	}
+	if err := check("word", fields.Word, checkSpelling, &changes.Word); err != nil {
+		return changes, err
+	}
+	if err := check("hiragana", fields.Hiragana, checkReading, &changes.Hiragana); err != nil {
+		return changes, err
+	}
+	if err := check("spanish", fields.Spanish, checkSpanish, &changes.Spanish); err != nil {
+		return changes, err
+	}
+	if err := check("notes", fields.Notes, checkNotes, &changes.Notes); err != nil {
+		return changes, err
+	}
+	var err error
+	if sent("type") {
+		if changes.Type, err = checkType(fields.Type); err != nil {
+			return changes, err
+		}
+	}
+	if sent("tags") {
+		tags, err := checkTags(fields.Tags)
+		if err != nil {
+			return changes, err
+		}
+		changes.Tags = &tags
+	}
+	if sent("sentences") {
+		sentences, err := checkSentences(fields.Sentences)
+		if err != nil {
+			return changes, err
+		}
+		changes.Sentences = &sentences
+	}
+	return changes, nil
 }
 
 // listTagsTool answers japanese_list_tags.
