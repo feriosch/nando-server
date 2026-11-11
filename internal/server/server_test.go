@@ -42,7 +42,7 @@ func TestAllowedOriginMayCallWithCredentials(t *testing.T) {
 	}
 }
 
-func TestAllowedOriginMayReadADownloadsFileName(t *testing.T) {
+func TestAllowedOriginMayReadTheFileNameOfADownload(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	req.Header.Set("Origin", "https://web.example.com")
 	rec := httptest.NewRecorder()

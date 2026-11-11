@@ -5,7 +5,7 @@ Settings and body measurements: the Owner Time Zone, height and Weigh-ins ([ADR 
 Notifications: Push Subscriptions, the push messages Core sends, and the scheduler's tick ([ADR 0001](../../docs/adr/0001-cloud-run-hosting.md)).
 Connectors: Nando as its own OAuth 2.1 authorization server, the consent page's calls, the Tools at `/mcp`, and the Owner's list of Connectors ([ADR 0004](../../docs/adr/0004-connectors-over-oauth.md)).
 
-The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors are a status code with a short plain-text message.
+The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors are a status code with a short plain-text message. Answers to the origins in `ALLOWED_ORIGINS` expose `Content-Disposition` (`Access-Control-Expose-Headers`), which a browser otherwise hides from another origin, so the web app can name a file it downloads, such as the JLPT deck.
 
 ## Signing in
 

@@ -62,8 +62,6 @@ func cors(allowedOrigins []string, next http.Handler) http.Handler {
 		if origin := r.Header.Get("Origin"); slices.Contains(allowedOrigins, origin) {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			// So the web app can read a download's file name, such as the JLPT deck's.
-			w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition")
 			if r.Method == http.MethodOptions && r.Header.Get("Access-Control-Request-Method") != "" {
 				w.Header().Add("Vary", "Access-Control-Request-Method")
 				w.Header().Add("Vary", "Access-Control-Request-Headers")
@@ -73,6 +71,8 @@ func cors(allowedOrigins []string, next http.Handler) http.Handler {
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
+			// So the web app can read a download's file name, such as the JLPT deck's.
+			w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition")
 		}
 		next.ServeHTTP(w, r)
 	})

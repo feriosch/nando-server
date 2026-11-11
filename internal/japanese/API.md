@@ -150,7 +150,7 @@ The Owner studies their Words in Anki. A deck file fills the Owner's note type, 
 
 ### `GET /api/japanese/anki/jlpt.csv`
 
-`200`: the JLPT deck, as a CSV file to import into Anki, served as `text/csv; charset=utf-8` with `Content-Disposition: attachment; filename="jlpt-<YYYY-MM-DD>.csv"`, dated today in the Owner Time Zone. The name ends in `.csv` so AnkiMobile offers to open it. Every response exposes `Content-Disposition` to the origins in `ALLOWED_ORIGINS` (`Access-Control-Expose-Headers`), so the web app can name the file it saves.
+`200`: the JLPT deck, as a CSV file to import into Anki, served as `text/csv; charset=utf-8` with `Content-Disposition: attachment; filename="jlpt-<YYYY-MM-DD>.csv"`, dated today in the Owner Time Zone. The name ends in `.csv` so AnkiMobile offers to open it. The web app can read that name from another origin (see [Core's API](../core/API.md)).
 
 It starts with header lines that set up Anki's import screen:
 
