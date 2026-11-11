@@ -124,6 +124,14 @@ _Avoid_: Character, glyph
 One of the shapes a Kanji is written with, such as 氵 in 海: either a Kanji itself or an irregular shape that isn't one.
 _Avoid_: Part (that is an Expression's)
 
+**Drawing**:
+A kanji the Owner draws by finger, stroke by stroke, to find out which one it is, usually because they can't type or read it.
+_Avoid_: Sketch, handwriting, canvas, image
+
+**Candidate**:
+One of the up to 8 kanji recognised for a Drawing, best guess first. A Candidate may be a stored Kanji or one the Owner hasn't studied.
+_Avoid_: Result, prediction, match, suggestion
+
 ## Body
 
 Measurements of the Owner, kept in Core so that any Module can read them.
