@@ -261,6 +261,29 @@ func (r words) Update(ctx context.Context, id string, changes model.WordChanges)
 	return coreutils.Matched(res, err)
 }
 
+func (r words) AddWordLinkSide(ctx context.Context, id string, side model.WordLink) (bool, error) {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return false, coreutils.ErrNotFound
+	}
+	other, err := bson.ObjectIDFromHex(side.WordID)
+	if err != nil {
+		return false, coreutils.ErrNotFound
+	}
+	filter := bson.D{{Key: "_id", Value: oid}, {Key: "related.wordId", Value: bson.D{{Key: "$ne", Value: other}}}}
+	push := bson.D{{Key: "$push", Value: bson.D{{Key: "related", Value: bson.D{
+		{Key: "wordId", Value: other},
+		{Key: "type", Value: side.Kind},
+		{Key: "note", Value: side.Note},
+		{Key: "tags", Value: side.NuanceTags},
+	}}}}}
+	res, err := r.collection.UpdateOne(ctx, filter, push)
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
+}
+
 func (r words) GetManyBySpellingOrReading(ctx context.Context, text string) ([]model.Word, error) {
 	filter := bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "word", Value: text}}, bson.D{{Key: "hiragana", Value: text}}}}}
 	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))

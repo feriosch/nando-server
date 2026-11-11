@@ -187,7 +187,94 @@ func (s *WordsService) Tools() []coremodel.Tool {
 			`"sentence":{"type":"string"},"translation":{"type":"string"}},"required":["sentence","translation"]}}},` +
 			`"required":["id"]}`),
 		Handle: s.updateWordTool,
+	}, {
+		Name: "japanese_add_word_link",
+		Description: "Links two stored Words both ways. from gets a side about to: kind (synonym, antonym or related), " +
+			"note (in English: how the to Word differs from the from Word, no JLPT level) and nuanceTags " +
+			"(how the to Word is used compared with the from Word, such as formal, written, rare, expression, part). " +
+			"to gets the way back automatically, with noteBack (the same note if left out) and the opposite Nuance Tags: " +
+			"formal and casual, spoken and written, expression and part swap; others stay. " +
+			"A side is skipped if that Word already links to the other; change it with japanese_update_word_link. " +
+			"Answers {\"fromSideWritten\", \"backSideWritten\"}.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"from":{"type":"string","description":"A Word's id."},"to":{"type":"string","description":"The other Word's id."},` +
+			`"kind":{"type":"string","enum":["synonym","antonym","related"]},` +
+			`"note":{"type":"string"},"nuanceTags":{"type":"array","items":{"type":"string"}},` +
+			`"noteBack":{"type":"string","description":"The way back's note, about the from Word."}},` +
+			`"required":["from","to","kind"]}`),
+		Handle: s.addWordLinkTool,
 	}}
+}
+
+// wordLinkKinds are the kinds a Word Link can be.
+var wordLinkKinds = []string{"synonym", "antonym", "related"}
+
+// oppositeNuanceTags are the Nuance Tags that swap on a Word Link's way back.
+var oppositeNuanceTags = map[string]string{
+	"formal": "casual", "casual": "formal",
+	"spoken": "written", "written": "spoken",
+	"expression": "part", "part": "expression",
+}
+
+// addWordLinkTool answers japanese_add_word_link.
+func (s *WordsService) addWordLinkTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		From       string   `json:"from"`
+		To         string   `json:"to"`
+		Kind       string   `json:"kind"`
+		Note       string   `json:"note"`
+		NuanceTags []string `json:"nuanceTags"`
+		NoteBack   *string  `json:"noteBack"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	switch {
+	case args.From == "" || args.To == "":
+		return nil, errors.New("from and to are required")
+	case args.From == args.To:
+		return nil, errors.New("a Word can't be linked to itself")
+	case !slices.Contains(wordLinkKinds, args.Kind):
+		return nil, fmt.Errorf("kind must be one of %s", strings.Join(wordLinkKinds, ", "))
+	}
+	note, err := checkNotes(args.Note)
+	if err != nil {
+		return nil, err
+	}
+	noteBack := note
+	if args.NoteBack != nil {
+		if noteBack, err = checkNotes(*args.NoteBack); err != nil {
+			return nil, err
+		}
+	}
+	nuanceTags, err := checkTags(args.NuanceTags)
+	if err != nil {
+		return nil, err
+	}
+	stored, err := s.words.GetManyByIDs(ctx, []string{args.From, args.To})
+	if err != nil {
+		return nil, err
+	}
+	if len(stored) != 2 {
+		return nil, errors.New("from and to must both be stored Words' ids")
+	}
+	backTags := make([]string, len(nuanceTags))
+	for i, tag := range nuanceTags {
+		backTags[i] = tag
+		if opposite, ok := oppositeNuanceTags[tag]; ok {
+			backTags[i] = opposite
+		}
+	}
+	var written model.WordLinkWrittenJSON
+	if written.FromSideWritten, err = s.words.AddWordLinkSide(ctx, args.From,
+		model.WordLink{WordID: args.To, Kind: args.Kind, Note: note, NuanceTags: nuanceTags}); err != nil {
+		return nil, err
+	}
+	if written.BackSideWritten, err = s.words.AddWordLinkSide(ctx, args.To,
+		model.WordLink{WordID: args.From, Kind: args.Kind, Note: noteBack, NuanceTags: backTags}); err != nil {
+		return nil, err
+	}
+	return written, nil
 }
 
 // wordFields are a Word's own fields as a Tool is sent them.

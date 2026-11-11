@@ -97,6 +97,10 @@ type WordsRepository interface {
 	// returns Core's utils.ErrNotFound. It returns ErrWordExists if the new
 	// spelling and reading are another Word's.
 	Update(ctx context.Context, id string, changes WordChanges) error
+	// AddWordLinkSide adds side to the Word with id, unless that Word already
+	// has a side of a Word Link to side's other Word, checked inside the
+	// write. It reports whether it added it.
+	AddWordLinkSide(ctx context.Context, id string, side WordLink) (bool, error)
 	// GetManyBySpellingOrReading returns every Word spelled text or read as
 	// text, oldest first, with all its fields.
 	GetManyBySpellingOrReading(ctx context.Context, text string) ([]Word, error)
@@ -139,6 +143,14 @@ type TagsJSON struct {
 type TagCountJSON struct {
 	Tag   string `json:"tag"`
 	Count int    `json:"count"`
+}
+
+// WordLinkWrittenJSON is what japanese_add_word_link answers: which sides
+// of the Word Link it wrote. A side is skipped when that Word already links
+// to the other.
+type WordLinkWrittenJSON struct {
+	FromSideWritten bool `json:"fromSideWritten"`
+	BackSideWritten bool `json:"backSideWritten"`
 }
 
 // WordsJSON is the Words a Tool found, such as every Word with a spelling

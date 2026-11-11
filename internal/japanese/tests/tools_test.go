@@ -455,3 +455,112 @@ func TestAnUpdateThatCantBeMadeIsRefused(t *testing.T) {
 		t.Errorf("the Word after refused updates = %+v, want it unchanged", got)
 	}
 }
+
+// linkedJSON is what japanese_add_word_link answers: which sides it wrote.
+type linkedJSON struct {
+	FromSideWritten bool `json:"fromSideWritten"`
+	BackSideWritten bool `json:"backSideWritten"`
+}
+
+// wordLinksOf is the Word Links on a Word's page.
+func wordLinksOf(phone *browser, wordID string) []wordLinkJSON {
+	return get[wordJSON](phone, "/api/japanese/words/"+wordID).WordLinks
+}
+
+// rowOf is a Word as a Word Link shows it.
+func rowOf(w bson.M) wordRowJSON {
+	return wordRowJSON{ID: id(w), Word: w["word"].(string), Hiragana: ptr(w["hiragana"].(string)), Spanish: w["spanish"].(string), Group: w["group"].(string)}
+}
+
+func TestAConnectorLinksTwoWordsBothWaysWithSwappedNuanceTags(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	whispering := word("囁く", "ささやく", "susurrar", "jlpt_n2")
+	murmur := word("呟く", "つぶやく", "murmurar", "jlpt_n2")
+	n.store("words", whispering, murmur)
+	session := phone.connect()
+
+	got := callTool[linkedJSON](t, session, "japanese_add_word_link", map[string]any{
+		"from": id(whispering), "to": id(murmur), "kind": "related",
+		"note": "Said to oneself, not to someone.", "nuanceTags": []string{"spoken", "formal", "rare"},
+	})
+
+	if !got.FromSideWritten || !got.BackSideWritten {
+		t.Errorf("sides written = %+v, want both", got)
+	}
+	if want := []wordLinkJSON{{Kind: "related", Note: ptr("Said to oneself, not to someone."), NuanceTags: []string{"spoken", "formal", "rare"}, Word: rowOf(murmur)}}; !reflect.DeepEqual(wordLinksOf(phone, id(whispering)), want) {
+		t.Errorf("囁く's Word Links = %+v,\nwant %+v", wordLinksOf(phone, id(whispering)), want)
+	}
+	// The way back has the same note and the opposite Nuance Tags.
+	if want := []wordLinkJSON{{Kind: "related", Note: ptr("Said to oneself, not to someone."), NuanceTags: []string{"written", "casual", "rare"}, Word: rowOf(whispering)}}; !reflect.DeepEqual(wordLinksOf(phone, id(murmur)), want) {
+		t.Errorf("呟く's Word Links = %+v,\nwant %+v", wordLinksOf(phone, id(murmur)), want)
+	}
+}
+
+func TestAnExpressionAndItsPartSwapTheirNuanceTagsWithTheirOwnNotes(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	turn := word("身を翻す", "みをひるがえす", "girar el cuerpo", "gaming")
+	body := word("身", "み", "cuerpo", "basic")
+	n.store("words", turn, body)
+	session := phone.connect()
+
+	callTool[linkedJSON](t, session, "japanese_add_word_link", map[string]any{
+		"from": id(turn), "to": id(body), "kind": "related",
+		"note": "The body; this expression is about it turning.", "nuanceTags": []string{"part"},
+		"noteBack": "Expression: turn the body quickly, to dodge or leave.",
+	})
+
+	if got := wordLinksOf(phone, id(turn)); len(got) != 1 || !reflect.DeepEqual(got[0].NuanceTags, []string{"part"}) || *got[0].Note != "The body; this expression is about it turning." {
+		t.Errorf("身を翻す's Word Links = %+v, want 身 tagged part", got)
+	}
+	if got := wordLinksOf(phone, id(body)); len(got) != 1 || !reflect.DeepEqual(got[0].NuanceTags, []string{"expression"}) || *got[0].Note != "Expression: turn the body quickly, to dodge or leave." {
+		t.Errorf("身's Word Links = %+v, want 身を翻す tagged expression with its own note", got)
+	}
+}
+
+func TestASideThatAlreadyExistsIsSkipped(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	hope := word("希望", "きぼう", "esperanza", "basic")
+	expect := word("期待", "きたい", "expectativa", "jlpt_n2")
+	expect["related"] = bson.A{bson.M{"wordId": hope["_id"], "type": "synonym", "note": "Already here.", "tags": bson.A{}}}
+	n.store("words", expect, hope)
+	session := phone.connect()
+	link := map[string]any{"from": id(expect), "to": id(hope), "kind": "related", "note": "New note.", "nuanceTags": []string{"written"}}
+
+	first := callTool[linkedJSON](t, session, "japanese_add_word_link", link)
+	again := callTool[linkedJSON](t, session, "japanese_add_word_link", link)
+
+	if first.FromSideWritten || !first.BackSideWritten {
+		t.Errorf("first link: sides written = %+v, want only the way back", first)
+	}
+	if again.FromSideWritten || again.BackSideWritten {
+		t.Errorf("linking again: sides written = %+v, want none", again)
+	}
+	if got := wordLinksOf(phone, id(expect)); len(got) != 1 || got[0].Kind != "synonym" || *got[0].Note != "Already here." {
+		t.Errorf("期待's Word Links = %+v, want only its own synonym side, unchanged", got)
+	}
+	if got := wordLinksOf(phone, id(hope)); len(got) != 1 || got[0].Kind != "related" || !reflect.DeepEqual(got[0].NuanceTags, []string{"spoken"}) {
+		t.Errorf("希望's Word Links = %+v, want one related side back, tagged spoken", got)
+	}
+}
+
+func TestAWordLinkThatCantBeMadeIsRefused(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	whispering := word("囁く", "ささやく", "susurrar", "jlpt_n2")
+	murmur := word("呟く", "つぶやく", "murmurar", "jlpt_n2")
+	n.store("words", whispering, murmur)
+	session := phone.connect()
+	link := map[string]any{"from": id(whispering), "to": id(murmur), "kind": "synonym", "note": "", "nuanceTags": []string{}}
+
+	for name, args := range map[string]map[string]any{
+		"an unknown Word":  with(link, "to", "6af05d493ea403a78bf5997b"),
+		"no from":          with(link, "from", nil),
+		"a link to itself": with(link, "to", id(whispering)),
+		"an unknown kind":  with(link, "kind", "similar"),
+		"a camelCase tag":  with(link, "nuanceTags", []string{"moreFormal"}),
+	} {
+		t.Run(name, func(t *testing.T) { toolFails(t, session, "japanese_add_word_link", args) })
+	}
+	if got := wordLinksOf(phone, id(whispering)); len(got) != 0 {
+		t.Errorf("囁く's Word Links after refused links = %+v, want none", got)
+	}
+}
