@@ -58,6 +58,9 @@ type WordsRepository interface {
 	// matches, then shorter ones, then longer ones. Only what a search result
 	// shows is filled in: ID, Word, Hiragana, Spanish and Group.
 	GetManyBySearch(ctx context.Context, q string, limit int) ([]Word, error)
+	// GetManyBySearchIn is GetManyBySearch over one field only: "word" for
+	// the spelling, or "spanish" for the Spanish meaning.
+	GetManyBySearchIn(ctx context.Context, q, field string, limit int) ([]Word, error)
 	// GetOneByID returns the Word with this ID, or Core's utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (Word, error)
 	// GetManyBySpellingOrReading returns every Word spelled text or read as

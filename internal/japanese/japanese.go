@@ -10,6 +10,7 @@ package japanese
 
 import (
 	"net/http"
+	"slices"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
@@ -50,7 +51,7 @@ func (m *Module) ToolProvider() coremodel.ToolProvider {
 type toolProvider struct{ m *Module }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return p.m.words.Tools()
+	return slices.Concat(p.m.words.Tools(), p.m.search.Tools())
 }
 
 // Routes adds the Module's routes to mux, all under /api/japanese/.

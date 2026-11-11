@@ -73,8 +73,17 @@ func (d wordDocument) toWord() model.Word {
 }
 
 func (r words) GetManyBySearch(ctx context.Context, q string, limit int) ([]model.Word, error) {
+	return r.search(ctx, q, []string{"word", "hiragana", "spanish"}, limit)
+}
+
+func (r words) GetManyBySearchIn(ctx context.Context, q, field string, limit int) ([]model.Word, error) {
+	return r.search(ctx, q, []string{field}, limit)
+}
+
+// search returns up to limit Words in which any of fields contains q, ranked
+// as GetManyBySearch says.
+func (r words) search(ctx context.Context, q string, fields []string, limit int) ([]model.Word, error) {
 	pattern := utils.SearchPattern(q)
-	fields := []string{"word", "hiragana", "spanish"}
 	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: utils.MatchesAny(pattern, fields...)}},
 		{{Key: "$addFields", Value: bson.D{

@@ -80,3 +80,68 @@ func TestAConnectorGetsAWordByIDSpellingOrReading(t *testing.T) {
 		t.Errorf("japanese_get_word for a Word that isn't stored = %+v, want words: []", got)
 	}
 }
+
+// spellingsOf is the spelling of each Word a search found, in order.
+func spellingsOf(found searchJSON) []string { return spellings(found.Words) }
+
+func TestAConnectorSearchesAsTheSearchScreenDoes(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	foot := word("足", "あし", "pie, pierna", "basic")
+	n.store("words", foot, word("足跡", "あしあと", "huella", "jlpt_n2"), word("明日", "あした", "mañana", "basic"))
+	n.store("kanji", kanji("足", "pie", 51))
+	session := phone.connect()
+
+	got := callTool[searchJSON](t, session, "japanese_search", map[string]any{"q": "あし"})
+	want := get[searchJSON](phone, "/api/japanese/search?q=%E3%81%82%E3%81%97")
+
+	if !reflect.DeepEqual(got, want) || len(got.Words) != 3 {
+		t.Errorf("japanese_search あし = %+v,\nwant the search screen's %+v", got, want)
+	}
+}
+
+func TestAConnectorSearchesOneFieldForWordLinkCandidates(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("words",
+		word("足", "あし", "pie, pierna", "basic"),
+		word("足跡", "あしあと", "huella", "jlpt_n2"),
+		word("満足", "まんぞく", "satisfacción", "jlpt_n3"),
+		word("歩く", "あるく", "caminar, ir a pie", "basic"),
+		word("明日", "あした", "mañana", "basic"),
+	)
+	n.store("kanji", kanji("足", "pie", 51))
+	session := phone.connect()
+
+	for _, tc := range []struct {
+		q, in string
+		want  []string
+	}{
+		// Words whose spelling contains the Kanji 足, exact first, then shorter.
+		{"足", "spelling", []string{"足", "満足", "足跡"}},
+		// A reading isn't a spelling.
+		{"あし", "spelling", []string{}},
+		// Words whose Spanish meaning contains "pie", ignoring accents and case.
+		{"PIE", "spanish", []string{"足", "歩く"}},
+		{"satisfaccion", "spanish", []string{"満足"}},
+	} {
+		got := callTool[searchJSON](t, session, "japanese_search", map[string]any{"q": tc.q, "in": tc.in})
+		if !reflect.DeepEqual(spellingsOf(got), tc.want) || len(got.Kanji) != 0 {
+			t.Errorf("japanese_search %q in %s = %q and Kanji %+v, want %q and no Kanji", tc.q, tc.in, spellingsOf(got), got.Kanji, tc.want)
+		}
+	}
+}
+
+func TestASearchWithoutWhatToFindIsRefused(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.connect()
+
+	for name, args := range map[string]map[string]any{
+		"no q":          {},
+		"blank q":       {"q": "  "},
+		"unknown field": {"q": "足", "in": "notes"},
+	} {
+		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "japanese_search", Arguments: args})
+		if err != nil || !result.IsError {
+			t.Errorf("japanese_search with %s: %v, %+v; want the Tool to fail", name, err, result)
+		}
+	}
+}
