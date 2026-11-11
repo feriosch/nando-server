@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -13,9 +14,20 @@ import (
 	"github.com/feriosch/nando-server/internal/japanese/utils"
 )
 
-// NewWords returns the WordsRepository over the words collection in db.
-func NewWords(db *mongo.Database) model.WordsRepository {
-	return words{collection: db.Collection("words")}
+// NewWords returns the WordsRepository over the words collection in db,
+// first creating any indexes it lacks.
+func NewWords(ctx context.Context, db *mongo.Database) (model.WordsRepository, error) {
+	collection := db.Collection("words")
+	// One Word per spelling and reading. A kana Word has no hiragana field,
+	// which the index takes as null, so kana Words are unique by spelling.
+	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "word", Value: 1}, {Key: "hiragana", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("spelling_reading"),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return words{collection: collection}, nil
 }
 
 // words is the words collection.
@@ -73,8 +85,24 @@ func (d wordDocument) toWord() model.Word {
 }
 
 func (r words) GetManyBySearch(ctx context.Context, q string, limit int) ([]model.Word, error) {
+	return r.search(ctx, q, []string{"word", "hiragana", "spanish"}, limit)
+}
+
+// searchedFields are the stored fields each WordField is.
+var searchedFields = map[model.WordField]string{model.SpellingField: "word", model.SpanishField: "spanish"}
+
+func (r words) GetManyBySearchIn(ctx context.Context, q string, field model.WordField, limit int) ([]model.Word, error) {
+	stored, ok := searchedFields[field]
+	if !ok {
+		return nil, fmt.Errorf("a search can't look in %q alone", field)
+	}
+	return r.search(ctx, q, []string{stored}, limit)
+}
+
+// search returns up to limit Words in which any of fields contains q, ranked
+// as GetManyBySearch says.
+func (r words) search(ctx context.Context, q string, fields []string, limit int) ([]model.Word, error) {
 	pattern := utils.SearchPattern(q)
-	fields := []string{"word", "hiragana", "spanish"}
 	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
 		{{Key: "$match", Value: utils.MatchesAny(pattern, fields...)}},
 		{{Key: "$addFields", Value: bson.D{
@@ -108,15 +136,327 @@ func toWords(ctx context.Context, cursor *mongo.Cursor) ([]model.Word, error) {
 var rowFields = bson.D{{Key: "word", Value: 1}, {Key: "hiragana", Value: 1}, {Key: "spanish", Value: 1}, {Key: "group", Value: 1}}
 
 func (r words) GetOneByID(ctx context.Context, id string) (model.Word, error) {
-	oid, err := bson.ObjectIDFromHex(id)
+	oid, err := objectID(id)
 	if err != nil {
-		return model.Word{}, coreutils.ErrNotFound
+		return model.Word{}, err
 	}
 	var d wordDocument
 	if err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: oid}}).Decode(&d); err != nil {
 		return model.Word{}, coreutils.NotFound(err)
 	}
 	return d.toWord(), nil
+}
+
+func (r words) CountTags(ctx context.Context) (wordTags, nuanceTags []model.TagCount, err error) {
+	if wordTags, err = r.countTags(ctx, mongo.Pipeline{
+		{{Key: "$unwind", Value: "$tags"}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$tags"}, {Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}}}}},
+	}); err != nil {
+		return nil, nil, err
+	}
+	// Only Word Links: a Hint has no wordId, and no Nuance Tags in Nando.
+	nuanceTags, err = r.countTags(ctx, mongo.Pipeline{
+		{{Key: "$unwind", Value: "$related"}},
+		{{Key: "$match", Value: bson.D{{Key: "related.wordId", Value: bson.D{{Key: "$type", Value: "objectId"}}}}}},
+		{{Key: "$unwind", Value: "$related.tags"}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$related.tags"}, {Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}}}}},
+	})
+	return wordTags, nuanceTags, err
+}
+
+// countTags runs pipeline, which groups tags as {_id: tag, count}, and
+// returns them most used first, then alphabetically.
+func (r words) countTags(ctx context.Context, pipeline mongo.Pipeline) ([]model.TagCount, error) {
+	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}, {Key: "_id", Value: 1}}}})
+	cursor, err := r.collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	var docs []struct {
+		Tag   string `bson:"_id"`
+		Count int    `bson:"count"`
+	}
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	counts := make([]model.TagCount, len(docs))
+	for i, d := range docs {
+		counts[i] = model.TagCount(d)
+	}
+	return counts, nil
+}
+
+func (r words) Insert(ctx context.Context, word model.Word) (string, error) {
+	id := bson.NewObjectID()
+	doc := bson.D{{Key: "_id", Value: id}, {Key: "word", Value: word.Word}}
+	// Stored as benkyo stored them: no hiragana for a kana Word, no notes when
+	// there are none.
+	if word.Hiragana != "" {
+		doc = append(doc, bson.E{Key: "hiragana", Value: word.Hiragana})
+	}
+	doc = append(doc,
+		bson.E{Key: "spanish", Value: word.Spanish},
+		bson.E{Key: "type", Value: word.Type},
+		bson.E{Key: "group", Value: word.Group},
+		bson.E{Key: "tags", Value: word.Tags},
+	)
+	if word.Notes != "" {
+		doc = append(doc, bson.E{Key: "notes", Value: word.Notes})
+	}
+	doc = append(doc, bson.E{Key: "sentences", Value: sentencesBSON(word.Sentences)}, bson.E{Key: "related", Value: bson.A{}})
+	if _, err := r.collection.InsertOne(ctx, doc); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return "", model.ErrWordExists
+		}
+		return "", err
+	}
+	return id.Hex(), nil
+}
+
+func (r words) Update(ctx context.Context, id string, changes model.WordChanges) error {
+	oid, err := objectID(id)
+	if err != nil {
+		return err
+	}
+	set, unset := bson.D{}, bson.D{}
+	// setOrUnset sets field to value, or removes it if value is "", as benkyo
+	// stored a kana Word with no hiragana and a Word without notes.
+	setOrUnset := func(field string, value *string) {
+		switch {
+		case value == nil:
+		case *value == "":
+			unset = append(unset, bson.E{Key: field, Value: ""})
+		default:
+			set = append(set, bson.E{Key: field, Value: *value})
+		}
+	}
+	if changes.Word != nil {
+		set = append(set, bson.E{Key: "word", Value: *changes.Word})
+	}
+	setOrUnset("hiragana", changes.Hiragana)
+	if changes.Spanish != nil {
+		set = append(set, bson.E{Key: "spanish", Value: *changes.Spanish})
+	}
+	if changes.Type != nil {
+		set = append(set, bson.E{Key: "type", Value: changes.Type})
+	}
+	if changes.Tags != nil {
+		set = append(set, bson.E{Key: "tags", Value: *changes.Tags})
+	}
+	setOrUnset("notes", changes.Notes)
+	if changes.Sentences != nil {
+		set = append(set, bson.E{Key: "sentences", Value: sentencesBSON(*changes.Sentences)})
+	}
+	update := bson.D{}
+	if len(set) > 0 {
+		update = append(update, bson.E{Key: "$set", Value: set})
+	}
+	if len(unset) > 0 {
+		update = append(update, bson.E{Key: "$unset", Value: unset})
+	}
+	res, err := r.collection.UpdateByID(ctx, oid, update)
+	if mongo.IsDuplicateKeyError(err) {
+		return model.ErrWordExists
+	}
+	return coreutils.Matched(res, err)
+}
+
+func (r words) AddWordLinkSide(ctx context.Context, id string, side model.WordLink) (bool, error) {
+	oid, err := objectID(id)
+	if err != nil {
+		return false, err
+	}
+	other, err := objectID(side.WordID)
+	if err != nil {
+		return false, err
+	}
+	filter := bson.D{{Key: "_id", Value: oid}, {Key: "related.wordId", Value: bson.D{{Key: "$ne", Value: other}}}}
+	push := bson.D{{Key: "$push", Value: bson.D{{Key: "related", Value: bson.D{
+		{Key: "wordId", Value: other},
+		{Key: "type", Value: side.Kind},
+		{Key: "note", Value: side.Note},
+		{Key: "tags", Value: side.NuanceTags},
+	}}}}}
+	res, err := r.collection.UpdateOne(ctx, filter, push)
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
+}
+
+func (r words) UpdateWordLinkSide(ctx context.Context, id, otherID string, changes model.WordLinkChanges) error {
+	oid, other, err := objectIDs(id, otherID)
+	if err != nil {
+		return err
+	}
+	set := bson.D{}
+	if changes.Kind != nil {
+		set = append(set, bson.E{Key: "related.$[side].type", Value: *changes.Kind})
+	}
+	if changes.Note != nil {
+		set = append(set, bson.E{Key: "related.$[side].note", Value: *changes.Note})
+	}
+	if changes.NuanceTags != nil {
+		set = append(set, bson.E{Key: "related.$[side].tags", Value: *changes.NuanceTags})
+	}
+	res, err := r.collection.UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: oid}, {Key: "related.wordId", Value: other}},
+		bson.D{{Key: "$set", Value: set}},
+		options.UpdateOne().SetArrayFilters([]any{bson.D{{Key: "side.wordId", Value: other}}}),
+	)
+	return coreutils.Matched(res, err)
+}
+
+func (r words) RemoveWordLinkSide(ctx context.Context, id, otherID string) (bool, error) {
+	oid, other, err := objectIDs(id, otherID)
+	if err != nil {
+		return false, nil
+	}
+	res, err := r.collection.UpdateByID(ctx, oid, bson.D{{Key: "$pull", Value: bson.D{{Key: "related", Value: bson.D{{Key: "wordId", Value: other}}}}}})
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
+}
+
+// hintWith matches a Hint with text in related: an entry with no wordId.
+func hintWith(text string) bson.D {
+	return bson.D{{Key: "word", Value: text}, {Key: "wordId", Value: bson.D{{Key: "$exists", Value: false}}}}
+}
+
+func (r words) AddHint(ctx context.Context, id string, hint model.Hint) (bool, error) {
+	oid, err := objectID(id)
+	if err != nil {
+		return false, err
+	}
+	filter := bson.D{{Key: "_id", Value: oid}, {Key: "related", Value: bson.D{{Key: "$not", Value: bson.D{{Key: "$elemMatch", Value: hintWith(hint.Text)}}}}}}
+	// Stored as benkyo stored Hints, which the Anki export reads.
+	push := bson.D{{Key: "$push", Value: bson.D{{Key: "related", Value: bson.D{
+		{Key: "word", Value: hint.Text},
+		{Key: "type", Value: "related"},
+		{Key: "note", Value: hint.Note},
+		{Key: "tags", Value: bson.A{}},
+	}}}}}
+	res, err := r.collection.UpdateOne(ctx, filter, push)
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
+}
+
+func (r words) RemoveHint(ctx context.Context, id, text string) (bool, error) {
+	oid, err := objectID(id)
+	if err != nil {
+		return false, nil // no Word has that id, so no Hint is removed
+	}
+	res, err := r.collection.UpdateByID(ctx, oid, bson.D{{Key: "$pull", Value: bson.D{{Key: "related", Value: hintWith(text)}}}})
+	if err != nil {
+		return false, err
+	}
+	return res.ModifiedCount == 1, nil
+}
+
+func (r words) SetGroup(ctx context.Context, id, group string) error {
+	oid, err := objectID(id)
+	if err != nil {
+		return err
+	}
+	res, err := r.collection.UpdateByID(ctx, oid, bson.D{{Key: "$set", Value: bson.D{{Key: "group", Value: group}}}})
+	return coreutils.Matched(res, err)
+}
+
+// pullSideTo is an update removing a side of a Word Link to the Word with oid.
+func pullSideTo(oid bson.ObjectID) bson.D {
+	return bson.D{{Key: "$pull", Value: bson.D{{Key: "related", Value: bson.D{{Key: "wordId", Value: oid}}}}}}
+}
+
+func (r words) RemoveWordLinksTo(ctx context.Context, id string) error {
+	oid, err := objectID(id)
+	if err != nil {
+		return err
+	}
+	_, err = r.collection.UpdateMany(ctx, bson.D{{Key: "related.wordId", Value: oid}}, pullSideTo(oid))
+	return err
+}
+
+func (r words) RepointWordLinks(ctx context.Context, fromID, toID string) error {
+	from, to, err := objectIDs(fromID, toID)
+	if err != nil {
+		return err
+	}
+	// A Word with sides to both keeps its side to toID.
+	both := bson.D{{Key: "_id", Value: bson.D{{Key: "$ne", Value: to}}}, {Key: "$and", Value: bson.A{
+		bson.D{{Key: "related.wordId", Value: from}},
+		bson.D{{Key: "related.wordId", Value: to}},
+	}}}
+	if _, err := r.collection.UpdateMany(ctx, both, pullSideTo(from)); err != nil {
+		return err
+	}
+	_, err = r.collection.UpdateMany(ctx,
+		bson.D{{Key: "_id", Value: bson.D{{Key: "$ne", Value: to}}}, {Key: "related.wordId", Value: from}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "related.$[side].wordId", Value: to}}}},
+		options.UpdateMany().SetArrayFilters([]any{bson.D{{Key: "side.wordId", Value: from}}}),
+	)
+	if err != nil {
+		return err
+	}
+	_, err = r.collection.UpdateByID(ctx, to, pullSideTo(from))
+	return err
+}
+
+func (r words) Delete(ctx context.Context, id string) error {
+	oid, err := objectID(id)
+	if err != nil {
+		return err
+	}
+	return coreutils.Deleted(r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: oid}}))
+}
+
+// objectID is the ObjectId of a Word's id, or Core's utils.ErrNotFound if it
+// isn't one: no Word has it.
+func objectID(id string) (bson.ObjectID, error) {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return oid, coreutils.ErrNotFound
+	}
+	return oid, nil
+}
+
+// objectIDs are the ObjectIds of two Words' ids, or Core's utils.ErrNotFound
+// if either isn't one.
+func objectIDs(id, otherID string) (bson.ObjectID, bson.ObjectID, error) {
+	oid, err := objectID(id)
+	if err != nil {
+		return oid, oid, err
+	}
+	other, err := objectID(otherID)
+	return oid, other, err
+}
+
+// sentencesBSON is sentences as they are stored.
+func sentencesBSON(sentences []model.Sentence) bson.A {
+	stored := bson.A{}
+	for _, s := range sentences {
+		stored = append(stored, bson.D{{Key: "sentence", Value: s.Sentence}, {Key: "translation", Value: s.Translation}})
+	}
+	return stored
+}
+
+func (r words) GetManyBySpellingOrReading(ctx context.Context, text string) ([]model.Word, error) {
+	filter := bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "word", Value: text}}, bson.D{{Key: "hiragana", Value: text}}}}}
+	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	var docs []wordDocument
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	list := make([]model.Word, len(docs))
+	for i, d := range docs {
+		list[i] = d.toWord()
+	}
+	return list, nil
 }
 
 func (r words) GetManyByIDs(ctx context.Context, ids []string) ([]model.Word, error) {

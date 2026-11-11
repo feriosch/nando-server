@@ -162,7 +162,11 @@ func run() error {
 		return err
 	}
 	nandoCore.AddNotificationProvider(caloriesModule.NotificationProvider())
-	japaneseModule := japanese.NewJapaneseModule(dbs.Japanese, nandoCore.Service())
+	japaneseModule, err := japanese.NewJapaneseModule(connectCtx, dbs.Japanese, nandoCore.Service(), japanese.Config{})
+	if err != nil {
+		return err
+	}
+	nandoCore.AddToolProvider(japaneseModule.ToolProvider())
 
 	switch args := os.Args[1:]; {
 	case len(args) == 1 && args[0] == "enroll":

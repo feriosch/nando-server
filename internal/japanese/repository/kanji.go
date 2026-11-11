@@ -104,6 +104,14 @@ func (r kanji) GetOneByID(ctx context.Context, id string) (model.Kanji, error) {
 	return d.toKanji(), nil
 }
 
+func (r kanji) GetOneByCharacter(ctx context.Context, character string) (model.Kanji, error) {
+	var d kanjiDocument
+	if err := r.collection.FindOne(ctx, bson.D{{Key: "kanji", Value: character}}).Decode(&d); err != nil {
+		return model.Kanji{}, coreutils.NotFound(err)
+	}
+	return d.toKanji(), nil
+}
+
 func (r kanji) GetManyByKeywords(ctx context.Context, keywords []string) ([]model.Kanji, error) {
 	cursor, err := r.collection.Find(ctx, bson.D{{Key: "spanish", Value: bson.D{{Key: "$in", Value: keywords}}}}, options.Find().SetProjection(kanjiRowFields))
 	if err != nil {

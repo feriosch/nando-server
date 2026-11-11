@@ -41,6 +41,13 @@ type nando struct {
 
 func newNando(t *testing.T) *nando {
 	t.Helper()
+	return newNandoWith(t, japanese.Config{})
+}
+
+// newNandoWith is newNando with the Japanese Module configured as cfg, such as
+// with fake outside services.
+func newNandoWith(t *testing.T, cfg japanese.Config) *nando {
+	t.Helper()
 	client, err := mongo.Connect(options.Client().ApplyURI(testmongo.URI(t)))
 	if err != nil {
 		t.Fatalf("connect MongoDB: %v", err)
@@ -68,6 +75,11 @@ func newNando(t *testing.T) *nando {
 		t.Fatalf("core.New: %v", err)
 	}
 	db := client.Database("japanese")
+	module, err := japanese.NewJapaneseModule(context.Background(), db, c.Service(), cfg)
+	if err != nil {
+		t.Fatalf("NewJapaneseModule: %v", err)
+	}
+	c.AddToolProvider(module.ToolProvider())
 	return &nando{
 		t:        t,
 		core:     c,
@@ -76,7 +88,7 @@ func newNando(t *testing.T) *nando {
 		handler: server.New(server.Config{
 			AllowedOrigins: []string{webOrigin},
 			Core:           c,
-			Modules:        []server.Module{japanese.NewJapaneseModule(db, c.Service())},
+			Modules:        []server.Module{module},
 		}),
 	}
 }
@@ -93,21 +105,29 @@ func (n *nando) store(collection string, docs ...any) {
 type browser struct {
 	nando   *nando
 	session *http.Cookie
+	// passkey is the Owner's, on the iPhone.
+	passkey *testpasskey.Passkey
 }
 
 // signedInBrowser returns Nando with a browser on the Owner's iPhone that has
 // enrolled a Passkey and has a Session.
 func signedInBrowser(t *testing.T) (*nando, *browser) {
 	t.Helper()
-	n := newNando(t)
-	phone := &browser{nando: n}
+	return signedInBrowserWith(t, japanese.Config{})
+}
+
+// signedInBrowserWith is signedInBrowser with the Japanese Module configured
+// as cfg.
+func signedInBrowserWith(t *testing.T, cfg japanese.Config) (*nando, *browser) {
+	t.Helper()
+	n := newNandoWith(t, cfg)
+	phone := &browser{nando: n, passkey: testpasskey.New()}
 	code, err := n.core.IssueEnrollmentCode(context.Background())
 	if err != nil {
 		t.Fatalf("IssueEnrollmentCode: %v", err)
 	}
-	passkey := testpasskey.New()
 	rec := phone.must(http.MethodPost, "/auth/register/begin", map[string]string{"code": code}, http.StatusOK)
-	phone.must(http.MethodPost, "/auth/register/finish", json.RawMessage(passkey.Create(t, webOrigin, rec.Body.Bytes())), http.StatusNoContent)
+	phone.must(http.MethodPost, "/auth/register/finish", json.RawMessage(phone.passkey.Create(t, webOrigin, rec.Body.Bytes())), http.StatusNoContent)
 	return n, phone
 }
 

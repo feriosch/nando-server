@@ -1,6 +1,13 @@
 package model
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrWordExists means a Word with the same spelling and reading is already
+// stored.
+var ErrWordExists = errors.New("a Word with this spelling and reading is already stored")
 
 // Word is a Japanese word or Expression the Owner is learning.
 type Word struct {
@@ -46,6 +53,42 @@ type Hint struct {
 	Note string
 }
 
+// WordField is a field of the Words that a search can look in alone.
+type WordField string
+
+const (
+	// SpellingField is a Word's spelling: searching it finds Words sharing a Kanji.
+	SpellingField WordField = "spelling"
+	// SpanishField is a Word's Spanish meaning.
+	SpanishField WordField = "spanish"
+)
+
+// WordChanges are the fields of a Word to change; a nil one is left as it
+// is. An empty Hiragana or Notes removes it.
+type WordChanges struct {
+	Word      *string
+	Hiragana  *string
+	Spanish   *string
+	Type      map[string]int
+	Tags      *[]string
+	Notes     *string
+	Sentences *[]Sentence
+}
+
+// WordLinkChanges are the fields of one side of a Word Link to change; a nil
+// one is left as it is.
+type WordLinkChanges struct {
+	Kind       *string
+	Note       *string
+	NuanceTags *[]string
+}
+
+// TagCount is a tag and how many times it is used.
+type TagCount struct {
+	Tag   string
+	Count int
+}
+
 // Sentence is an example sentence using a Word, with its Spanish translation.
 type Sentence struct {
 	Sentence    string
@@ -58,14 +101,62 @@ type WordsRepository interface {
 	// matches, then shorter ones, then longer ones. Only what a search result
 	// shows is filled in: ID, Word, Hiragana, Spanish and Group.
 	GetManyBySearch(ctx context.Context, q string, limit int) ([]Word, error)
+	// GetManyBySearchIn is GetManyBySearch over one field of the Words only.
+	GetManyBySearchIn(ctx context.Context, q string, field WordField, limit int) ([]Word, error)
 	// GetOneByID returns the Word with this ID, or Core's utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (Word, error)
+	// Insert stores a new Word, with no Word Links or Hints yet, and returns
+	// its ID. It returns ErrWordExists if a Word with the same spelling and
+	// reading is stored, checked by a unique index so that it holds when
+	// several chats add at once.
+	Insert(ctx context.Context, word Word) (string, error)
+	// Update changes only the fields set in changes of the Word with id, or
+	// returns Core's utils.ErrNotFound. It returns ErrWordExists if the new
+	// spelling and reading are another Word's.
+	Update(ctx context.Context, id string, changes WordChanges) error
+	// AddWordLinkSide adds side to the Word with id, unless that Word already
+	// has a side of a Word Link to side's other Word, checked inside the
+	// write. It reports whether it added it.
+	AddWordLinkSide(ctx context.Context, id string, side WordLink) (bool, error)
+	// UpdateWordLinkSide changes only the fields set in changes of the Word
+	// with id's side of its Word Link to the Word with otherID, or returns
+	// Core's utils.ErrNotFound if it has none.
+	UpdateWordLinkSide(ctx context.Context, id, otherID string, changes WordLinkChanges) error
+	// RemoveWordLinkSide removes the Word with id's side of its Word Link to
+	// the Word with otherID, and reports whether it had one.
+	RemoveWordLinkSide(ctx context.Context, id, otherID string) (bool, error)
+	// AddHint adds hint to the Word with id, unless it has a Hint with the
+	// same text, checked inside the write. It reports whether it added it.
+	AddHint(ctx context.Context, id string, hint Hint) (bool, error)
+	// RemoveHint removes the Word with id's Hint with text, and reports
+	// whether it had one.
+	RemoveHint(ctx context.Context, id, text string) (bool, error)
+	// SetGroup files the Word with id in group, or returns Core's
+	// utils.ErrNotFound.
+	SetGroup(ctx context.Context, id, group string) error
+	// RemoveWordLinksTo removes every other Word's side of a Word Link to the
+	// Word with id.
+	RemoveWordLinksTo(ctx context.Context, id string) error
+	// RepointWordLinks makes every other Word's side of a Word Link to the
+	// Word with fromID a side to the Word with toID, unless that Word already
+	// has a side to it: then its side to fromID is removed. The Word with
+	// toID loses its side to fromID, which would be a link to itself.
+	RepointWordLinks(ctx context.Context, fromID, toID string) error
+	// Delete deletes the Word with id, or returns Core's utils.ErrNotFound.
+	Delete(ctx context.Context, id string) error
+	// GetManyBySpellingOrReading returns every Word spelled text or read as
+	// text, oldest first, with all its fields.
+	GetManyBySpellingOrReading(ctx context.Context, text string) ([]Word, error)
 	// GetManyByIDs returns the Words with these IDs that are stored, in no
 	// particular order, filled in as by GetManyBySearch.
 	GetManyByIDs(ctx context.Context, ids []string) ([]Word, error)
 	// GetManyByKanji returns up to limit Words whose spelling contains
 	// kanji (a Kanji's character), shorter ones first, filled in as by GetManyBySearch.
 	GetManyByKanji(ctx context.Context, kanji string, limit int) ([]Word, error)
+	// CountTags returns each Word Tag and each Nuance Tag in use, with how many
+	// times, most used first, then alphabetically. Nuance Tags are counted on
+	// Word Links only.
+	CountTags(ctx context.Context) (wordTags, nuanceTags []TagCount, err error)
 	// GetManyForJLPTDeck returns, oldest first, every Word studied for the JLPT,
 	// as the JLPT deck file exports it: those in the JLPT Groups, and any other
 	// Word with the jlpt_n1 Word Tag.
@@ -82,6 +173,64 @@ type WordRowJSON struct {
 	Hiragana *string `json:"hiragana"`
 	Spanish  string  `json:"spanish"`
 	Group    string  `json:"group"`
+}
+
+// TagsJSON is the Word Tags and Nuance Tags in use, each with how many
+// times, most used first.
+type TagsJSON struct {
+	WordTags   []TagCountJSON `json:"wordTags"`
+	NuanceTags []TagCountJSON `json:"nuanceTags"`
+}
+
+// TagCountJSON is a tag and how many times it is used.
+type TagCountJSON struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+// WordLinkWrittenJSON is what japanese_add_word_link answers: which sides
+// of the Word Link it wrote. A side is skipped when that Word already links
+// to the other.
+type WordLinkWrittenJSON struct {
+	FromSideWritten bool `json:"fromSideWritten"`
+	BackSideWritten bool `json:"backSideWritten"`
+}
+
+// WordLinkRemovedJSON is what japanese_remove_word_link answers: which sides
+// of the Word Link it removed.
+type WordLinkRemovedJSON struct {
+	FromSideRemoved bool `json:"fromSideRemoved"`
+	BackSideRemoved bool `json:"backSideRemoved"`
+}
+
+// HintWrittenJSON is what japanese_add_hint answers: whether it wrote the
+// Hint, or the Word already had one with that text.
+type HintWrittenJSON struct {
+	Written bool `json:"written"`
+}
+
+// WordDeletedJSON is what japanese_delete_word answers: the deleted Word's id.
+type WordDeletedJSON struct {
+	Deleted string `json:"deleted"`
+}
+
+// WordBody is a Word's own fields as japanese_add_word and
+// japanese_update_word are sent them.
+type WordBody struct {
+	Word      string         `json:"word"`
+	Hiragana  string         `json:"hiragana"`
+	Spanish   string         `json:"spanish"`
+	Type      map[string]int `json:"type"`
+	Group     string         `json:"group"`
+	Tags      []string       `json:"tags"`
+	Notes     string         `json:"notes"`
+	Sentences []SentenceJSON `json:"sentences"`
+}
+
+// WordsJSON is the Words a Tool found, such as every Word with a spelling
+// or reading.
+type WordsJSON struct {
+	Words []WordJSON `json:"words"`
 }
 
 // WordJSON is a Word as its page shows it.

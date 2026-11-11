@@ -1,6 +1,6 @@
 # Japanese API
 
-The Japanese Module: searching the Owner's Words and Kanji, the Word and Kanji pages, and the JLPT deck for Anki. Every route is under `/api/japanese/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). The routes are read-only: Words and Kanji are added and improved by Claude, not through this API. Bodies are JSON, except the deck file. Errors are a status code with a short plain-text message.
+The Japanese Module: searching the Owner's Words and Kanji, the Word and Kanji pages, and the JLPT deck for Anki. Every route is under `/api/japanese/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). The routes are read-only: Claude adds and improves Words through the Module's [Tools](#tools), not through this API. Bodies are JSON, except the deck file. Errors are a status code with a short plain-text message.
 
 Ids are the 24-character hex ObjectIds the Words and Kanji have had since benkyo, which are also Anki's `Id`. Word Tags and Nuance Tags are returned as stored, in snake_case (`usually_kana`, `jlpt_n1`); the web app writes them for display. Optional strings are `null` when not set, and lists are `[]`, never `null`.
 
@@ -175,3 +175,43 @@ Then one row per Word studied for the JLPT: every Word in the JLPT N3, N2 and N1
 - `Related Front`, `Related Back`: its Word Links and Hints, in the order they are stored, as `<ul class="related-list">` with one `<li class="rel rel-<kind>">` each. An entry shows the kind's mark (`=` synonym, `✕` antonym, `~` related or any other kind; an entry stored with no kind is related), the other Word (its kanji spelling, as stored, or its kana if it has none, or `?` if it has neither) or the Hint's text, the other Word's JLPT level (`N3` or `N2` for those Groups, `N1` for the JLPT N1 Group or the `jlpt_n1` Word Tag) and this side's Nuance Tags. `Related Front`, on the definition card's front, masks with `■` each Kanji the entry shares with `Word` and leaves out the notes; `Related Back` shows the entry whole, with this side's note. A Word Link to a Word that is no longer stored is left out. Both are empty for a Word with no Word Links or Hints.
 
 The Usage and Related fields are HTML, written as stored, unescaped.
+
+## Tools
+
+The Module offers these Tools to Connectors, such as Claude, at Core's `/mcp` with a Connector's access token (see [Core's API](../core/API.md#connectors)). Each takes a JSON object of arguments and answers JSON; a Tool that can't do what it's asked fails with a message saying why, for Claude to read. Word and Kanji answers are shaped as the [Word page](#words) and [Kanji page](#kanji) show them, and search answers as the [search](#search). The server enforces the structural rules: both sides of a Word Link, swapped Nuance Tags, stored Groups, one Word per spelling and reading. Judgment, such as which Group or what a note says, is Claude's.
+
+### Look up (`readOnlyHint`)
+
+| Tool | Arguments | Answers |
+| --- | --- | --- |
+| `japanese_get_word` | `id`, or `word`: a spelling or a reading | `{"words": [Word page]}`, every match, `[]` if none |
+| `japanese_search` | `q`; optional `in`: `spelling` or `spanish` | As `/api/japanese/search`. With `in`, only that field of the Words is searched and no Kanji: Word Link candidates sharing a Kanji, or with a similar meaning |
+| `japanese_get_kanji` | `kanji`: one character | The Kanji page; fails if it isn't stored |
+| `japanese_list_tags` | none | `{"wordTags": [{"tag", "count"}], "nuanceTags": [...]}`, most used first; Nuance Tags on Word Links only |
+| `japanese_lookup_jisho` | `keyword` | `{"entries": [...]}`: jisho.org's entries trimmed to `slug`, `isCommon`, `jlpt`, `japanese` (`word`, `reading`) and `senses` (`english`, `partsOfSpeech`, `tags`, `seeAlso`, `antonyms`) |
+| `japanese_check_joyo` | `text` | `{"kanji": [{"kanji", "stored", "joyo", "grade"}]}`, each Kanji once. `joyo` is kanjiapi.dev's `grade` 1 to 8; `null` if kanjiapi.dev couldn't tell (it rate-limits), never `false` then |
+
+The server asks jisho.org and kanjiapi.dev itself. It asks kanjiapi.dev at most once a second, and retries a reply with no `grade` up to 3 times.
+
+### Write
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `japanese_add_word` | `word`, `hiragana` (left out for a kana Word), `spanish`, `type`, `group`, `tags`, `notes`, `sentences` (`sentence`, `translation`) | Adds a Word and answers `{"id"}`. A spelling with a Kanji needs its reading in kana; a kana Word has none, a reading equal to its spelling counting as none. `type` maps `noun`, `suru`, `no_adj`, `na_adj`, `i_adj`, `adv`, `verb`, `adj_noun`, `adv_noun` or `counter` to a form 1 to 8; `group` must be stored; Word Tags are snake_case. Refused if a Word with the same spelling and reading is stored, by a unique index, so it holds when several chats add at once |
+| `japanese_update_word` | `id` and any of the fields above except `group` | Changes only the fields given and answers the Word page. An empty `hiragana` or `notes` removes it. Only the fields given are checked, a new spelling or reading against the other as it will be stored. Refused for a `group`, Word Links, or another Word's spelling and reading |
+| `japanese_add_word_link` | `from`, `to`, `kind` (`synonym`, `antonym`, `related`), `note`, `nuanceTags`, optional `noteBack` | Writes both sides. `to` gets `noteBack` (or `note`) and the opposite Nuance Tags: `formal` and `casual`, `spoken` and `written`, `expression` and `part` swap. A side is skipped if that Word already links to the other. Answers `{"fromSideWritten", "backSideWritten"}` |
+| `japanese_update_word_link` | `from`, `to`, any of `kind`, `note`, `nuanceTags` | Changes only `from`'s side; the way back is left as it is. Answers the `from` Word page |
+| `japanese_remove_word_link` | `from`, `to` | Removes both sides. Answers `{"fromSideRemoved", "backSideRemoved"}`; fails if there's neither |
+| `japanese_add_hint` | `word` (an id), `text`, `note` | Adds a Hint, unless the Word has one with that text. Refused for text a stored Word is spelled or read as: that's a Word Link. Answers `{"written"}` |
+| `japanese_remove_hint` | `word`, `text` | Removes that Hint and answers the Word page |
+
+### Destructive (`destructiveHint`)
+
+The Owner sets these to ask before each use in the Claude app.
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `japanese_delete_word` | `id` | Deletes the Word and every Word Link to it. Answers `{"deleted": id}` |
+| `japanese_merge_words` | `keep`, `remove` | Merge first, then set `keep`'s fields with `japanese_update_word`: it can only take `remove`'s spelling and reading once `remove` is gone. Moves `remove`'s Word Links and Hints to `keep`, except those it has and any link between the two. Other Words' sides to `remove` now point at `keep`, or go if they already link to it. Deletes `remove` and answers the `keep` Word page. Each step can run again, so a merge that fails halfway is finished by merging again |
+| `japanese_change_group` | `id`, `group` | Moves the Word to that stored Group and answers its page |
+
