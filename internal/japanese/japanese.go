@@ -26,11 +26,22 @@ type Module struct {
 	words  *service.WordsService
 	kanji  *service.KanjiService
 	anki   *service.AnkiService
+	lookup *service.LookupService
+}
+
+// Config is where the Module finds the outside services it looks Words up
+// on. An empty field means the real one; tests set fakes.
+type Config struct {
+	// JishoURL is jisho.org, whose search API is at /api/v1/search/words.
+	JishoURL string
 }
 
 // NewJapaneseModule returns the Japanese Module reading its own data through
 // db and asking Core for Core's data through core.
-func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService) *Module {
+func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService, cfg Config) *Module {
+	if cfg.JishoURL == "" {
+		cfg.JishoURL = "https://jisho.org"
+	}
 	words := repository.NewWords(db)
 	kanji := repository.NewKanji(db)
 	return &Module{
@@ -38,6 +49,7 @@ func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService) *Module {
 		words:  service.NewWords(words, repository.NewGroups(db), kanji),
 		kanji:  service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
 		anki:   service.NewAnki(words, core),
+		lookup: service.NewLookup(cfg.JishoURL),
 	}
 }
 
@@ -51,7 +63,7 @@ func (m *Module) ToolProvider() coremodel.ToolProvider {
 type toolProvider struct{ m *Module }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.words.Tools(), p.m.search.Tools(), p.m.kanji.Tools())
+	return slices.Concat(p.m.words.Tools(), p.m.search.Tools(), p.m.kanji.Tools(), p.m.lookup.Tools())
 }
 
 // Routes adds the Module's routes to mux, all under /api/japanese/.

@@ -162,7 +162,7 @@ func run() error {
 		return err
 	}
 	nandoCore.AddNotificationProvider(caloriesModule.NotificationProvider())
-	japaneseModule := japanese.NewJapaneseModule(dbs.Japanese, nandoCore.Service())
+	japaneseModule := japanese.NewJapaneseModule(dbs.Japanese, nandoCore.Service(), japanese.Config{})
 	nandoCore.AddToolProvider(japaneseModule.ToolProvider())
 
 	switch args := os.Args[1:]; {

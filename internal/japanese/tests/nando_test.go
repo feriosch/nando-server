@@ -41,6 +41,13 @@ type nando struct {
 
 func newNando(t *testing.T) *nando {
 	t.Helper()
+	return newNandoWith(t, japanese.Config{})
+}
+
+// newNandoWith is newNando with the Japanese Module configured as cfg, such as
+// with fake outside services.
+func newNandoWith(t *testing.T, cfg japanese.Config) *nando {
+	t.Helper()
 	client, err := mongo.Connect(options.Client().ApplyURI(testmongo.URI(t)))
 	if err != nil {
 		t.Fatalf("connect MongoDB: %v", err)
@@ -68,7 +75,7 @@ func newNando(t *testing.T) *nando {
 		t.Fatalf("core.New: %v", err)
 	}
 	db := client.Database("japanese")
-	module := japanese.NewJapaneseModule(db, c.Service())
+	module := japanese.NewJapaneseModule(db, c.Service(), cfg)
 	c.AddToolProvider(module.ToolProvider())
 	return &nando{
 		t:        t,
@@ -103,7 +110,14 @@ type browser struct {
 // enrolled a Passkey and has a Session.
 func signedInBrowser(t *testing.T) (*nando, *browser) {
 	t.Helper()
-	n := newNando(t)
+	return signedInBrowserWith(t, japanese.Config{})
+}
+
+// signedInBrowserWith is signedInBrowser with the Japanese Module configured
+// as cfg.
+func signedInBrowserWith(t *testing.T, cfg japanese.Config) (*nando, *browser) {
+	t.Helper()
+	n := newNandoWith(t, cfg)
 	phone := &browser{nando: n, passkey: testpasskey.New()}
 	code, err := n.core.IssueEnrollmentCode(context.Background())
 	if err != nil {
