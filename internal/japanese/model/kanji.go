@@ -33,6 +33,9 @@ type KanjiRepository interface {
 	GetManyBySpelling(ctx context.Context, spelling string) ([]Kanji, error)
 	// GetOneByID returns the Kanji with this ID, or Core's utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (Kanji, error)
+	// GetOneByCharacter returns the Kanji written character, or Core's
+	// utils.ErrNotFound.
+	GetOneByCharacter(ctx context.Context, character string) (Kanji, error)
 	// GetManyByKeywords returns the stored Kanji whose Spanish is one of keywords,
 	// in no particular order, filled in as by GetManyBySearch.
 	GetManyByKeywords(ctx context.Context, keywords []string) ([]Kanji, error)

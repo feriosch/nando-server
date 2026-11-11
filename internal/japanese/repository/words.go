@@ -128,6 +128,45 @@ func (r words) GetOneByID(ctx context.Context, id string) (model.Word, error) {
 	return d.toWord(), nil
 }
 
+func (r words) CountTags(ctx context.Context) (wordTags, nuanceTags []model.TagCount, err error) {
+	if wordTags, err = r.countTags(ctx, mongo.Pipeline{
+		{{Key: "$unwind", Value: "$tags"}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$tags"}, {Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}}}}},
+	}); err != nil {
+		return nil, nil, err
+	}
+	// Only Word Links: a Hint has no wordId, and no Nuance Tags in Nando.
+	nuanceTags, err = r.countTags(ctx, mongo.Pipeline{
+		{{Key: "$unwind", Value: "$related"}},
+		{{Key: "$match", Value: bson.D{{Key: "related.wordId", Value: bson.D{{Key: "$type", Value: "objectId"}}}}}},
+		{{Key: "$unwind", Value: "$related.tags"}},
+		{{Key: "$group", Value: bson.D{{Key: "_id", Value: "$related.tags"}, {Key: "count", Value: bson.D{{Key: "$sum", Value: 1}}}}}},
+	})
+	return wordTags, nuanceTags, err
+}
+
+// countTags runs pipeline, which groups tags as {_id: tag, count}, and
+// returns them most used first, then alphabetically.
+func (r words) countTags(ctx context.Context, pipeline mongo.Pipeline) ([]model.TagCount, error) {
+	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: bson.D{{Key: "count", Value: -1}, {Key: "_id", Value: 1}}}})
+	cursor, err := r.collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	var docs []struct {
+		Tag   string `bson:"_id"`
+		Count int    `bson:"count"`
+	}
+	if err := cursor.All(ctx, &docs); err != nil {
+		return nil, err
+	}
+	counts := make([]model.TagCount, len(docs))
+	for i, d := range docs {
+		counts[i] = model.TagCount(d)
+	}
+	return counts, nil
+}
+
 func (r words) GetManyBySpellingOrReading(ctx context.Context, text string) ([]model.Word, error) {
 	filter := bson.D{{Key: "$or", Value: bson.A{bson.D{{Key: "word", Value: text}}, bson.D{{Key: "hiragana", Value: text}}}}}
 	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "_id", Value: 1}}))

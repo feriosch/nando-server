@@ -137,7 +137,33 @@ func (s *WordsService) Tools() []coremodel.Tool {
 			`"word":{"type":"string","description":"A spelling or a reading, such as 足跡 or あしあと."}}}`),
 		ReadOnly: true,
 		Handle:   s.getWordTool,
+	}, {
+		Name: "japanese_list_tags",
+		Description: "Lists the Word Tags and the Nuance Tags in use, each with how many times, most used first. " +
+			"Check it before inventing a tag, and reuse an existing one rather than add a near-duplicate (rare, not uncommon). " +
+			"Answers {\"wordTags\": [{\"tag\", \"count\"}], \"nuanceTags\": [...]}.",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		ReadOnly:    true,
+		Handle:      s.listTagsTool,
 	}}
+}
+
+// listTagsTool answers japanese_list_tags.
+func (s *WordsService) listTagsTool(ctx context.Context, _ json.RawMessage) (any, error) {
+	wordTags, nuanceTags, err := s.words.CountTags(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return model.TagsJSON{WordTags: tagCountJSONs(wordTags), NuanceTags: tagCountJSONs(nuanceTags)}, nil
+}
+
+// tagCountJSONs is counts as a Tool answers them, [] if there are none.
+func tagCountJSONs(counts []model.TagCount) []model.TagCountJSON {
+	list := make([]model.TagCountJSON, len(counts))
+	for i, c := range counts {
+		list[i] = model.TagCountJSON(c)
+	}
+	return list
 }
 
 // getWordTool answers japanese_get_word.

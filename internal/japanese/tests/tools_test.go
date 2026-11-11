@@ -145,3 +145,74 @@ func TestASearchWithoutWhatToFindIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// toolFails checks that calling the Tool name with args fails, as a Tool
+// error the Connector's model reads.
+func toolFails(t *testing.T, session *mcp.ClientSession, name string, args map[string]any) {
+	t.Helper()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil || !result.IsError {
+		t.Errorf("%s with %v: %v, %+v; want the Tool to fail", name, args, err, result)
+	}
+}
+
+func TestAConnectorGetsAKanjiByItsCharacter(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	every := kanji("毎", "cada", 486)
+	sea := kanji("海", "mar", 491)
+	sea["on"] = "カイ"
+	sea["components"] = bson.A{"gotas de agua", "cada"}
+	n.store("kanji", every, sea)
+	n.store("irregular_components", irregularComponent("gotas de agua"))
+	n.store("words", word("海外", "かいがい", "extranjero", "basic"))
+	session := phone.connect()
+
+	got := callTool[kanjiJSON](t, session, "japanese_get_kanji", map[string]any{"kanji": "海"})
+
+	if want := get[kanjiJSON](phone, "/api/japanese/kanji/"+id(sea)); !reflect.DeepEqual(got, want) || len(got.Words) != 1 {
+		t.Errorf("japanese_get_kanji 海 = %+v,\nwant the Kanji page's %+v", got, want)
+	}
+	for _, character := range []string{"山", "海外", ""} {
+		toolFails(t, session, "japanese_get_kanji", map[string]any{"kanji": character})
+	}
+}
+
+// tagsJSON is what japanese_list_tags answers: each tag in use and how many
+// times, most used first.
+type tagsJSON struct {
+	WordTags   []tagCountJSON `json:"wordTags"`
+	NuanceTags []tagCountJSON `json:"nuanceTags"`
+}
+
+type tagCountJSON struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
+}
+
+func TestAConnectorListsTheTagsInUse(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	whisper := word("囁く", "ささやく", "susurrar", "jlpt_n2")
+	murmur := word("呟く", "つぶやく", "murmurar", "jlpt_n2")
+	talk := word("話す", "はなす", "hablar", "basic")
+	whisper["tags"] = bson.A{"common", "usually_kana"}
+	murmur["tags"] = bson.A{"common", "rare"}
+	talk["tags"] = bson.A{"common"}
+	whisper["related"] = bson.A{
+		bson.M{"wordId": murmur["_id"], "type": "related", "note": "", "tags": bson.A{"spoken"}},
+		bson.M{"wordId": talk["_id"], "type": "related", "note": "", "tags": bson.A{"spoken", "casual"}},
+		// A Hint: benkyo stored tags on some, but they aren't Nuance Tags.
+		bson.M{"word": "小声", "type": "related", "note": "", "tags": bson.A{"written"}},
+	}
+	n.store("words", whisper, murmur, talk)
+	session := phone.connect()
+
+	got := callTool[tagsJSON](t, session, "japanese_list_tags", map[string]any{})
+
+	want := tagsJSON{
+		WordTags:   []tagCountJSON{{"common", 3}, {"rare", 1}, {"usually_kana", 1}},
+		NuanceTags: []tagCountJSON{{"spoken", 2}, {"casual", 1}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("japanese_list_tags = %+v,\nwant %+v", got, want)
+	}
+}

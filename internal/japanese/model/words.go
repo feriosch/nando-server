@@ -46,6 +46,12 @@ type Hint struct {
 	Note string
 }
 
+// TagCount is a tag and how many times it is used.
+type TagCount struct {
+	Tag   string
+	Count int
+}
+
 // Sentence is an example sentence using a Word, with its Spanish translation.
 type Sentence struct {
 	Sentence    string
@@ -72,6 +78,10 @@ type WordsRepository interface {
 	// GetManyByKanji returns up to limit Words whose spelling contains
 	// kanji (a Kanji's character), shorter ones first, filled in as by GetManyBySearch.
 	GetManyByKanji(ctx context.Context, kanji string, limit int) ([]Word, error)
+	// CountTags returns each Word Tag and each Nuance Tag in use, with how many
+	// times, most used first, then alphabetically. Nuance Tags are counted on
+	// Word Links only.
+	CountTags(ctx context.Context) (wordTags, nuanceTags []TagCount, err error)
 	// GetManyForJLPTDeck returns, oldest first, every Word studied for the JLPT,
 	// as the JLPT deck file exports it: those in the JLPT Groups, and any other
 	// Word with the jlpt_n1 Word Tag.
@@ -88,6 +98,19 @@ type WordRowJSON struct {
 	Hiragana *string `json:"hiragana"`
 	Spanish  string  `json:"spanish"`
 	Group    string  `json:"group"`
+}
+
+// TagsJSON is the Word Tags and Nuance Tags in use, each with how many
+// times, most used first.
+type TagsJSON struct {
+	WordTags   []TagCountJSON `json:"wordTags"`
+	NuanceTags []TagCountJSON `json:"nuanceTags"`
+}
+
+// TagCountJSON is a tag and how many times it is used.
+type TagCountJSON struct {
+	Tag   string `json:"tag"`
+	Count int    `json:"count"`
 }
 
 // WordsJSON is the Words a Tool found, such as every Word with a spelling

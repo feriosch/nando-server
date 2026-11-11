@@ -51,7 +51,7 @@ func (m *Module) ToolProvider() coremodel.ToolProvider {
 type toolProvider struct{ m *Module }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.words.Tools(), p.m.search.Tools())
+	return slices.Concat(p.m.words.Tools(), p.m.search.Tools(), p.m.kanji.Tools())
 }
 
 // Routes adds the Module's routes to mux, all under /api/japanese/.
