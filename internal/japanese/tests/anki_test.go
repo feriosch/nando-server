@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/csv"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -123,6 +124,14 @@ func TestTheJLPTDeckHasTheWordsStudiedForTheJLPT(t *testing.T) {
 	}
 }
 
+// numbered gives copy a reading of its own, ending in i, so that copies of
+// one Word compared in a test can all be stored: one Word per spelling and
+// reading.
+func numbered(copy bson.M, i int) bson.M {
+	copy["hiragana"] = fmt.Sprintf("%s%d", copy["hiragana"], i)
+	return copy
+}
+
 // ichisou is 一層 as benkyo stored it, under a new ObjectId, in JLPT N2.
 func ichisou() bson.M {
 	w := word("一層", "いっそう", "aún más, mucho más (formal)", "jlpt_n2")
@@ -191,12 +200,12 @@ func TestANotesTypeListsThePartsOfSpeechInTheOrderTheyAreStored(t *testing.T) {
 	}
 	ids := map[string]string{}
 	for want, partsOfSpeech := range cases {
-		w := word("一層", "いっそう", "aún más", "jlpt_n2")
+		w := numbered(word("一層", "いっそう", "aún más", "jlpt_n2"), len(ids))
 		w["type"] = partsOfSpeech
 		n.store("words", w)
 		ids[want] = id(w)
 	}
-	untyped := word("一層", "いっそう", "aún más", "jlpt_n2")
+	untyped := numbered(word("一層", "いっそう", "aún más", "jlpt_n2"), len(ids))
 	delete(untyped, "type")
 	n.store("words", untyped)
 	ids["(none)"] = id(untyped)
@@ -217,9 +226,9 @@ func TestANoteMarksTheWordTagsThatHaveTheirOwnField(t *testing.T) {
 	n, phone := signedInBrowser(t)
 	tagged := ichisou()
 	tagged["tags"] = bson.A{"common", "jlpt_n1", "expression", "onomatopoeic", "transitive", "intransitive"}
-	untagged := ichisou()
+	untagged := numbered(ichisou(), 1)
 	untagged["tags"] = bson.A{}
-	noTags := ichisou()
+	noTags := numbered(ichisou(), 2)
 	delete(noTags, "tags")
 	n.store("words", tagged, untagged, noTags)
 
@@ -241,7 +250,7 @@ func TestANotesUsageHasEveryOtherWordTag(t *testing.T) {
 	n, phone := signedInBrowser(t)
 	usage := ichisou()
 	usage["tags"] = bson.A{"common", "jlpt_n1", "usually_kana", "transitive", "joyogai", "elderly_speech", "rare"}
-	onlyOwnFields := ichisou()
+	onlyOwnFields := numbered(ichisou(), 1)
 	onlyOwnFields["tags"] = bson.A{"common"}
 	n.store("words", usage, onlyOwnFields)
 
@@ -271,12 +280,12 @@ func TestANotesNotesLeaveOutLegacyWordLinkText(t *testing.T) {
 	}
 	ids := map[string]string{}
 	for notes := range cases {
-		w := ichisou()
+		w := numbered(ichisou(), len(ids))
 		w["notes"] = notes
 		n.store("words", w)
 		ids[notes] = id(w)
 	}
-	withoutNotes := ichisou()
+	withoutNotes := numbered(ichisou(), len(ids))
 	delete(withoutNotes, "notes")
 	n.store("words", withoutNotes)
 
@@ -485,7 +494,7 @@ func TestAWordLinkToAWordNoLongerStoredIsLeftOut(t *testing.T) {
 	n, phone := signedInBrowser(t)
 	dangling := ichisou()
 	dangling["related"] = bson.A{bson.M{"wordId": bson.NewObjectID(), "type": "related"}}
-	unlinked := ichisou()
+	unlinked := numbered(ichisou(), 1)
 	unlinked["related"] = bson.A{}
 	n.store("words", dangling, unlinked)
 

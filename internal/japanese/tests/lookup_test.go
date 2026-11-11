@@ -231,7 +231,9 @@ func TestKanjiAPIIsAskedAtTheConfiguredPace(t *testing.T) {
 		t.Fatalf("kanjiapi was asked %d times, want 3", len(kanjiAPI.asked))
 	}
 	for i := 1; i < len(kanjiAPI.asked); i++ {
-		if gap := kanjiAPI.asked[i].Sub(kanjiAPI.asked[i-1]); gap < pace {
+		// Nando spaces its requests; the fake sees when each arrives, which
+		// can be a little sooner than the pace after the one before.
+		if gap := kanjiAPI.asked[i].Sub(kanjiAPI.asked[i-1]); gap < pace-5*time.Millisecond {
 			t.Errorf("kanjiapi asked again after %v, want at least %v apart", gap, pace)
 		}
 	}

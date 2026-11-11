@@ -13,9 +13,20 @@ import (
 	"github.com/feriosch/nando-server/internal/japanese/utils"
 )
 
-// NewWords returns the WordsRepository over the words collection in db.
-func NewWords(db *mongo.Database) model.WordsRepository {
-	return words{collection: db.Collection("words")}
+// NewWords returns the WordsRepository over the words collection in db,
+// first creating any indexes it lacks.
+func NewWords(ctx context.Context, db *mongo.Database) (model.WordsRepository, error) {
+	collection := db.Collection("words")
+	// One Word per spelling and reading. A kana Word has no hiragana field,
+	// which the index takes as null, so kana Words are unique by spelling.
+	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "word", Value: 1}, {Key: "hiragana", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("spelling_reading"),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return words{collection: collection}, nil
 }
 
 // words is the words collection.
@@ -165,6 +176,37 @@ func (r words) countTags(ctx context.Context, pipeline mongo.Pipeline) ([]model.
 		counts[i] = model.TagCount(d)
 	}
 	return counts, nil
+}
+
+func (r words) Insert(ctx context.Context, word model.Word) (string, error) {
+	id := bson.NewObjectID()
+	doc := bson.D{{Key: "_id", Value: id}, {Key: "word", Value: word.Word}}
+	// Stored as benkyo stored them: no hiragana for a kana Word, no notes when
+	// there are none.
+	if word.Hiragana != "" {
+		doc = append(doc, bson.E{Key: "hiragana", Value: word.Hiragana})
+	}
+	sentences := bson.A{}
+	for _, s := range word.Sentences {
+		sentences = append(sentences, bson.D{{Key: "sentence", Value: s.Sentence}, {Key: "translation", Value: s.Translation}})
+	}
+	doc = append(doc,
+		bson.E{Key: "spanish", Value: word.Spanish},
+		bson.E{Key: "type", Value: word.Type},
+		bson.E{Key: "group", Value: word.Group},
+		bson.E{Key: "tags", Value: word.Tags},
+	)
+	if word.Notes != "" {
+		doc = append(doc, bson.E{Key: "notes", Value: word.Notes})
+	}
+	doc = append(doc, bson.E{Key: "sentences", Value: sentences}, bson.E{Key: "related", Value: bson.A{}})
+	if _, err := r.collection.InsertOne(ctx, doc); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return "", model.ErrWordExists
+		}
+		return "", err
+	}
+	return id.Hex(), nil
 }
 
 func (r words) GetManyBySpellingOrReading(ctx context.Context, text string) ([]model.Word, error) {

@@ -75,7 +75,10 @@ func newNandoWith(t *testing.T, cfg japanese.Config) *nando {
 		t.Fatalf("core.New: %v", err)
 	}
 	db := client.Database("japanese")
-	module := japanese.NewJapaneseModule(db, c.Service(), cfg)
+	module, err := japanese.NewJapaneseModule(context.Background(), db, c.Service(), cfg)
+	if err != nil {
+		t.Fatalf("NewJapaneseModule: %v", err)
+	}
 	c.AddToolProvider(module.ToolProvider())
 	return &nando{
 		t:        t,

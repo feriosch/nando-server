@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"slices"
+	"sync"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -214,5 +216,151 @@ func TestAConnectorListsTheTagsInUse(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("japanese_list_tags = %+v,\nwant %+v", got, want)
+	}
+}
+
+// createdJSON is what a Tool that adds something answers: its id.
+type createdJSON struct {
+	ID string `json:"id"`
+}
+
+// whisper is a Word as Claude adds it, with every field.
+func whisper() map[string]any {
+	return map[string]any{
+		"word":      "囁く",
+		"hiragana":  "ささやく",
+		"spanish":   "susurrar (a alguien, en voz baja)",
+		"type":      map[string]any{"verb": 1},
+		"group":     "jlpt_n2",
+		"tags":      []string{"common", "usually_kana"},
+		"notes":     "JLPT N2",
+		"sentences": []map[string]string{{"sentence": "彼は耳元で囁いた。", "translation": "He whispered in my ear."}},
+	}
+}
+
+// with is args with key set to value, or without key if value is nil.
+func with(args map[string]any, key string, value any) map[string]any {
+	changed := map[string]any{}
+	for k, v := range args {
+		changed[k] = v
+	}
+	if value == nil {
+		delete(changed, key)
+	} else {
+		changed[key] = value
+	}
+	return changed
+}
+
+func TestAConnectorAddsAWord(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("jlpt_n2", "JLPT N2", n2Picture))
+	session := phone.connect()
+
+	added := callTool[createdJSON](t, session, "japanese_add_word", whisper())
+
+	want := wordJSON{
+		ID:        added.ID,
+		Word:      "囁く",
+		Hiragana:  ptr("ささやく"),
+		Spanish:   "susurrar (a alguien, en voz baja)",
+		Type:      map[string]int{"verb": 1},
+		Group:     groupJSON{Key: "jlpt_n2", Name: "JLPT N2", ImageURL: ptr(n2Picture)},
+		Tags:      []string{"common", "usually_kana"},
+		Notes:     ptr("JLPT N2"),
+		Sentences: []sentenceJSON{{Sentence: "彼は耳元で囁いた。", Translation: "He whispered in my ear."}},
+		WordLinks: []wordLinkJSON{},
+		Hints:     []hintJSON{},
+		Kanji:     []kanjiRowJSON{},
+	}
+	if got := get[wordJSON](phone, "/api/japanese/words/"+added.ID); !reflect.DeepEqual(got, want) {
+		t.Errorf("the added Word's page = %+v,\nwant %+v", got, want)
+	}
+}
+
+func TestAWordWithoutAReadingIsStoredInKana(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("miscellaneous", "Miscellaneous", "https://storage.googleapis.com/benkyo/misc.png"))
+	session := phone.connect()
+
+	added := callTool[createdJSON](t, session, "japanese_add_word", map[string]any{
+		"word": "あしからず", "spanish": "no lo tomes a mal", "type": map[string]any{"adv": 1}, "group": "miscellaneous",
+	})
+
+	got := get[wordJSON](phone, "/api/japanese/words/"+added.ID)
+	if got.Word != "あしからず" || got.Hiragana != nil || got.Notes != nil || len(got.Tags) != 0 || len(got.Sentences) != 0 {
+		t.Errorf("the added kana Word = %+v, want あしからず with no reading, notes, tags or sentences", got)
+	}
+}
+
+func TestAWordAlreadyStoredIsRefused(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("jlpt_n2", "JLPT N2", n2Picture), group("basic", "Basic", "https://storage.googleapis.com/benkyo/basic.png"))
+	n.store("words", word("包む", "つつむ", "envolver", "basic"), word("くるむ", "", "envolver (con tela)", "basic"))
+	session := phone.connect()
+	callTool[createdJSON](t, session, "japanese_add_word", whisper())
+
+	// The same spelling and reading, even in another Group.
+	toolFails(t, session, "japanese_add_word", with(whisper(), "group", "basic"))
+	toolFails(t, session, "japanese_add_word", map[string]any{"word": "包む", "hiragana": "つつむ", "spanish": "x", "type": map[string]any{"verb": 1}, "group": "basic"})
+	toolFails(t, session, "japanese_add_word", map[string]any{"word": "くるむ", "spanish": "x", "type": map[string]any{"verb": 1}, "group": "basic"})
+	// A spelling shared by another reading is a different Word.
+	callTool[createdJSON](t, session, "japanese_add_word", map[string]any{"word": "包む", "hiragana": "くるむ", "spanish": "envolver (con tela)", "type": map[string]any{"verb": 1}, "group": "basic"})
+
+	for spelling, want := range map[string]int{"囁く": 1, "包む": 2, "くるむ": 2} {
+		if got := callTool[wordsJSON](t, session, "japanese_get_word", map[string]any{"word": spelling}); len(got.Words) != want {
+			t.Errorf("Words spelled or read %s: %d, want %d", spelling, len(got.Words), want)
+		}
+	}
+}
+
+func TestOnlyOneOfManySimultaneousAddsOfAWordSucceeds(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("jlpt_n2", "JLPT N2", n2Picture))
+	session := phone.connect()
+
+	var wg sync.WaitGroup
+	results := make([]bool, 5)
+	for i := range results {
+		wg.Go(func() {
+			result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "japanese_add_word", Arguments: whisper()})
+			results[i] = err == nil && !result.IsError
+		})
+	}
+	wg.Wait()
+
+	if added := slices.Index(results, true); added == -1 || slices.Index(results[added+1:], true) != -1 {
+		t.Errorf("simultaneous adds that succeeded: %v, want exactly one", results)
+	}
+	if got := callTool[wordsJSON](t, session, "japanese_get_word", map[string]any{"word": "囁く"}); len(got.Words) != 1 {
+		t.Errorf("Words spelled 囁く after simultaneous adds: %d, want 1", len(got.Words))
+	}
+}
+
+func TestAnInvalidWordIsRefused(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("jlpt_n2", "JLPT N2", n2Picture))
+	session := phone.connect()
+
+	for name, args := range map[string]map[string]any{
+		"no spelling":                    with(whisper(), "word", nil),
+		"blank spelling":                 with(whisper(), "word", " "),
+		"no Spanish":                     with(whisper(), "spanish", nil),
+		"no type":                        with(whisper(), "type", nil),
+		"an unknown type":                with(whisper(), "type", map[string]any{"verbo": 1}),
+		"a type value out of 1–8":        with(whisper(), "type", map[string]any{"verb": 9}),
+		"no Group":                       with(whisper(), "group", nil),
+		"a Group not stored":             with(whisper(), "group", "jlpt_n4"),
+		"a camelCase tag":                with(whisper(), "tags", []string{"usuallyKana"}),
+		"a tag with spaces":              with(whisper(), "tags", []string{"usually kana"}),
+		"a sentence without translation": with(whisper(), "sentences", []map[string]string{{"sentence": "彼は囁いた。"}}),
+	} {
+		result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "japanese_add_word", Arguments: args})
+		if err != nil || !result.IsError {
+			t.Errorf("japanese_add_word with %s: %v, %+v; want the Tool to fail", name, err, result)
+		}
+	}
+	if got := callTool[wordsJSON](t, session, "japanese_get_word", map[string]any{"word": "囁く"}); len(got.Words) != 0 {
+		t.Errorf("Words after only invalid adds: %+v, want none", got.Words)
 	}
 }

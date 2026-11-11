@@ -1,6 +1,13 @@
 package model
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrWordExists means a Word with the same spelling and reading is already
+// stored.
+var ErrWordExists = errors.New("a Word with this spelling and reading is already stored")
 
 // Word is a Japanese word or Expression the Owner is learning.
 type Word struct {
@@ -69,6 +76,11 @@ type WordsRepository interface {
 	GetManyBySearchIn(ctx context.Context, q, field string, limit int) ([]Word, error)
 	// GetOneByID returns the Word with this ID, or Core's utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (Word, error)
+	// Insert stores a new Word, with no Word Links or Hints yet, and returns
+	// its ID. It returns ErrWordExists if a Word with the same spelling and
+	// reading is stored, checked by a unique index so that it holds when
+	// several chats add at once.
+	Insert(ctx context.Context, word Word) (string, error)
 	// GetManyBySpellingOrReading returns every Word spelled text or read as
 	// text, oldest first, with all its fields.
 	GetManyBySpellingOrReading(ctx context.Context, text string) ([]Word, error)

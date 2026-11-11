@@ -9,6 +9,7 @@
 package japanese
 
 import (
+	"context"
 	"net/http"
 	"slices"
 	"time"
@@ -44,7 +45,7 @@ type Config struct {
 
 // NewJapaneseModule returns the Japanese Module reading its own data through
 // db and asking Core for Core's data through core.
-func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService, cfg Config) *Module {
+func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService, cfg Config) (*Module, error) {
 	if cfg.JishoURL == "" {
 		cfg.JishoURL = "https://jisho.org"
 	}
@@ -54,7 +55,10 @@ func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService, cfg Confi
 	if cfg.KanjiAPIPace == 0 {
 		cfg.KanjiAPIPace = time.Second
 	}
-	words := repository.NewWords(db)
+	words, err := repository.NewWords(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	kanji := repository.NewKanji(db)
 	return &Module{
 		search: service.NewSearch(words, kanji),
@@ -62,7 +66,7 @@ func NewJapaneseModule(db *mongo.Database, core coremodel.CoreService, cfg Confi
 		kanji:  service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
 		anki:   service.NewAnki(words, core),
 		lookup: service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
-	}
+	}, nil
 }
 
 // ToolProvider is what the Module offers Connectors: its Tools, for

@@ -4,7 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+	"regexp"
+	"slices"
+	"strings"
+	"unicode/utf8"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
@@ -145,7 +150,138 @@ func (s *WordsService) Tools() []coremodel.Tool {
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		ReadOnly:    true,
 		Handle:      s.listTagsTool,
+	}, {
+		Name: "japanese_add_word",
+		Description: "Adds a new Word. word is its kanji spelling if it has one, however rare, with the reading in hiragana; " +
+			"a Word with no kanji spelling is stored in kana with no hiragana. spanish is short, comma-separated senses with context in parentheses. " +
+			"type maps parts of speech (noun, suru, no_adj, na_adj, i_adj, adv, verb, adj_noun, adv_noun, counter) to the form shown: " +
+			"1 or 2 plain, 3 ～に, 4 ～と, 5 ～的, 6 ～的に, 7 ～たる, 8 ～を. group must be a stored Group's key. " +
+			"tags are Word Tags in snake_case; check japanese_list_tags first. " +
+			"Refused if a Word with the same spelling and reading is stored (another reading of a spelling is a different Word). " +
+			"Add Word Links and Hints afterwards. Answers {\"id\"}.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"word":{"type":"string","description":"The kanji spelling, or the kana if it has none."},` +
+			`"hiragana":{"type":"string","description":"The reading; leave out for a kana Word."},` +
+			`"spanish":{"type":"string"},` +
+			`"type":{"type":"object","additionalProperties":{"type":"integer","minimum":1,"maximum":8}},` +
+			`"group":{"type":"string","description":"A Group's key, such as jlpt_n2."},` +
+			`"tags":{"type":"array","items":{"type":"string"}},` +
+			`"notes":{"type":"string","description":"Such as JLPT N2, or a short Spanish note."},` +
+			`"sentences":{"type":"array","items":{"type":"object","properties":{` +
+			`"sentence":{"type":"string"},"translation":{"type":"string","description":"In English."}},` +
+			`"required":["sentence","translation"]}}},` +
+			`"required":["word","spanish","type","group"]}`),
+		Handle: s.addWordTool,
 	}}
+}
+
+// wordFields are a Word's own fields as a Tool is sent them.
+type wordFields struct {
+	Word      string         `json:"word"`
+	Hiragana  string         `json:"hiragana"`
+	Spanish   string         `json:"spanish"`
+	Type      map[string]int `json:"type"`
+	Group     string         `json:"group"`
+	Tags      []string       `json:"tags"`
+	Notes     string         `json:"notes"`
+	Sentences []struct {
+		Sentence    string `json:"sentence"`
+		Translation string `json:"translation"`
+	} `json:"sentences"`
+}
+
+// addWordTool answers japanese_add_word.
+func (s *WordsService) addWordTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var fields wordFields
+	if err := json.Unmarshal(arguments, &fields); err != nil {
+		return nil, err
+	}
+	word, err := s.checkNewWord(ctx, fields)
+	if err != nil {
+		return nil, err
+	}
+	id, err := s.words.Insert(ctx, word)
+	if errors.Is(err, model.ErrWordExists) {
+		return nil, fmt.Errorf("%s (%s) is already stored: look at it with japanese_get_word and improve it instead", word.Word, word.Hiragana)
+	}
+	if err != nil {
+		return nil, err
+	}
+	return coremodel.CreatedJSON{ID: id}, nil
+}
+
+// Limits on what a Word may hold.
+const (
+	maxSpellingLength = 100
+	maxSpanishLength  = 500
+	maxNotesLength    = 2000
+	maxTags           = 30
+	maxTagLength      = 40
+	maxSentences      = 10
+	maxSentenceLength = 500
+)
+
+// wordTypes are the parts of speech a Word's type may have.
+var wordTypes = []string{"noun", "suru", "no_adj", "na_adj", "i_adj", "adv", "verb", "adj_noun", "adv_noun", "counter"}
+
+// snakeCase is a tag's form: lowercase English words joined by _.
+var snakeCase = regexp.MustCompile(`^[a-z0-9]+(_[a-z0-9]+)*$`)
+
+// checkNewWord checks fields as a new Word and returns it, or explains
+// what's wrong.
+func (s *WordsService) checkNewWord(ctx context.Context, fields wordFields) (model.Word, error) {
+	word := model.Word{
+		Word:     strings.TrimSpace(fields.Word),
+		Hiragana: strings.TrimSpace(fields.Hiragana),
+		Spanish:  strings.TrimSpace(fields.Spanish),
+		Type:     fields.Type,
+		Group:    fields.Group,
+		Tags:     utils.OrEmptyList(fields.Tags),
+		Notes:    strings.TrimSpace(fields.Notes),
+	}
+	switch {
+	case word.Word == "" || utf8.RuneCountInString(word.Word) > maxSpellingLength:
+		return word, fmt.Errorf("word is required, at most %d characters", maxSpellingLength)
+	case utf8.RuneCountInString(word.Hiragana) > maxSpellingLength:
+		return word, fmt.Errorf("hiragana must be at most %d characters", maxSpellingLength)
+	case word.Spanish == "" || utf8.RuneCountInString(word.Spanish) > maxSpanishLength:
+		return word, fmt.Errorf("spanish is required, at most %d characters", maxSpanishLength)
+	case utf8.RuneCountInString(word.Notes) > maxNotesLength:
+		return word, fmt.Errorf("notes must be at most %d characters", maxNotesLength)
+	case len(word.Type) == 0:
+		return word, fmt.Errorf("type needs at least one of %s", strings.Join(wordTypes, ", "))
+	case len(word.Tags) > maxTags:
+		return word, fmt.Errorf("at most %d Word Tags", maxTags)
+	case len(fields.Sentences) > maxSentences:
+		return word, fmt.Errorf("at most %d sentences", maxSentences)
+	}
+	for kind, form := range word.Type {
+		if !slices.Contains(wordTypes, kind) {
+			return word, fmt.Errorf("type %q isn't one of %s", kind, strings.Join(wordTypes, ", "))
+		}
+		if form < 1 || form > 8 {
+			return word, fmt.Errorf("type %s is %d; the form must be 1 to 8", kind, form)
+		}
+	}
+	for _, tag := range word.Tags {
+		if !snakeCase.MatchString(tag) || len(tag) > maxTagLength {
+			return word, fmt.Errorf("Word Tag %q must be snake_case, such as usually_kana", tag)
+		}
+	}
+	for _, sentence := range fields.Sentences {
+		sentence.Sentence, sentence.Translation = strings.TrimSpace(sentence.Sentence), strings.TrimSpace(sentence.Translation)
+		if sentence.Sentence == "" || sentence.Translation == "" ||
+			utf8.RuneCountInString(sentence.Sentence) > maxSentenceLength || utf8.RuneCountInString(sentence.Translation) > maxSentenceLength {
+			return word, fmt.Errorf("each sentence needs its translation, each at most %d characters", maxSentenceLength)
+		}
+		word.Sentences = append(word.Sentences, model.Sentence(sentence))
+	}
+	if _, err := s.groups.GetOneByKey(ctx, word.Group); errors.Is(err, coreutils.ErrNotFound) {
+		return word, fmt.Errorf("%q isn't a stored Group", word.Group)
+	} else if err != nil {
+		return word, err
+	}
+	return word, nil
 }
 
 // listTagsTool answers japanese_list_tags.
