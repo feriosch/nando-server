@@ -893,3 +893,81 @@ func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
 		t.Errorf("Tools and their hints =\n%v\nwant\n%v", got, want)
 	}
 }
+
+// toolError calls the Tool name with args, which must fail, and returns
+// what it says.
+func toolError(t *testing.T, session *mcp.ClientSession, name string, args map[string]any) string {
+	t.Helper()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil || !result.IsError || len(result.Content) == 0 {
+		t.Fatalf("%s with %v: %v, %+v; want the Tool to fail", name, args, err, result)
+	}
+	return result.Content[0].(*mcp.TextContent).Text
+}
+
+func TestAKanaWordHasNoReadingHoweverItIsSent(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("gaming", "Gaming", "https://storage.googleapis.com/benkyo/gaming.png"))
+	session := phone.connect()
+
+	added := callTool[createdJSON](t, session, "japanese_add_word", map[string]any{
+		"word": "ぱちり", "hiragana": "ぱちり", "spanish": "clic", "type": map[string]any{"adv": 4}, "group": "gaming",
+	})
+
+	if got := get[wordJSON](phone, "/api/japanese/words/"+added.ID); got.Hiragana != nil {
+		t.Errorf("ぱちり's reading = %q, want none: a kana Word has no reading", *got.Hiragana)
+	}
+	toolFails(t, session, "japanese_add_word", map[string]any{"word": "ぱちり", "spanish": "x", "type": map[string]any{"adv": 1}, "group": "gaming"})
+
+	callTool[map[string]any](t, session, "japanese_update_word", map[string]any{"id": added.ID, "hiragana": "ぱちり"})
+	if got := get[wordJSON](phone, "/api/japanese/words/"+added.ID); got.Hiragana != nil {
+		t.Errorf("ぱちり's reading after updating it to its spelling = %q, want none", *got.Hiragana)
+	}
+}
+
+func TestAKanjiSpellingNeedsItsReading(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("groups", group("jlpt_n3", "JLPT N3", "https://storage.googleapis.com/benkyo/n3.png"))
+	stored := word("一生", "いっしょう", "toda la vida", "jlpt_n3")
+	kana := word("けじめ", "", "distinción", "jlpt_n3")
+	n.store("words", stored, kana)
+	session := phone.connect()
+	lifetime := map[string]any{"word": "天性", "spanish": "naturaleza", "type": map[string]any{"noun": 1}, "group": "jlpt_n3"}
+
+	for name, args := range map[string]map[string]any{
+		"add without a reading":            lifetime,
+		"add with its spelling as reading": with(lifetime, "hiragana", "天性"),
+		"update to no reading":             {"id": id(stored), "hiragana": ""},
+		"update to its spelling":           {"id": id(stored), "hiragana": "一生"},
+		"update a kana Word to Kanji only": {"id": id(kana), "word": "区切り"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if msg := toolError(t, session, name2tool(args), args); !strings.Contains(msg, "reading") {
+				t.Errorf("error %q, want it to say the reading is needed", msg)
+			}
+		})
+	}
+	if got := get[wordJSON](phone, "/api/japanese/words/"+id(stored)); got.Hiragana == nil || *got.Hiragana != "いっしょう" {
+		t.Errorf("一生's reading after refused updates = %v, want いっしょう", got.Hiragana)
+	}
+}
+
+// name2tool is the Tool a test's arguments are for: an update has an id.
+func name2tool(args map[string]any) string {
+	if _, ok := args["id"]; ok {
+		return "japanese_update_word"
+	}
+	return "japanese_add_word"
+}
+
+func TestANuanceTagErrorSaysNuanceTag(t *testing.T) {
+	phone, session, whispering, murmur := linkedPair(t)
+	_ = phone
+
+	for _, tool := range []string{"japanese_add_word_link", "japanese_update_word_link"} {
+		msg := toolError(t, session, tool, map[string]any{"from": id(whispering), "to": id(murmur), "kind": "related", "nuanceTags": []string{"moreFormal"}})
+		if !strings.Contains(msg, "Nuance Tag") || strings.Contains(msg, "Word Tag") {
+			t.Errorf("%s error %q, want it to name a Nuance Tag, not a Word Tag", tool, msg)
+		}
+	}
+}

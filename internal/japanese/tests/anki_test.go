@@ -623,3 +623,16 @@ func TestAnEmptyJLPTDeckIsJustTheHeader(t *testing.T) {
 		t.Errorf("deck = %q, want only its 5 header lines", file.raw)
 	}
 }
+
+func TestAUsuallyKanaWordWithoutAReadingIsExportedAsSpelled(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	catalogue := word("カタログ", "", "catálogo", "jlpt_n2")
+	catalogue["tags"] = bson.A{"usually_kana"}
+	n.store("words", catalogue)
+
+	note := onlyNote(phone)
+
+	if note["Word"] != "カタログ" || note["Pronunciation"] != "" {
+		t.Errorf("Word, Pronunciation = %q, %q; want カタログ and none", note["Word"], note["Pronunciation"])
+	}
+}

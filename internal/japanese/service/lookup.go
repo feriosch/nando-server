@@ -239,17 +239,16 @@ func (s *LookupService) lookupJishoTool(ctx context.Context, arguments json.RawM
 
 // get GETs address and decodes its JSON into v, failing unless it answers 200.
 func (s *LookupService) get(ctx context.Context, address string, v any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, address, nil)
+	host := address
+	if u, err := url.Parse(address); err == nil {
+		host = u.Host
+	}
+	status, body, err := s.fetch(ctx, address)
 	if err != nil {
-		return err
+		return fmt.Errorf("asking %s: %w", host, err)
 	}
-	res, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("asking %s: %w", req.URL.Host, err)
+	if status != http.StatusOK {
+		return fmt.Errorf("%s answered %d %s; try again later", host, status, http.StatusText(status))
 	}
-	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
-		return fmt.Errorf("%s answered %s; try again later", req.URL.Host, res.Status)
-	}
-	return json.NewDecoder(res.Body).Decode(v)
+	return json.Unmarshal(body, v)
 }

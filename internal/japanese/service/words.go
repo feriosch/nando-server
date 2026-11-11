@@ -153,7 +153,7 @@ func (s *WordsService) Tools() []coremodel.Tool {
 	}, {
 		Name: "japanese_add_word",
 		Description: "Adds a new Word. word is its kanji spelling if it has one, however rare, with the reading in hiragana; " +
-			"a Word with no kanji spelling is stored in kana with no hiragana. spanish is short, comma-separated senses with context in parentheses. " +
+			"a Word with no kanji spelling is stored in kana with no hiragana (a reading equal to its kana spelling counts as none). spanish is short, comma-separated senses with context in parentheses. " +
 			"type maps parts of speech (noun, suru, no_adj, na_adj, i_adj, adv, verb, adj_noun, adv_noun, counter) to the form shown: " +
 			"1 or 2 plain, 3 ～に, 4 ～と, 5 ～的, 6 ～的に, 7 ～たる, 8 ～を. group must be a stored Group's key. " +
 			"tags are Word Tags in snake_case; check japanese_list_tags first. " +
@@ -245,8 +245,8 @@ func (s *WordsService) Tools() []coremodel.Tool {
 		Handle:      s.deleteWordTool,
 	}, {
 		Name: "japanese_merge_words",
-		Description: "Merges two Words that are the same: keeps one and deletes the other. First set the kept Word's fields with " +
-			"japanese_update_word. The removed Word's Word Links and Hints move to the kept one, except those it already has " +
+		Description: "Merges two Words that are the same: keeps one and deletes the other. Merge first, then set the kept Word's " +
+			"fields with japanese_update_word, which can only take the removed Word's spelling and reading once it is gone. The removed Word's Word Links and Hints move to the kept one, except those it already has " +
 			"and any link between the two; Word Links on other Words that pointed at the removed Word now point at the kept one. " +
 			"It can't be undone: ask the Owner first. Answers the kept Word as it is now.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
@@ -329,11 +329,7 @@ func (s *WordsService) mergeWordsTool(ctx context.Context, arguments json.RawMes
 	if err := s.words.Delete(ctx, remove.ID); err != nil {
 		return nil, err
 	}
-	merged, err := s.words.GetOneByID(ctx, keep.ID)
-	if err != nil {
-		return nil, err
-	}
-	return s.wordJSON(ctx, merged)
+	return s.wordPage(ctx, keep.ID)
 }
 
 // changeGroupTool answers japanese_change_group.
@@ -345,32 +341,38 @@ func (s *WordsService) changeGroupTool(ctx context.Context, arguments json.RawMe
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
 	}
-	if _, err := s.groups.GetOneByKey(ctx, args.Group); errors.Is(err, coreutils.ErrNotFound) {
-		return nil, fmt.Errorf("%q isn't a stored Group", args.Group)
-	} else if err != nil {
+	if err := s.checkGroup(ctx, args.Group); err != nil {
 		return nil, err
 	}
-	err := s.words.SetGroup(ctx, args.ID, args.Group)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		return nil, fmt.Errorf("there's no Word with id %s", args.ID)
+	if err := s.words.SetGroup(ctx, args.ID, args.Group); err != nil {
+		return nil, noWord(args.ID, err)
 	}
-	if err != nil {
-		return nil, err
-	}
-	word, err := s.words.GetOneByID(ctx, args.ID)
-	if err != nil {
-		return nil, err
-	}
-	return s.wordJSON(ctx, word)
+	return s.wordPage(ctx, args.ID)
 }
 
 // storedWord is the Word with id, or an error saying there's none.
 func (s *WordsService) storedWord(ctx context.Context, id string) (model.Word, error) {
 	word, err := s.words.GetOneByID(ctx, id)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		return word, fmt.Errorf("there's no Word with id %q", id)
+	return word, noWord(id, err)
+}
+
+// wordPage is the Word with id as its page shows it, as the Tools that
+// change a Word answer.
+func (s *WordsService) wordPage(ctx context.Context, id string) (model.WordJSON, error) {
+	word, err := s.storedWord(ctx, id)
+	if err != nil {
+		return model.WordJSON{}, err
 	}
-	return word, err
+	return s.wordJSON(ctx, word)
+}
+
+// noWord is err, said as there being no Word with id if it is Core's
+// utils.ErrNotFound.
+func noWord(id string, err error) error {
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return fmt.Errorf("there's no Word with id %q", id)
+	}
+	return err
 }
 
 // addHintTool answers japanese_add_hint.
@@ -391,9 +393,7 @@ func (s *WordsService) addHintTool(ctx context.Context, arguments json.RawMessag
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.words.GetOneByID(ctx, args.Word); errors.Is(err, coreutils.ErrNotFound) {
-		return nil, fmt.Errorf("there's no Word with id %s", args.Word)
-	} else if err != nil {
+	if _, err := s.storedWord(ctx, args.Word); err != nil {
 		return nil, err
 	}
 	stored, err := s.words.GetManyBySpellingOrReading(ctx, text)
@@ -426,17 +426,13 @@ func (s *WordsService) removeHintTool(ctx context.Context, arguments json.RawMes
 	if !removed {
 		return nil, fmt.Errorf("the Word with id %s has no Hint %q", args.Word, args.Text)
 	}
-	word, err := s.words.GetOneByID(ctx, args.Word)
-	if err != nil {
-		return nil, err
-	}
-	return s.wordJSON(ctx, word)
+	return s.wordPage(ctx, args.Word)
 }
 
 // updateWordLinkTool answers japanese_update_word_link.
 func (s *WordsService) updateWordLinkTool(ctx context.Context, arguments json.RawMessage) (any, error) {
-	var given map[string]json.RawMessage
-	if err := json.Unmarshal(arguments, &given); err != nil {
+	var sentFields map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &sentFields); err != nil {
 		return nil, err
 	}
 	var args struct {
@@ -449,25 +445,25 @@ func (s *WordsService) updateWordLinkTool(ctx context.Context, arguments json.Ra
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
 	}
-	if args.From == "" || args.To == "" {
-		return nil, errors.New("from and to are required")
+	if err := checkWordLinkEnds(args.From, args.To); err != nil {
+		return nil, err
 	}
 	var changes model.WordLinkChanges
-	if _, ok := given["kind"]; ok {
-		if !slices.Contains(wordLinkKinds, args.Kind) {
-			return nil, fmt.Errorf("kind must be one of %s", strings.Join(wordLinkKinds, ", "))
+	if isSent(sentFields, "kind") {
+		if err := checkKind(args.Kind); err != nil {
+			return nil, err
 		}
 		changes.Kind = &args.Kind
 	}
-	if _, ok := given["note"]; ok {
+	if isSent(sentFields, "note") {
 		note, err := checkNotes(args.Note)
 		if err != nil {
 			return nil, err
 		}
 		changes.Note = &note
 	}
-	if _, ok := given["nuanceTags"]; ok {
-		tags, err := checkTags(args.NuanceTags)
+	if isSent(sentFields, "nuanceTags") {
+		tags, err := checkTags(args.NuanceTags, "Nuance Tag")
 		if err != nil {
 			return nil, err
 		}
@@ -483,11 +479,7 @@ func (s *WordsService) updateWordLinkTool(ctx context.Context, arguments json.Ra
 	if err != nil {
 		return nil, err
 	}
-	word, err := s.words.GetOneByID(ctx, args.From)
-	if err != nil {
-		return nil, err
-	}
-	return s.wordJSON(ctx, word)
+	return s.wordPage(ctx, args.From)
 }
 
 // removeWordLinkTool answers japanese_remove_word_link.
@@ -499,8 +491,8 @@ func (s *WordsService) removeWordLinkTool(ctx context.Context, arguments json.Ra
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
 	}
-	if args.From == "" || args.To == "" {
-		return nil, errors.New("from and to are required")
+	if err := checkWordLinkEnds(args.From, args.To); err != nil {
+		return nil, err
 	}
 	var removed model.WordLinkRemovedJSON
 	var err error
@@ -518,6 +510,31 @@ func (s *WordsService) removeWordLinkTool(ctx context.Context, arguments json.Ra
 
 // wordLinkKinds are the kinds a Word Link can be.
 var wordLinkKinds = []string{"synonym", "antonym", "related"}
+
+// checkKind fails unless kind is a Word Link's.
+func checkKind(kind string) error {
+	if !slices.Contains(wordLinkKinds, kind) {
+		return fmt.Errorf("kind must be one of %s", strings.Join(wordLinkKinds, ", "))
+	}
+	return nil
+}
+
+// checkWordLinkEnds fails unless from and to are two Words' ids.
+func checkWordLinkEnds(from, to string) error {
+	switch {
+	case from == "" || to == "":
+		return errors.New("from and to are required")
+	case from == to:
+		return errors.New("a Word has no Word Link to itself")
+	}
+	return nil
+}
+
+// isSent reports whether a Tool was sent field, which may be empty.
+func isSent(sentFields map[string]json.RawMessage, field string) bool {
+	_, ok := sentFields[field]
+	return ok
+}
 
 // oppositeNuanceTags are the Nuance Tags that swap on a Word Link's way back.
 var oppositeNuanceTags = map[string]string{
@@ -539,13 +556,11 @@ func (s *WordsService) addWordLinkTool(ctx context.Context, arguments json.RawMe
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
 	}
-	switch {
-	case args.From == "" || args.To == "":
-		return nil, errors.New("from and to are required")
-	case args.From == args.To:
-		return nil, errors.New("a Word can't be linked to itself")
-	case !slices.Contains(wordLinkKinds, args.Kind):
-		return nil, fmt.Errorf("kind must be one of %s", strings.Join(wordLinkKinds, ", "))
+	if err := checkWordLinkEnds(args.From, args.To); err != nil {
+		return nil, err
+	}
+	if err := checkKind(args.Kind); err != nil {
+		return nil, err
 	}
 	note, err := checkNotes(args.Note)
 	if err != nil {
@@ -557,7 +572,7 @@ func (s *WordsService) addWordLinkTool(ctx context.Context, arguments json.RawMe
 			return nil, err
 		}
 	}
-	nuanceTags, err := checkTags(args.NuanceTags)
+	nuanceTags, err := checkTags(args.NuanceTags, "Nuance Tag")
 	if err != nil {
 		return nil, err
 	}
@@ -587,27 +602,9 @@ func (s *WordsService) addWordLinkTool(ctx context.Context, arguments json.RawMe
 	return written, nil
 }
 
-// wordFields are a Word's own fields as a Tool is sent them.
-type wordFields struct {
-	Word      string           `json:"word"`
-	Hiragana  string           `json:"hiragana"`
-	Spanish   string           `json:"spanish"`
-	Type      map[string]int   `json:"type"`
-	Group     string           `json:"group"`
-	Tags      []string         `json:"tags"`
-	Notes     string           `json:"notes"`
-	Sentences []sentenceFields `json:"sentences"`
-}
-
-// sentenceFields is an example sentence as a Tool is sent it.
-type sentenceFields struct {
-	Sentence    string `json:"sentence"`
-	Translation string `json:"translation"`
-}
-
 // addWordTool answers japanese_add_word.
 func (s *WordsService) addWordTool(ctx context.Context, arguments json.RawMessage) (any, error) {
-	var fields wordFields
+	var fields model.WordBody
 	if err := json.Unmarshal(arguments, &fields); err != nil {
 		return nil, err
 	}
@@ -644,7 +641,7 @@ var snakeCase = regexp.MustCompile(`^[a-z0-9]+(_[a-z0-9]+)*$`)
 
 // checkNewWord checks fields as a new Word and returns it, or explains
 // what's wrong.
-func (s *WordsService) checkNewWord(ctx context.Context, fields wordFields) (model.Word, error) {
+func (s *WordsService) checkNewWord(ctx context.Context, fields model.WordBody) (model.Word, error) {
 	var word model.Word
 	var err error
 	if word.Word, err = checkSpelling(fields.Word); err != nil {
@@ -653,13 +650,16 @@ func (s *WordsService) checkNewWord(ctx context.Context, fields wordFields) (mod
 	if word.Hiragana, err = checkReading(fields.Hiragana); err != nil {
 		return word, err
 	}
+	if word.Hiragana, err = readingOf(word.Word, word.Hiragana); err != nil {
+		return word, err
+	}
 	if word.Spanish, err = checkSpanish(fields.Spanish); err != nil {
 		return word, err
 	}
 	if word.Type, err = checkType(fields.Type); err != nil {
 		return word, err
 	}
-	if word.Tags, err = checkTags(fields.Tags); err != nil {
+	if word.Tags, err = checkTags(fields.Tags, "Word Tag"); err != nil {
 		return word, err
 	}
 	if word.Notes, err = checkNotes(fields.Notes); err != nil {
@@ -669,12 +669,16 @@ func (s *WordsService) checkNewWord(ctx context.Context, fields wordFields) (mod
 		return word, err
 	}
 	word.Group = fields.Group
-	if _, err := s.groups.GetOneByKey(ctx, word.Group); errors.Is(err, coreutils.ErrNotFound) {
-		return word, fmt.Errorf("%q isn't a stored Group", word.Group)
-	} else if err != nil {
-		return word, err
+	return word, s.checkGroup(ctx, word.Group)
+}
+
+// checkGroup fails unless key is a stored Group's.
+func (s *WordsService) checkGroup(ctx context.Context, key string) error {
+	_, err := s.groups.GetOneByKey(ctx, key)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return fmt.Errorf("%q isn't a stored Group", key)
 	}
-	return word, nil
+	return err
 }
 
 // The checks below each check one field as sent, and return it as stored.
@@ -726,20 +730,38 @@ func checkType(partsOfSpeech map[string]int) (map[string]int, error) {
 	return partsOfSpeech, nil
 }
 
-func checkTags(tags []string) ([]string, error) {
+// checkTags checks Word Tags or Nuance Tags, as kind names them.
+func checkTags(tags []string, kind string) ([]string, error) {
 	tags = utils.OrEmptyList(tags)
 	if len(tags) > maxTags {
-		return nil, fmt.Errorf("at most %d Word Tags", maxTags)
+		return nil, fmt.Errorf("at most %d %ss", maxTags, kind)
 	}
 	for _, tag := range tags {
 		if !snakeCase.MatchString(tag) || len(tag) > maxTagLength {
-			return nil, fmt.Errorf("Word Tag %q must be snake_case, such as usually_kana", tag)
+			return nil, fmt.Errorf("%s %q must be snake_case, such as written or usually_kana", kind, tag)
 		}
 	}
 	return tags, nil
 }
 
-func checkSentences(sent []sentenceFields) ([]model.Sentence, error) {
+// readingOf is the reading a Word spelled spelling is stored with: a Word
+// spelled with a Kanji needs its reading, in kana, and a kana Word has none,
+// so a reading equal to its spelling counts as none. One Word per spelling
+// and reading then holds however the reading was sent.
+func readingOf(spelling, reading string) (string, error) {
+	if !strings.ContainsFunc(spelling, isKanji) {
+		if reading == spelling {
+			return "", nil
+		}
+		return reading, nil
+	}
+	if reading == "" || strings.ContainsFunc(reading, isKanji) {
+		return "", fmt.Errorf("%s is spelled with Kanji, so it needs its reading in kana, in hiragana", spelling)
+	}
+	return reading, nil
+}
+
+func checkSentences(sent []model.SentenceJSON) ([]model.Sentence, error) {
 	if len(sent) > maxSentences {
 		return nil, fmt.Errorf("at most %d sentences", maxSentences)
 	}
@@ -755,96 +777,109 @@ func checkSentences(sent []sentenceFields) ([]model.Sentence, error) {
 	return sentences, nil
 }
 
-// updatable are the fields japanese_update_word changes.
-var updatable = []string{"word", "hiragana", "spanish", "type", "tags", "notes", "sentences"}
+// updatableFields are the fields japanese_update_word changes.
+var updatableFields = []string{"word", "hiragana", "spanish", "type", "tags", "notes", "sentences"}
 
 // updateWordTool answers japanese_update_word with the Word as it is now.
 func (s *WordsService) updateWordTool(ctx context.Context, arguments json.RawMessage) (any, error) {
-	var given map[string]json.RawMessage
-	if err := json.Unmarshal(arguments, &given); err != nil {
+	var sentFields map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &sentFields); err != nil {
 		return nil, err
 	}
 	var id string
-	if err := json.Unmarshal(given["id"], &id); err != nil || id == "" {
+	if err := json.Unmarshal(sentFields["id"], &id); err != nil || id == "" {
 		return nil, errors.New("id is required")
 	}
-	delete(given, "id")
-	if _, ok := given["group"]; ok {
+	delete(sentFields, "id")
+	if isSent(sentFields, "group") {
 		return nil, errors.New("a Word's Group is changed with japanese_change_group")
 	}
-	for field := range given {
-		if !slices.Contains(updatable, field) {
+	for field := range sentFields {
+		if !slices.Contains(updatableFields, field) {
 			return nil, fmt.Errorf("%q isn't a field japanese_update_word changes: only %s; Word Links and Hints have their own Tools",
-				field, strings.Join(updatable, ", "))
+				field, strings.Join(updatableFields, ", "))
 		}
 	}
-	if len(given) == 0 {
-		return nil, fmt.Errorf("give at least one of %s to change", strings.Join(updatable, ", "))
+	if len(sentFields) == 0 {
+		return nil, fmt.Errorf("give at least one of %s to change", strings.Join(updatableFields, ", "))
 	}
-	var fields wordFields
-	if err := json.Unmarshal(arguments, &fields); err != nil {
+	var body model.WordBody
+	if err := json.Unmarshal(arguments, &body); err != nil {
 		return nil, err
 	}
-	changes, err := checkChanges(given, fields)
+	stored, err := s.storedWord(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	changes, err := checkChanges(sentFields, body, stored)
 	if err != nil {
 		return nil, err
 	}
 	err = s.words.Update(ctx, id, changes)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		return nil, fmt.Errorf("there's no Word with id %s", id)
-	}
 	if errors.Is(err, model.ErrWordExists) {
-		return nil, errors.New("another Word already has that spelling and reading: merge them with japanese_merge_words instead")
+		return nil, errors.New("another Word already has that spelling and reading: merge the two with japanese_merge_words, " +
+			"then update the kept Word")
 	}
 	if err != nil {
-		return nil, err
+		return nil, noWord(id, err)
 	}
-	word, err := s.words.GetOneByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	return s.wordJSON(ctx, word)
+	return s.wordPage(ctx, id)
 }
 
-// checkChanges checks only the fields given and returns them as changes.
-func checkChanges(given map[string]json.RawMessage, fields wordFields) (model.WordChanges, error) {
+// checkChanges checks only the fields sent to change stored, and returns
+// them as changes. A new spelling or reading is checked with the other as it
+// will be stored.
+func checkChanges(sentFields map[string]json.RawMessage, body model.WordBody, stored model.Word) (model.WordChanges, error) {
 	var changes model.WordChanges
-	sent := func(field string) bool { _, ok := given[field]; return ok }
-	check := func(field string, value string, check func(string) (string, error), into **string) error {
-		if !sent(field) {
+	checkString := func(field string, value string, checkValue func(string) (string, error), into **string) error {
+		if !isSent(sentFields, field) {
 			return nil
 		}
-		checked, err := check(value)
+		checked, err := checkValue(value)
 		*into = &checked
 		return err
 	}
-	if err := check("word", fields.Word, checkSpelling, &changes.Word); err != nil {
+	if err := checkString("word", body.Word, checkSpelling, &changes.Word); err != nil {
 		return changes, err
 	}
-	if err := check("hiragana", fields.Hiragana, checkReading, &changes.Hiragana); err != nil {
+	if err := checkString("hiragana", body.Hiragana, checkReading, &changes.Hiragana); err != nil {
 		return changes, err
 	}
-	if err := check("spanish", fields.Spanish, checkSpanish, &changes.Spanish); err != nil {
+	if changes.Word != nil || changes.Hiragana != nil {
+		spelling, reading := stored.Word, stored.Hiragana
+		if changes.Word != nil {
+			spelling = *changes.Word
+		}
+		if changes.Hiragana != nil {
+			reading = *changes.Hiragana
+		}
+		reading, err := readingOf(spelling, reading)
+		if err != nil {
+			return changes, err
+		}
+		changes.Hiragana = &reading
+	}
+	if err := checkString("spanish", body.Spanish, checkSpanish, &changes.Spanish); err != nil {
 		return changes, err
 	}
-	if err := check("notes", fields.Notes, checkNotes, &changes.Notes); err != nil {
+	if err := checkString("notes", body.Notes, checkNotes, &changes.Notes); err != nil {
 		return changes, err
 	}
 	var err error
-	if sent("type") {
-		if changes.Type, err = checkType(fields.Type); err != nil {
+	if isSent(sentFields, "type") {
+		if changes.Type, err = checkType(body.Type); err != nil {
 			return changes, err
 		}
 	}
-	if sent("tags") {
-		tags, err := checkTags(fields.Tags)
+	if isSent(sentFields, "tags") {
+		tags, err := checkTags(body.Tags, "Word Tag")
 		if err != nil {
 			return changes, err
 		}
 		changes.Tags = &tags
 	}
-	if sent("sentences") {
-		sentences, err := checkSentences(fields.Sentences)
+	if isSent(sentFields, "sentences") {
+		sentences, err := checkSentences(body.Sentences)
 		if err != nil {
 			return changes, err
 		}

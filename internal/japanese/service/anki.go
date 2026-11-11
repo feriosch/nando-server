@@ -112,9 +112,10 @@ func writeCSVRow(file *strings.Builder, fields []string) {
 }
 
 // exportedSpelling is the Word and Pronunciation fields: a Word usually
-// written in kana is exported in kana, with no Pronunciation.
+// written in kana is exported in kana, with no Pronunciation. A kana Word
+// has no reading, so it is exported as spelled.
 func exportedSpelling(word model.AnkiWord) (spelling, reading string) {
-	if slices.Contains(word.Tags, "usually_kana") {
+	if slices.Contains(word.Tags, "usually_kana") && word.Hiragana != "" {
 		return word.Hiragana, ""
 	}
 	return word.Word, word.Hiragana

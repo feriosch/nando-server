@@ -53,6 +53,16 @@ type Hint struct {
 	Note string
 }
 
+// WordField is a field of the Words that a search can look in alone.
+type WordField string
+
+const (
+	// SpellingField is a Word's spelling: searching it finds Words sharing a Kanji.
+	SpellingField WordField = "spelling"
+	// SpanishField is a Word's Spanish meaning.
+	SpanishField WordField = "spanish"
+)
+
 // WordChanges are the fields of a Word to change; a nil one is left as it
 // is. An empty Hiragana or Notes removes it.
 type WordChanges struct {
@@ -91,9 +101,8 @@ type WordsRepository interface {
 	// matches, then shorter ones, then longer ones. Only what a search result
 	// shows is filled in: ID, Word, Hiragana, Spanish and Group.
 	GetManyBySearch(ctx context.Context, q string, limit int) ([]Word, error)
-	// GetManyBySearchIn is GetManyBySearch over one field only: "word" for
-	// the spelling, or "spanish" for the Spanish meaning.
-	GetManyBySearchIn(ctx context.Context, q, field string, limit int) ([]Word, error)
+	// GetManyBySearchIn is GetManyBySearch over one field of the Words only.
+	GetManyBySearchIn(ctx context.Context, q string, field WordField, limit int) ([]Word, error)
 	// GetOneByID returns the Word with this ID, or Core's utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (Word, error)
 	// Insert stores a new Word, with no Word Links or Hints yet, and returns
@@ -203,6 +212,19 @@ type HintWrittenJSON struct {
 // WordDeletedJSON is what japanese_delete_word answers: the deleted Word's id.
 type WordDeletedJSON struct {
 	Deleted string `json:"deleted"`
+}
+
+// WordBody is a Word's own fields as japanese_add_word and
+// japanese_update_word are sent them.
+type WordBody struct {
+	Word      string         `json:"word"`
+	Hiragana  string         `json:"hiragana"`
+	Spanish   string         `json:"spanish"`
+	Type      map[string]int `json:"type"`
+	Group     string         `json:"group"`
+	Tags      []string       `json:"tags"`
+	Notes     string         `json:"notes"`
+	Sentences []SentenceJSON `json:"sentences"`
 }
 
 // WordsJSON is the Words a Tool found, such as every Word with a spelling

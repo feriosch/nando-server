@@ -80,9 +80,6 @@ func (s *SearchService) searchAll(ctx context.Context, q string) (model.SearchJS
 	return model.SearchJSON{Words: utils.ToWordRowJSONs(words), Kanji: utils.ToKanjiRowJSONs(kanji)}, nil
 }
 
-// searchFields are the Word fields japanese_search can search alone.
-var searchFields = map[string]string{"spelling": "word", "spanish": "spanish"}
-
 // Tools are the SearchService's Tools for Connectors.
 func (s *SearchService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
@@ -119,9 +116,9 @@ func (s *SearchService) searchTool(ctx context.Context, arguments json.RawMessag
 	case args.In == "":
 		return s.searchAll(ctx, q)
 	}
-	field, ok := searchFields[args.In]
-	if !ok {
-		return nil, fmt.Errorf(`"in" must be "spelling" or "spanish", not %q`, args.In)
+	field := model.WordField(args.In)
+	if field != model.SpellingField && field != model.SpanishField {
+		return nil, fmt.Errorf(`"in" must be %q or %q, not %q`, model.SpellingField, model.SpanishField, args.In)
 	}
 	words, err := s.words.GetManyBySearchIn(ctx, q, field, maxWords)
 	if err != nil {
