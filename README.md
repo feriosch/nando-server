@@ -13,6 +13,7 @@ Go API for Nando. Domain language: [`GLOSSARY.md`](GLOSSARY.md). Decisions: [`do
 - `internal/testpasskey`: test helper, a software Passkey, so tests can sign in.
 - `internal/testpush`: test helper, a browser's push service, so tests can see the Notifications Nando delivers.
 - `internal/testconnector`: test helper, a Connector the Owner approves with a Passkey, connected to `/mcp` with the official MCP client, so a Module's tests can call its Tools as Claude does.
+- `skills/`: the skills Claude follows to work with the Owner's data through the Nando Connector, such as adding a Japanese Word (`skills/japanese/add-word`). [`skills/README.md`](skills/README.md) says how to use them in the Claude app and in Claude Code, and how to add the Connector.
 - `scripts/backup.sh`: the weekly backup's dump (see [Backups](#backups)). `scripts/backup_test.go` runs it inside `mongo:8` and restores what it wrote with the commands below.
 
 Core and every Module are split into the same three layers:
