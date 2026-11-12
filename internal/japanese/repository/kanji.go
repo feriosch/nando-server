@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -24,11 +26,18 @@ func NewKanji(ctx context.Context, db *mongo.Database) (model.KanjiRepository, e
 		Keys:    bson.D{{Key: "kanji", Value: 1}},
 		Options: options.Index().SetName("kanji"),
 	})
-	if err != nil {
+	// benkyo's dump may have brought an index on kanji under another name,
+	// which serves the same lookups.
+	var conflict mongo.CommandError
+	if err != nil && !(errors.As(err, &conflict) && conflict.Code == indexOptionsConflict) {
 		return nil, err
 	}
 	return kanji{collection: collection}, nil
 }
+
+// indexOptionsConflict is MongoDB's error code for creating an index that
+// already exists under another name.
+const indexOptionsConflict = 85
 
 // kanji is the kanji collection.
 type kanji struct {
@@ -104,7 +113,18 @@ func (r kanji) GetManyBySpelling(ctx context.Context, spelling string) ([]model.
 	if err != nil {
 		return nil, err
 	}
-	return toKanji(ctx, cursor)
+	found, err := toKanji(ctx, cursor)
+	if err != nil {
+		return nil, err
+	}
+	// A character stored twice, as benkyo sometimes did, comes back once: the
+	// first stored.
+	seen := map[string]bool{}
+	return slices.DeleteFunc(found, func(k model.Kanji) bool {
+		duplicate := seen[k.Kanji]
+		seen[k.Kanji] = true
+		return duplicate
+	}), nil
 }
 
 func (r kanji) GetOneByID(ctx context.Context, id string) (model.Kanji, error) {

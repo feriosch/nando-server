@@ -73,3 +73,36 @@ func TestAtMostEightCandidatesCanBeAskedFor(t *testing.T) {
 	}
 	phone.must(http.MethodGet, "/api/japanese/kanji?kanji=派水氷次永泳承旅採", nil, http.StatusBadRequest)
 }
+
+func TestAKanjiStoredTwiceComesBackOnce(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	water := kanji("水", "agua", 137)
+	n.store("kanji", water, kanji("水", "agua", 137)) // a duplicate left over from benkyo, stored after
+
+	got := get[[]candidateKanjiJSON](phone, "/api/japanese/kanji?kanji=水")
+
+	if want := []candidateKanjiJSON{{ID: id(water), Kanji: "水", Spanish: "agua", V1: 137}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Kanji = %+v,\nwant %+v", got, want)
+	}
+}
+
+func TestCandidatesThatAreNotKanjiAreLeftOut(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	water := kanji("水", "agua", 137)
+	n.store("kanji", water)
+
+	got := get[[]candidateKanjiJSON](phone, "/api/japanese/kanji?kanji=あ水x")
+
+	if want := []candidateKanjiJSON{{ID: id(water), Kanji: "水", Spanish: "agua", V1: 137}}; !reflect.DeepEqual(got, want) {
+		t.Errorf("Kanji = %+v,\nwant %+v", got, want)
+	}
+}
+
+func TestCandidatesThatAreNotValidUTF8FindNoKanji(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	n.store("kanji", kanji("水", "agua", 137))
+
+	if got := get[[]candidateKanjiJSON](phone, "/api/japanese/kanji?kanji=%FF%FE"); got == nil || len(got) != 0 {
+		t.Errorf("Kanji = %#v, want []", got)
+	}
+}
