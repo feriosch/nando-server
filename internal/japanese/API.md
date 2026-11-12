@@ -114,6 +114,23 @@ A Word is a Japanese word or Expression the Owner is learning.
 
 A Kanji is one character the Owner studies, numbered by its place in Heisig's Remembering the Kanji.
 
+### `GET /api/japanese/kanji?kanji={kanji}`
+
+`200`: which of a Drawing's Candidates are stored Kanji, so the Draw screen can show their meaning and number and open them. `kanji` is the Candidates, best guess first, in one string:
+
+```json
+[
+  { "id": "5f1c2b0e9b1d4c0012ab3530", "kanji": "派", "spanish": "facción", "v1": 1045 },
+  { "id": "5f1c2b0e9b1d4c0012ab3531", "kanji": "水", "spanish": "agua", "v1": 137 }
+]
+```
+
+- The stored Kanji among `kanji`, in the order they first appear there, each once. Asking for 派水氷 with 氷 not stored gives 派 then 水.
+- `v1`: its Heisig number in volume 1.
+- An empty, blank or missing `kanji` finds nothing: `[]`. Anything that isn't a stored Kanji, such as kana, is left out.
+
+`400`: `kanji` is more than 8 characters, after trimming spaces at either end. A Drawing has at most 8 Candidates.
+
 ### `GET /api/japanese/kanji/{id}`
 
 `200`: the Kanji, its Components, and the Words spelled with it.

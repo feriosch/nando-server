@@ -28,8 +28,9 @@ type KanjiRepository interface {
 	// GetManyBySearch returns up to limit Kanji that match q, best first. Only what a
 	// search result shows is filled in: ID, Kanji and Spanish.
 	GetManyBySearch(ctx context.Context, q string, limit int) ([]Kanji, error)
-	// GetManyBySpelling returns the stored Kanji in a Word's spelling, in the
-	// order they first appear there, filled in as by GetManyBySearch.
+	// GetManyBySpelling returns the stored Kanji in spelling, such as a Word's,
+	// in the order they first appear there, each once. ID, Kanji, Spanish and V1
+	// are filled in.
 	GetManyBySpelling(ctx context.Context, spelling string) ([]Kanji, error)
 	// GetOneByID returns the Kanji with this ID, or Core's utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (Kanji, error)
@@ -48,6 +49,15 @@ type KanjiRowJSON struct {
 	ID      string `json:"id"`
 	Kanji   string `json:"kanji"`
 	Spanish string `json:"spanish"`
+}
+
+// CandidateKanjiJSON is a stored Kanji that one of a Drawing's Candidates
+// turned out to be.
+type CandidateKanjiJSON struct {
+	ID      string `json:"id"`
+	Kanji   string `json:"kanji"`
+	Spanish string `json:"spanish"`
+	V1      int    `json:"v1"`
 }
 
 // KanjiJSON is a Kanji as its page shows it.

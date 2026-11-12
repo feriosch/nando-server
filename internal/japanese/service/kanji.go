@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 	"unicode/utf8"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
@@ -30,7 +31,32 @@ func NewKanji(kanji model.KanjiRepository, irregular model.IrregularComponentsRe
 
 // Routes adds the Kanji routes to mux, under /api/japanese/kanji.
 func (s *KanjiService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/japanese/kanji", s.getCandidates)
 	mux.HandleFunc("GET /api/japanese/kanji/{id}", s.getKanji)
+}
+
+// maxCandidates is how many kanji GET /api/japanese/kanji?kanji= looks up at
+// most: a Drawing has up to 8 Candidates.
+const maxCandidates = 8
+
+// getCandidates answers which of a Drawing's Candidates are stored Kanji, in
+// the order they were asked for.
+func (s *KanjiService) getCandidates(w http.ResponseWriter, r *http.Request) {
+	candidates := strings.TrimSpace(r.URL.Query().Get("kanji"))
+	if utf8.RuneCountInString(candidates) > maxCandidates {
+		http.Error(w, fmt.Sprintf("kanji is more than %d kanji", maxCandidates), http.StatusBadRequest)
+		return
+	}
+	stored, err := s.kanji.GetManyBySpelling(r.Context(), candidates)
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	found := make([]model.CandidateKanjiJSON, len(stored))
+	for i, k := range stored {
+		found[i] = model.CandidateKanjiJSON{ID: k.ID, Kanji: k.Kanji, Spanish: k.Spanish, V1: k.V1}
+	}
+	coreutils.WriteJSON(w, http.StatusOK, found)
 }
 
 // maxKanjiWords is how many Words spelled with it a Kanji page shows at most.

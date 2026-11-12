@@ -13,9 +13,21 @@ import (
 	"github.com/feriosch/nando-server/internal/japanese/utils"
 )
 
-// NewKanji returns the KanjiRepository over the kanji collection in db.
-func NewKanji(db *mongo.Database) model.KanjiRepository {
-	return kanji{collection: db.Collection("kanji")}
+// NewKanji returns the KanjiRepository over the kanji collection in db,
+// first creating any indexes it lacks.
+func NewKanji(ctx context.Context, db *mongo.Database) (model.KanjiRepository, error) {
+	collection := db.Collection("kanji")
+	// Kanji are looked up by their character: for a Drawing's Candidates, a
+	// Word's spelling and the japanese_get_kanji Tool. Not unique, so a
+	// duplicate left over from benkyo can't stop the server from starting.
+	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "kanji", Value: 1}},
+		Options: options.Index().SetName("kanji"),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return kanji{collection: collection}, nil
 }
 
 // kanji is the kanji collection.
@@ -53,6 +65,9 @@ func (d kanjiDocument) toKanji() model.Kanji {
 // kanjiRowFields projects what a list shows of a Kanji.
 var kanjiRowFields = bson.D{{Key: "kanji", Value: 1}, {Key: "spanish", Value: 1}}
 
+// kanjiRowWithV1Fields is kanjiRowFields and the Kanji's Heisig volume 1 number.
+var kanjiRowWithV1Fields = bson.D{{Key: "kanji", Value: 1}, {Key: "spanish", Value: 1}, {Key: "v1", Value: 1}}
+
 func (r kanji) GetManyBySearch(ctx context.Context, q string, limit int) ([]model.Kanji, error) {
 	pattern := utils.SearchPattern(q)
 	characters := strings.Split(q, "")
@@ -84,7 +99,7 @@ func (r kanji) GetManyBySpelling(ctx context.Context, spelling string) ([]model.
 		{{Key: "$match", Value: bson.D{{Key: "kanji", Value: bson.D{{Key: "$in", Value: strings.Split(spelling, "")}}}}}},
 		{{Key: "$addFields", Value: bson.D{{Key: "_position", Value: positionIn(spelling)}}}},
 		{{Key: "$sort", Value: bson.D{{Key: "_position", Value: 1}, {Key: "_id", Value: 1}}}},
-		{{Key: "$project", Value: kanjiRowFields}},
+		{{Key: "$project", Value: kanjiRowWithV1Fields}},
 	})
 	if err != nil {
 		return nil, err

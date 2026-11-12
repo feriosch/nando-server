@@ -13,7 +13,7 @@ func TestTheJapaneseAPINeedsASession(t *testing.T) {
 	n.store("words", foot)
 	stranger := &browser{nando: n}
 
-	for _, path := range []string{"/api/japanese/search?q=足", "/api/japanese/words/" + id(foot), "/api/japanese/kanji/" + id(foot), "/api/japanese/anki/jlpt.csv"} {
+	for _, path := range []string{"/api/japanese/search?q=足", "/api/japanese/words/" + id(foot), "/api/japanese/kanji/" + id(foot), "/api/japanese/kanji?kanji=足", "/api/japanese/anki/jlpt.csv"} {
 		if rec := stranger.do(http.MethodGet, path, nil); rec.Code != http.StatusUnauthorized {
 			t.Errorf("GET %s without a Session: status = %d, want %d", path, rec.Code, http.StatusUnauthorized)
 		}
