@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"errors"
+	"slices"
 	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -13,10 +15,29 @@ import (
 	"github.com/feriosch/nando-server/internal/japanese/utils"
 )
 
-// NewKanji returns the KanjiRepository over the kanji collection in db.
-func NewKanji(db *mongo.Database) model.KanjiRepository {
-	return kanji{collection: db.Collection("kanji")}
+// NewKanji returns the KanjiRepository over the kanji collection in db,
+// first creating any indexes it lacks.
+func NewKanji(ctx context.Context, db *mongo.Database) (model.KanjiRepository, error) {
+	collection := db.Collection("kanji")
+	// Kanji are looked up by their character: for a Drawing's Candidates, a
+	// Word's spelling and the japanese_get_kanji Tool. Not unique, so a
+	// duplicate left over from benkyo can't stop the server from starting.
+	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys:    bson.D{{Key: "kanji", Value: 1}},
+		Options: options.Index().SetName("kanji"),
+	})
+	// benkyo's dump may have brought an index on kanji under another name,
+	// which serves the same lookups.
+	var conflict mongo.CommandError
+	if err != nil && !(errors.As(err, &conflict) && conflict.Code == indexOptionsConflict) {
+		return nil, err
+	}
+	return kanji{collection: collection}, nil
 }
+
+// indexOptionsConflict is MongoDB's error code for creating an index that
+// already exists under another name.
+const indexOptionsConflict = 85
 
 // kanji is the kanji collection.
 type kanji struct {
@@ -53,6 +74,9 @@ func (d kanjiDocument) toKanji() model.Kanji {
 // kanjiRowFields projects what a list shows of a Kanji.
 var kanjiRowFields = bson.D{{Key: "kanji", Value: 1}, {Key: "spanish", Value: 1}}
 
+// kanjiRowWithV1Fields is kanjiRowFields and the Kanji's Heisig volume 1 number.
+var kanjiRowWithV1Fields = bson.D{{Key: "kanji", Value: 1}, {Key: "spanish", Value: 1}, {Key: "v1", Value: 1}}
+
 func (r kanji) GetManyBySearch(ctx context.Context, q string, limit int) ([]model.Kanji, error) {
 	pattern := utils.SearchPattern(q)
 	characters := strings.Split(q, "")
@@ -84,12 +108,23 @@ func (r kanji) GetManyBySpelling(ctx context.Context, spelling string) ([]model.
 		{{Key: "$match", Value: bson.D{{Key: "kanji", Value: bson.D{{Key: "$in", Value: strings.Split(spelling, "")}}}}}},
 		{{Key: "$addFields", Value: bson.D{{Key: "_position", Value: positionIn(spelling)}}}},
 		{{Key: "$sort", Value: bson.D{{Key: "_position", Value: 1}, {Key: "_id", Value: 1}}}},
-		{{Key: "$project", Value: kanjiRowFields}},
+		{{Key: "$project", Value: kanjiRowWithV1Fields}},
 	})
 	if err != nil {
 		return nil, err
 	}
-	return toKanji(ctx, cursor)
+	found, err := toKanji(ctx, cursor)
+	if err != nil {
+		return nil, err
+	}
+	// A character stored twice, as benkyo sometimes did, comes back once: the
+	// first stored.
+	seen := map[string]bool{}
+	return slices.DeleteFunc(found, func(k model.Kanji) bool {
+		duplicate := seen[k.Kanji]
+		seen[k.Kanji] = true
+		return duplicate
+	}), nil
 }
 
 func (r kanji) GetOneByID(ctx context.Context, id string) (model.Kanji, error) {

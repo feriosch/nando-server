@@ -59,7 +59,10 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	if err != nil {
 		return nil, err
 	}
-	kanji := repository.NewKanji(db)
+	kanji, err := repository.NewKanji(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	return &Module{
 		search: service.NewSearch(words, kanji),
 		words:  service.NewWords(words, repository.NewGroups(db), kanji),
