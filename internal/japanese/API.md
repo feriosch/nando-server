@@ -161,6 +161,50 @@ A Kanji is one character the Owner studies, numbered by its place in Heisig's Re
 
 `404`: there's no such Kanji.
 
+## Kanji Lookup
+
+What Nando finds out about a kanji the Owner hasn't stored (the Glossary's Kanji Lookup), from kanjiapi.dev and jisho.org. A stored Kanji is never looked up outside: it has its own page.
+
+### `GET /api/japanese/lookup/kanji/{kanji}`
+
+The stored Kanji are checked first; kanjiapi.dev and Jisho are only asked, at the same time, when `{kanji}` isn't one of them.
+
+`200`: the Kanji Lookup.
+
+```json
+{
+  "kanji": "士",
+  "meanings": ["gentleman", "scholar", "samurai"],
+  "on": ["シ"],
+  "kun": ["さむらい"],
+  "strokes": 3,
+  "grade": 4,
+  "joyo": true,
+  "jlpt": 1,
+  "words": [
+    { "word": "武士", "reading": "ぶし", "meanings": ["warrior", "samurai"] },
+    { "word": "弁護士", "reading": "べんごし", "meanings": ["lawyer", "attorney"] }
+  ]
+}
+```
+
+- `meanings`: kanjiapi.dev's, in English. The Owner's Spanish keyword exists only for stored Kanji.
+- `grade`, `jlpt`: kanjiapi.dev's school grade and JLPT level, or `null` when it has none.
+- `joyo`: whether it is jōyō, grade 1 to 8, the same rule as the `japanese_check_joyo` Tool. With no grade it's `false`.
+- `words`: up to 5 of Jisho's common words spelled with the kanji, in Jisho's order: the first spelling (or the reading, for one with none), the first reading, and the first sense's English definitions. `[]` when Jisho has none or doesn't answer; the rest doesn't depend on it.
+
+`409`: `{kanji}` is a stored Kanji. Neither outside site is asked. The answer says which Kanji to open instead:
+
+```json
+{ "id": "5f1c2b0e9b1d4c0012ab3520" }
+```
+
+`400`: `{kanji}` isn't exactly one kanji. Nothing is looked up.
+
+`404`: kanjiapi.dev doesn't know it.
+
+`503`: kanjiapi.dev couldn't be asked, or kept rate-limiting, through its retries: try again later.
+
 ## Anki
 
 The Owner studies their Words in Anki. A deck file fills the Owner's note type, Benkyo Note Type V2, documented with its card templates in [`anki/`](anki/README.md); it is the same file benkyo's `GET /words/csv/jlpt` made for the same Words, with two header lines more.

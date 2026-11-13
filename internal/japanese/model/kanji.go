@@ -96,3 +96,31 @@ type KanjiJoyoJSON struct {
 	Joyo   *bool  `json:"joyo"`
 	Grade  *int   `json:"grade"`
 }
+
+// KanjiLookupJSON is a Kanji Lookup: what kanjiapi.dev and jisho.org say about a kanji the Owner
+// hasn't stored.
+type KanjiLookupJSON struct {
+	Kanji    string           `json:"kanji"`
+	Meanings []string         `json:"meanings"`
+	On       []string         `json:"on"`
+	Kun      []string         `json:"kun"`
+	Strokes  int              `json:"strokes"`
+	Grade    *int             `json:"grade"`
+	Joyo     bool             `json:"joyo"`
+	JLPT     *int             `json:"jlpt"`
+	Words    []LookupWordJSON `json:"words"`
+}
+
+// LookupWordJSON is a common word with a looked-up kanji, from Jisho: its spelling, first reading
+// and first sense's English definitions.
+type LookupWordJSON struct {
+	Word     string   `json:"word"`
+	Reading  string   `json:"reading"`
+	Meanings []string `json:"meanings"`
+}
+
+// StoredKanjiJSON is what a Kanji Lookup answers (409) for a kanji the Owner has stored: which
+// Kanji it is, to open instead.
+type StoredKanjiJSON struct {
+	ID string `json:"id"`
+}

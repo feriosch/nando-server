@@ -246,3 +246,18 @@ func TestACheckWithoutKanjiIsRefused(t *testing.T) {
 
 	toolFails(t, session, "japanese_check_joyo", map[string]any{"text": "ささやく"})
 }
+
+func TestAGradeIsKnownWhateverElseKanjiAPIAnswers(t *testing.T) {
+	// Fields the jōyō check doesn't need, in shapes nobody expected, don't hide the grade.
+	_, url := newFakeKanjiAPI(t, map[string][]kanjiReply{
+		"造": {{http.StatusOK, `{"kanji":"造","grade":5,"jlpt":"N2","stroke_count":null,"meanings":"to create"}`}},
+	})
+	_, phone := signedInBrowserWith(t, japanese.Config{KanjiAPIURL: url, KanjiAPIPace: pace})
+	session := phone.connect()
+
+	got := callTool[joyoJSON](t, session, "japanese_check_joyo", map[string]any{"text": "造"})
+
+	if want := []kanjiJoyoJSON{{"造", false, bptr(true), iptr(5)}}; !reflect.DeepEqual(got.Kanji, want) {
+		t.Errorf("japanese_check_joyo = %+v, want %+v", got.Kanji, want)
+	}
+}
