@@ -55,7 +55,8 @@ func TestTheConsentPageSaysWhatJapanesesToolsLetAConnectorDo(t *testing.T) {
 
 	got := testconnector.ToolsDescriptions(t, n.handler, webOrigin)
 
-	if want := []string{"search your Words and Kanji, and add and change your Words"}; !slices.Equal(got, want) {
+	// Deleting and merging are said, as they can't be undone.
+	if want := []string{"search your Words and Kanji, and add, change, merge and delete your Words"}; !slices.Equal(got, want) {
 		t.Errorf("toolsDescriptions = %q, want %q", got, want)
 	}
 }

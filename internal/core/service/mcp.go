@@ -18,8 +18,9 @@ import (
 )
 
 // MCPService serves the Tools of Core and every Module to Connectors over
-// MCP at /mcp, for Connector access tokens only. It is stateless, as Cloud
-// Run may send each request to a different instance.
+// MCP at /mcp, for Connector access tokens only, and keeps what each Tool
+// provider says its Tools let a Connector do, for the consent page. It is
+// stateless, as Cloud Run may send each request to a different instance.
 type MCPService struct {
 	connectors model.ConnectorsRepository
 	// tools are every provider's Tools, checked when added.
@@ -54,8 +55,11 @@ func NewMCP(connectors model.ConnectorsRepository, apiURL string, now func() tim
 // Tool has, which would silently replace it. Nothing of p is added then.
 func (s *MCPService) AddToolProvider(p model.ToolProvider) {
 	tools := p.Tools()
+	if len(tools) == 0 {
+		return
+	}
 	description := strings.TrimSpace(p.ToolsDescription())
-	if len(tools) > 0 && description == "" {
+	if description == "" {
 		panic(errors.New("AddToolProvider: Tools without a description of what they let a Connector do"))
 	}
 	names := map[string]bool{}
@@ -72,9 +76,7 @@ func (s *MCPService) AddToolProvider(p model.ToolProvider) {
 		names[t.Name] = true
 	}
 	s.tools = append(s.tools, tools...)
-	if len(tools) > 0 {
-		s.toolsDescriptions = append(s.toolsDescriptions, description)
-	}
+	s.toolsDescriptions = append(s.toolsDescriptions, description)
 }
 
 // ToolsDescriptions returns what each provider with Tools says they let a

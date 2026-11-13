@@ -84,7 +84,7 @@ type toolProvider struct{ m *Module }
 // ToolsDescription says what the Module's Tools let a Connector do, for the
 // consent page.
 func (p toolProvider) ToolsDescription() string {
-	return "search your Words and Kanji, and add and change your Words"
+	return "search your Words and Kanji, and add, change, merge and delete your Words"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {

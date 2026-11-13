@@ -34,7 +34,8 @@ type ToolProvider interface {
 	Tools() []Tool
 	// ToolsDescription says what the Tools let a Connector do, worded to
 	// follow "It will be able to", such as "search your Words and Kanji, and
-	// add and change your Words". The consent page shows it to the Owner
-	// before they approve a Connector.
+	// add, change, merge and delete your Words". It names what can't be
+	// undone. The consent page shows it to the Owner before they approve a
+	// Connector.
 	ToolsDescription() string
 }
