@@ -77,16 +77,23 @@ func (s *LookupService) getKanjiLookup(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
 	var words []model.LookupWordJSON
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		words = s.commonWordsWith(r.Context(), character)
+		words = s.commonWordsWith(ctx, character)
 	}()
-	k, found, known, err := s.askKanjiAPI(r.Context(), character)
+	k, found, known, err := s.askKanjiAPI(ctx, character)
+	if err != nil || !known || !found {
+		cancel() // Jisho's words would go unused: don't wait for them
+	}
 	<-done
 	if err != nil {
-		coreutils.ServerError(w, err)
+		if r.Context().Err() == nil { // otherwise the app gave up on the request: nothing to answer
+			coreutils.ServerError(w, err)
+		}
 		return
 	}
 	if !known {
@@ -114,20 +121,9 @@ func (s *LookupService) getKanjiLookup(w http.ResponseWriter, r *http.Request) {
 // commonWordsWith asks Jisho for up to maxLookupWords common words spelled with character, in
 // its order; none if it doesn't answer.
 func (s *LookupService) commonWordsWith(ctx context.Context, character string) []model.LookupWordJSON {
-	var found struct {
-		Data []struct {
-			IsCommon bool `json:"is_common"`
-			Japanese []struct {
-				Word    string `json:"word"`
-				Reading string `json:"reading"`
-			} `json:"japanese"`
-			Senses []struct {
-				English []string `json:"english_definitions"`
-			} `json:"senses"`
-		} `json:"data"`
-	}
 	words := []model.LookupWordJSON{}
-	if err := s.get(ctx, s.jishoURL+"/api/v1/search/words?"+url.Values{"keyword": {character}}.Encode(), &found); err != nil {
+	found, err := s.searchJisho(ctx, character)
+	if err != nil {
 		return words
 	}
 	for _, d := range found.Data {
@@ -220,12 +216,12 @@ func (s *LookupService) checkJoyoTool(ctx context.Context, arguments json.RawMes
 
 // kanjiAPIKanji is what kanjiapi.dev knows about a kanji.
 type kanjiAPIKanji struct {
-	Grade       *int     `json:"grade"`
-	StrokeCount int      `json:"stroke_count"`
-	Meanings    []string `json:"meanings"`
-	KunReadings []string `json:"kun_readings"`
-	OnReadings  []string `json:"on_readings"`
-	JLPT        *int     `json:"jlpt"`
+	Grade       *int
+	StrokeCount int
+	Meanings    []string
+	KunReadings []string
+	OnReadings  []string
+	JLPT        *int
 }
 
 // askKanjiAPI asks kanjiapi.dev about character, at most kanjiAPIAttempts times at its pace.
@@ -250,12 +246,20 @@ func (s *LookupService) askKanjiAPI(ctx context.Context, character string) (k ka
 		if json.Unmarshal(body, &reply) != nil {
 			continue
 		}
-		if _, ok := reply["grade"]; !ok {
+		raw, ok := reply["grade"]
+		if !ok {
 			continue // rate limited: kanjiapi.dev answers without a grade
 		}
-		if err := json.Unmarshal(body, &k); err != nil {
+		if json.Unmarshal(raw, &k.Grade) != nil {
 			continue
 		}
+		// The rest is read field by field: one in a shape nobody expected is left empty rather
+		// than losing the grade, which japanese_check_joyo depends on.
+		_ = json.Unmarshal(reply["stroke_count"], &k.StrokeCount)
+		_ = json.Unmarshal(reply["meanings"], &k.Meanings)
+		_ = json.Unmarshal(reply["kun_readings"], &k.KunReadings)
+		_ = json.Unmarshal(reply["on_readings"], &k.OnReadings)
+		_ = json.Unmarshal(reply["jlpt"], &k.JLPT)
 		return k, true, true, nil
 	}
 	return kanjiAPIKanji{}, false, false, nil
@@ -312,25 +316,8 @@ func (s *LookupService) lookupJishoTool(ctx context.Context, arguments json.RawM
 	if keyword == "" {
 		return nil, errors.New("keyword is required")
 	}
-	var found struct {
-		Data []struct {
-			Slug     string   `json:"slug"`
-			IsCommon bool     `json:"is_common"`
-			JLPT     []string `json:"jlpt"`
-			Japanese []struct {
-				Word    string `json:"word"`
-				Reading string `json:"reading"`
-			} `json:"japanese"`
-			Senses []struct {
-				English       []string `json:"english_definitions"`
-				PartsOfSpeech []string `json:"parts_of_speech"`
-				Tags          []string `json:"tags"`
-				SeeAlso       []string `json:"see_also"`
-				Antonyms      []string `json:"antonyms"`
-			} `json:"senses"`
-		} `json:"data"`
-	}
-	if err := s.get(ctx, s.jishoURL+"/api/v1/search/words?"+url.Values{"keyword": {keyword}}.Encode(), &found); err != nil {
+	found, err := s.searchJisho(ctx, keyword)
+	if err != nil {
 		return nil, err
 	}
 	answer := model.JishoJSON{Entries: []model.JishoEntryJSON{}}
@@ -351,6 +338,33 @@ func (s *LookupService) lookupJishoTool(ctx context.Context, arguments json.RawM
 		answer.Entries = append(answer.Entries, entry)
 	}
 	return answer, nil
+}
+
+// jishoSearch is jisho.org's word search answer, as the Tool and the Kanji Lookup read it.
+type jishoSearch struct {
+	Data []struct {
+		Slug     string   `json:"slug"`
+		IsCommon bool     `json:"is_common"`
+		JLPT     []string `json:"jlpt"`
+		Japanese []struct {
+			Word    string `json:"word"`
+			Reading string `json:"reading"`
+		} `json:"japanese"`
+		Senses []struct {
+			English       []string `json:"english_definitions"`
+			PartsOfSpeech []string `json:"parts_of_speech"`
+			Tags          []string `json:"tags"`
+			SeeAlso       []string `json:"see_also"`
+			Antonyms      []string `json:"antonyms"`
+		} `json:"senses"`
+	} `json:"data"`
+}
+
+// searchJisho asks jisho.org's word search for keyword.
+func (s *LookupService) searchJisho(ctx context.Context, keyword string) (jishoSearch, error) {
+	var found jishoSearch
+	err := s.get(ctx, s.jishoURL+"/api/v1/search/words?"+url.Values{"keyword": {keyword}}.Encode(), &found)
+	return found, err
 }
 
 // get GETs address and decodes its JSON into v, failing unless it answers 200.

@@ -3,8 +3,10 @@ package tests
 import (
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/feriosch/nando-server/internal/japanese"
 )
@@ -163,5 +165,26 @@ func TestAKanjiLookupStandsWithoutJisho(t *testing.T) {
 
 	if got.Kanji != "士" || !reflect.DeepEqual(got.Meanings, []string{"gentleman", "scholar", "samurai"}) || got.Words == nil || len(got.Words) != 0 {
 		t.Errorf("Kanji Lookup = %+v, want 士's from kanjiapi.dev with words []", got)
+	}
+}
+
+func TestAKanjiLookupDoesNotWaitForJishoOnceItCantAnswer(t *testing.T) {
+	_, kanjiAPIURL := newFakeKanjiAPI(t, nil) // it knows no kanji
+	// A Jisho that takes 5 s to answer, unless the request is dropped first.
+	slowJisho := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		}
+	}))
+	t.Cleanup(slowJisho.Close)
+	_, phone := signedInBrowserWith(t, japanese.Config{KanjiAPIURL: kanjiAPIURL, JishoURL: slowJisho.URL, KanjiAPIPace: pace})
+
+	start := time.Now()
+	phone.must(http.MethodGet, "/api/japanese/lookup/kanji/龘", nil, http.StatusNotFound)
+
+	if took := time.Since(start); took > 2*time.Second {
+		t.Errorf("the 404 took %s: it waited for Jisho's words, which it doesn't answer with", took)
 	}
 }
