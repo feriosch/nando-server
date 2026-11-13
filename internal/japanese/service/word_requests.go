@@ -104,24 +104,18 @@ func (s *WordRequestsService) create(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	open, err := s.requests.GetOpen(r.Context(), request.Text, request.Kind, request.WordID)
-	if err == nil {
-		coreutils.WriteJSON(w, http.StatusOK, wordRequestJSON(open))
-		return
-	}
-	if !errors.Is(err, coreutils.ErrNotFound) {
-		coreutils.ServerError(w, err)
-		return
-	}
 	request.CreatedAt = s.now()
 	request.UpdatedAt = request.CreatedAt
-	id, err := s.requests.Insert(r.Context(), request)
+	stored, created, err := s.requests.InsertUnlessOpen(r.Context(), request)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	request.ID = id
-	coreutils.WriteJSON(w, http.StatusCreated, wordRequestJSON(request))
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	coreutils.WriteJSON(w, status, wordRequestJSON(stored))
 }
 
 func (s *WordRequestsService) list(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +140,7 @@ func wordRequestJSON(request model.WordRequest) model.WordRequestJSON {
 		Group:       utils.OrNull(request.Group),
 		WordID:      utils.OrNull(request.WordID),
 		State:       string(request.State),
+		Attempts:    request.Attempts,
 		Answer:      utils.OrNull(request.Answer),
 		Summary:     utils.OrNull(request.Summary),
 		Suggestions: utils.OrEmptyList(request.Suggestions),
@@ -190,7 +185,9 @@ func (s *WordRequestsService) update(w http.ResponseWriter, r *http.Request, fro
 
 func (s *WordRequestsService) retry(w http.ResponseWriter, r *http.Request) {
 	pending := model.Pending
-	s.update(w, r, []model.WordRequestState{model.Failed}, model.WordRequestChanges{State: &pending})
+	// A retried Word Request gets fresh claims, as a new one would.
+	fresh := 0
+	s.update(w, r, []model.WordRequestState{model.Failed}, model.WordRequestChanges{State: &pending, Attempts: &fresh})
 }
 
 func (s *WordRequestsService) dismiss(w http.ResponseWriter, r *http.Request) {

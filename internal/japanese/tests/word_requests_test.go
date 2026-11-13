@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,6 +19,7 @@ type wordRequestJSON struct {
 	Group       *string  `json:"group"`
 	WordID      *string  `json:"wordId"`
 	State       string   `json:"state"`
+	Attempts    int      `json:"attempts"`
 	Answer      *string  `json:"answer"`
 	Summary     *string  `json:"summary"`
 	Suggestions []string `json:"suggestions"`
@@ -79,6 +81,7 @@ func equalJSON(t *testing.T, a, b any) bool {
 func storedRequest(text, kind, state string) bson.M {
 	return bson.M{
 		"_id":       bson.NewObjectID(),
+		"key":       kind + ":" + text,
 		"text":      text,
 		"kind":      kind,
 		"group":     "gaming",
@@ -244,8 +247,8 @@ func TestRetryingAFailedWordRequestSendsItBackToClaude(t *testing.T) {
 
 	retried := act(phone, id(failed), "retry", nil)
 
-	if retried.State != "pending" {
-		t.Fatalf("retried Word Request is %s; want pending", retried.State)
+	if retried.State != "pending" || retried.Attempts != 0 {
+		t.Fatalf("retried Word Request is %s after %d attempts; want pending with 3 fresh ones (0 used)", retried.State, retried.Attempts)
 	}
 }
 
@@ -306,5 +309,115 @@ func TestFinishedWordRequestsLeaveTheListAfterAWeekButOpenOnesStay(t *testing.T)
 	}
 	if len(got) != 2 || !slices.Contains(texts, "見る") || !slices.Contains(texts, "掛かる") {
 		t.Fatalf("Word Requests listed after a week = %v; want only the open 見る and 掛かる", texts)
+	}
+}
+
+func TestTheListShowsHowOftenClaudeHasTriedAWordRequest(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	working := storedRequest("かける", "add", "working")
+	working["attempts"] = 2
+	n.store("word_requests", working)
+
+	got := get[[]wordRequestJSON](phone, "/api/japanese/word-requests")
+
+	if len(got) != 1 || got[0].Attempts != 2 {
+		t.Fatalf("Word Requests = %+v; want the one Claude has tried twice, with attempts 2", got)
+	}
+}
+
+func TestAskingAgainToImproveAWordGivesTheOpenWordRequestEvenIfItsSpellingChanged(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	hang := word("掛ける", "かける", "colgar", "jlpt_n2")
+	n.store("words", hang)
+	// Asked for when the Word was still stored in kana; Claude has since
+	// moved it to its kanji spelling, and is still working on it.
+	improving := storedRequest("かける", "improve", "working")
+	improving["wordId"] = id(hang)
+	improving["key"] = "improve:" + id(hang)
+	delete(improving, "group")
+	n.store("word_requests", improving)
+
+	again := askFor(phone, map[string]any{"kind": "improve", "wordId": id(hang)}, http.StatusOK)
+
+	if again.ID != id(improving) {
+		t.Fatalf("asking again gave Word Request %s; want the open one, %s", again.ID, id(improving))
+	}
+}
+
+func TestADoubleTapAsksOnlyOnce(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	const taps = 8
+	ids := make(chan string, taps)
+	var wg sync.WaitGroup
+	for range taps {
+		// Each tap is its own request from the same Session.
+		tap := &browser{nando: n, session: phone.session}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rec := tap.do(http.MethodPost, "/api/japanese/word-requests", map[string]any{"text": "食べた", "kind": "add", "group": "gaming"})
+			var wr wordRequestJSON
+			if json.Unmarshal(rec.Body.Bytes(), &wr) == nil {
+				ids <- wr.ID
+			}
+		}()
+	}
+	wg.Wait()
+	close(ids)
+
+	seen := map[string]bool{}
+	for id := range ids {
+		seen[id] = true
+	}
+	listed := get[[]wordRequestJSON](phone, "/api/japanese/word-requests")
+	if len(seen) != 1 || len(listed) != 1 {
+		t.Fatalf("%d taps answered with %d different Word Requests and %d listed; want 1 and 1", taps, len(seen), len(listed))
+	}
+}
+
+func TestEachActionRefusesEveryStateItDoesNotApplyTo(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	byState := map[string]bson.M{}
+	for _, state := range []string{"pending", "working", "done", "needs_answer", "failed"} {
+		byState[state] = storedRequest("語"+state, "add", state)
+		n.store("word_requests", byState[state])
+	}
+	refused := map[string][]string{
+		"answer":  {"pending", "working", "done", "failed"},
+		"retry":   {"pending", "working", "done", "needs_answer"},
+		"dismiss": {"pending", "working", "needs_answer"},
+	}
+	for action, states := range refused {
+		for _, state := range states {
+			path := "/api/japanese/word-requests/" + id(byState[state]) + "/" + action
+			if rec := phone.do(http.MethodPost, path, map[string]any{"answer": "これ"}); rec.Code != http.StatusConflict {
+				t.Errorf("%s a %s Word Request: status = %d, body %q; want 409", action, state, rec.Code, rec.Body)
+			}
+		}
+	}
+}
+
+func TestActionsOnAWordRequestThatIsNotThereAreNotFound(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	for _, action := range []string{"answer", "retry", "dismiss"} {
+		for _, wordRequestID := range []string{bson.NewObjectID().Hex(), "not-an-id"} {
+			path := "/api/japanese/word-requests/" + wordRequestID + "/" + action
+			if rec := phone.do(http.MethodPost, path, map[string]any{"answer": "これ"}); rec.Code != http.StatusNotFound {
+				t.Errorf("POST %s: status = %d; want 404", path, rec.Code)
+			}
+		}
+	}
+}
+
+func TestAnAnsweredWordRequestKeepsTheQuestionForClaude(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	parked := parkedRequest("かける")
+	n.store("word_requests", parked)
+
+	answered := act(phone, id(parked), "answer", map[string]any{"answer": "掛ける (to hang)"})
+
+	if answered.Question == nil || *answered.Question != "Which かける: to hang, or to call?" ||
+		!slices.Equal(answered.Choices, []string{"掛ける (to hang)", "架ける (to call)"}) {
+		t.Fatalf("answered Word Request = %+v; want it to keep Claude's question and choices", answered)
 	}
 }

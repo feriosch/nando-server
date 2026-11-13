@@ -251,6 +251,7 @@ A Word Request:
   "group": "anime",
   "wordId": null,
   "state": "needs_answer",
+  "attempts": 1,
   "answer": null,
   "summary": null,
   "suggestions": [],
@@ -268,6 +269,7 @@ A Word Request:
   - `"done"`: added or improved; `summary` says what Claude did, and `suggestions` what Claude thinks the Owner should do in Claude Code, such as move the Word to another Group.
   - `"needs_answer"`: Claude asks `question`, usually with `choices`.
   - `"failed"`: given up on.
+- `attempts`: how many Claude runs have taken it. A Word Request taken 3 times with no outcome fails.
 - `answer`: the Owner's answer to `question`, once given.
 
 ### `GET /api/japanese/word-requests`
@@ -284,7 +286,7 @@ Asks Claude to add a word or to improve a stored Word.
 Answers:
 
 - `201`: the new Word Request, `"pending"`.
-- `200`: an open Word Request with the same `kind` and `text` (and `wordId`) was already there, and it is returned instead of a second one. A finished one doesn't count.
+- `200`: an open Word Request already asks for the same (the same `text` to add, or the same Word to improve, even if its spelling has changed since), and it is returned as it is, with its own `group`, instead of a second one. A finished one doesn't count. This holds when the Owner taps twice at once.
 - `400`: blank `text`, a `group` not in the list above, or a `kind` that isn't `"add"` or `"improve"`.
 - `404`: no Word with that `wordId`.
 
@@ -294,7 +296,7 @@ Answers Claude's question: `{ "answer": "掛ける (to hang)" }`, one of the `ch
 
 ### `POST /api/japanese/word-requests/{id}/retry`
 
-Sends a `"failed"` Word Request back to `"pending"`.
+Sends a `"failed"` Word Request back to `"pending"`, with `attempts` back at 0, so that Claude gets 3 fresh tries.
 
 ### `POST /api/japanese/word-requests/{id}/dismiss`
 

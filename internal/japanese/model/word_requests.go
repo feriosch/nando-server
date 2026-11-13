@@ -66,6 +66,7 @@ type WordRequestJSON struct {
 	Group       *string  `json:"group"`
 	WordID      *string  `json:"wordId"`
 	State       string   `json:"state"`
+	Attempts    int      `json:"attempts"`
 	Answer      *string  `json:"answer"`
 	Summary     *string  `json:"summary"`
 	Suggestions []string `json:"suggestions"`
@@ -86,6 +87,7 @@ type NewWordRequestJSON struct {
 type WordRequestChanges struct {
 	State       *WordRequestState
 	Answer      *string
+	Attempts    *int
 	DismissedAt *time.Time
 	UpdatedAt   time.Time
 }
@@ -96,12 +98,12 @@ var ErrWrongState = errors.New("the Word Request isn't in a state this applies t
 
 // WordRequestsRepository reads and writes the word_requests collection.
 type WordRequestsRepository interface {
-	// Insert stores a new Word Request and returns its ID.
-	Insert(ctx context.Context, request WordRequest) (string, error)
-	// GetOpen returns the open Word Request (Pending, Working or
-	// NeedsAnswer) with this text, kind and wordID, or Core's
-	// utils.ErrNotFound if there is none.
-	GetOpen(ctx context.Context, text string, kind WordRequestKind, wordID string) (WordRequest, error)
+	// InsertUnlessOpen stores request, a new Word Request, unless an open
+	// one (Pending, Working or NeedsAnswer) asks for the same: the same
+	// text to add, or the same Word to improve. It returns the Word Request
+	// stored, or the open one, and whether it stored a new one. A unique
+	// index decides, so it holds when the Owner taps twice at once.
+	InsertUnlessOpen(ctx context.Context, request WordRequest) (WordRequest, bool, error)
 	// Update applies changes to the Word Request with id if, at the moment
 	// of writing, it is in one of the states in from, and returns it as it is
 	// after. It returns Core's utils.ErrNotFound if there's no such Word

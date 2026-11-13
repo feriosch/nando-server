@@ -14,9 +14,28 @@ import (
 )
 
 // NewWordRequests returns the WordRequestsRepository over the word_requests
-// collection in db.
-func NewWordRequests(db *mongo.Database) model.WordRequestsRepository {
-	return wordRequests{collection: db.Collection("word_requests")}
+// collection in db, first creating any indexes it lacks.
+func NewWordRequests(ctx context.Context, db *mongo.Database) (model.WordRequestsRepository, error) {
+	collection := db.Collection("word_requests")
+	// At most one open Word Request asks for the same thing.
+	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{{Key: "key", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("one_open_per_key").
+			SetPartialFilterExpression(bson.D{{Key: "state", Value: bson.D{{Key: "$in", Value: model.OpenStates}}}}),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return wordRequests{collection: collection}, nil
+}
+
+// askKey is what a Word Request asks for: the text to add, or the Word to
+// improve, whose spelling may change while it is open.
+func askKey(request model.WordRequest) string {
+	if request.Kind == model.ImproveWord {
+		return string(model.ImproveWord) + ":" + request.WordID
+	}
+	return string(request.Kind) + ":" + request.Text
 }
 
 // wordRequests is the word_requests collection.
@@ -26,21 +45,23 @@ type wordRequests struct {
 
 // wordRequestDocument is a Word Request as it is stored.
 type wordRequestDocument struct {
-	ID          bson.ObjectID `bson:"_id"`
-	Text        string        `bson:"text"`
-	Kind        string        `bson:"kind"`
-	Group       string        `bson:"group,omitempty"`
-	WordID      string        `bson:"wordId,omitempty"`
-	State       string        `bson:"state"`
-	Attempts    int           `bson:"attempts"`
-	Answer      string        `bson:"answer,omitempty"`
-	Summary     string        `bson:"summary,omitempty"`
-	Suggestions []string      `bson:"suggestions,omitempty"`
-	Question    string        `bson:"question,omitempty"`
-	Choices     []string      `bson:"choices,omitempty"`
-	CreatedAt   time.Time     `bson:"createdAt"`
-	UpdatedAt   time.Time     `bson:"updatedAt"`
-	DismissedAt *time.Time    `bson:"dismissedAt,omitempty"`
+	ID bson.ObjectID `bson:"_id"`
+	// Key is what it asks for (askKey), unique among open Word Requests.
+	Key         string     `bson:"key"`
+	Text        string     `bson:"text"`
+	Kind        string     `bson:"kind"`
+	Group       string     `bson:"group,omitempty"`
+	WordID      string     `bson:"wordId,omitempty"`
+	State       string     `bson:"state"`
+	Attempts    int        `bson:"attempts"`
+	Answer      string     `bson:"answer,omitempty"`
+	Summary     string     `bson:"summary,omitempty"`
+	Suggestions []string   `bson:"suggestions,omitempty"`
+	Question    string     `bson:"question,omitempty"`
+	Choices     []string   `bson:"choices,omitempty"`
+	CreatedAt   time.Time  `bson:"createdAt"`
+	UpdatedAt   time.Time  `bson:"updatedAt"`
+	DismissedAt *time.Time `bson:"dismissedAt,omitempty"`
 }
 
 func (d wordRequestDocument) wordRequest() model.WordRequest {
@@ -62,10 +83,12 @@ func (d wordRequestDocument) wordRequest() model.WordRequest {
 	}
 }
 
-func (r wordRequests) Insert(ctx context.Context, request model.WordRequest) (string, error) {
+func (r wordRequests) InsertUnlessOpen(ctx context.Context, request model.WordRequest) (model.WordRequest, bool, error) {
+	key := askKey(request)
 	id := bson.NewObjectID()
 	_, err := r.collection.InsertOne(ctx, wordRequestDocument{
 		ID:        id,
+		Key:       key,
 		Text:      request.Text,
 		Kind:      string(request.Kind),
 		Group:     request.Group,
@@ -74,10 +97,24 @@ func (r wordRequests) Insert(ctx context.Context, request model.WordRequest) (st
 		CreatedAt: request.CreatedAt,
 		UpdatedAt: request.UpdatedAt,
 	})
-	if err != nil {
-		return "", err
+	if err == nil {
+		request.ID = id.Hex()
+		return request, true, nil
 	}
-	return id.Hex(), nil
+	if !mongo.IsDuplicateKeyError(err) {
+		return model.WordRequest{}, false, err
+	}
+	var open wordRequestDocument
+	err = r.collection.FindOne(ctx, bson.D{
+		{Key: "key", Value: key},
+		{Key: "state", Value: bson.D{{Key: "$in", Value: model.OpenStates}}},
+	}).Decode(&open)
+	if err != nil {
+		// It finished between the insert and this read: rare enough to
+		// let the Owner tap again.
+		return model.WordRequest{}, false, err
+	}
+	return open.wordRequest(), false, nil
 }
 
 func (r wordRequests) GetListed(ctx context.Context, finishedAfter time.Time) ([]model.WordRequest, error) {
@@ -104,23 +141,6 @@ func (r wordRequests) GetListed(ctx context.Context, finishedAfter time.Time) ([
 	return requests, nil
 }
 
-func (r wordRequests) GetOpen(ctx context.Context, text string, kind model.WordRequestKind, wordID string) (model.WordRequest, error) {
-	filter := bson.D{
-		{Key: "text", Value: text},
-		{Key: "kind", Value: string(kind)},
-		{Key: "state", Value: bson.D{{Key: "$in", Value: model.OpenStates}}},
-	}
-	if wordID != "" {
-		filter = append(filter, bson.E{Key: "wordId", Value: wordID})
-	}
-	var doc wordRequestDocument
-	err := r.collection.FindOne(ctx, filter).Decode(&doc)
-	if err != nil {
-		return model.WordRequest{}, coreutils.NotFound(err)
-	}
-	return doc.wordRequest(), nil
-}
-
 func (r wordRequests) Update(ctx context.Context, id string, from []model.WordRequestState, changes model.WordRequestChanges) (model.WordRequest, error) {
 	oid, err := bson.ObjectIDFromHex(id)
 	if err != nil {
@@ -132,6 +152,9 @@ func (r wordRequests) Update(ctx context.Context, id string, from []model.WordRe
 	}
 	if changes.Answer != nil {
 		set = append(set, bson.E{Key: "answer", Value: *changes.Answer})
+	}
+	if changes.Attempts != nil {
+		set = append(set, bson.E{Key: "attempts", Value: *changes.Attempts})
 	}
 	if changes.DismissedAt != nil {
 		set = append(set, bson.E{Key: "dismissedAt", Value: *changes.DismissedAt})
