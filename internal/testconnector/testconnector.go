@@ -50,8 +50,21 @@ func Connect(t *testing.T, handler http.Handler, passkey *testpasskey.Passkey, o
 	return session
 }
 
-// approve takes a new Connector through OAuth and returns its access token.
-func approve(t *testing.T, handler http.Handler, passkey *testpasskey.Passkey, origin string) string {
+// ToolsDescriptions registers a Connector with handler and returns what the
+// consent page on the web app at origin is told its Tools would let it do.
+func ToolsDescriptions(t *testing.T, handler http.Handler, origin string) []string {
+	t.Helper()
+	_, request := authorize(t, handler)
+	var pending struct {
+		ToolsDescriptions []string `json:"toolsDescriptions"`
+	}
+	decode(t, send(t, handler, http.MethodGet, "/auth/connect/"+request, origin, "", "", http.StatusOK), &pending)
+	return pending.ToolsDescriptions
+}
+
+// authorize registers a new Connector and has it ask for the Owner's
+// approval, returning its client ID and the pending request's ID.
+func authorize(t *testing.T, handler http.Handler) (clientID, request string) {
 	t.Helper()
 	var client struct {
 		ClientID string `json:"client_id"`
@@ -60,7 +73,7 @@ func approve(t *testing.T, handler http.Handler, passkey *testpasskey.Passkey, o
 		`{"client_name":"Test Connector","redirect_uris":["`+redirectURI+`"]}`, http.StatusCreated), &client)
 
 	sum := sha256.Sum256([]byte(verifier))
-	authorize := url.Values{
+	query := url.Values{
 		"response_type":         {"code"},
 		"client_id":             {client.ClientID},
 		"redirect_uri":          {redirectURI},
@@ -68,11 +81,17 @@ func approve(t *testing.T, handler http.Handler, passkey *testpasskey.Passkey, o
 		"code_challenge_method": {"S256"},
 		"state":                 {"test"},
 	}
-	consent, err := url.Parse(send(t, handler, http.MethodGet, "/oauth/authorize?"+authorize.Encode(), "", "", "", http.StatusFound).Header().Get("Location"))
+	consent, err := url.Parse(send(t, handler, http.MethodGet, "/oauth/authorize?"+query.Encode(), "", "", "", http.StatusFound).Header().Get("Location"))
 	if err != nil {
 		t.Fatalf("authorize: %v", err)
 	}
-	request := consent.Query().Get("request")
+	return client.ClientID, consent.Query().Get("request")
+}
+
+// approve takes a new Connector through OAuth and returns its access token.
+func approve(t *testing.T, handler http.Handler, passkey *testpasskey.Passkey, origin string) string {
+	t.Helper()
+	clientID, request := authorize(t, handler)
 
 	options := send(t, handler, http.MethodPost, "/auth/connect/"+request+"/begin", origin, "", "", http.StatusOK)
 	answer := passkey.Get(t, origin, options.Body.Bytes())
@@ -89,7 +108,7 @@ func approve(t *testing.T, handler http.Handler, passkey *testpasskey.Passkey, o
 		"grant_type":    {"authorization_code"},
 		"code":          {back.Query().Get("code")},
 		"redirect_uri":  {redirectURI},
-		"client_id":     {client.ClientID},
+		"client_id":     {clientID},
 		"code_verifier": {verifier},
 	}
 	var tokens struct {

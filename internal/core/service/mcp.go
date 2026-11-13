@@ -18,12 +18,16 @@ import (
 )
 
 // MCPService serves the Tools of Core and every Module to Connectors over
-// MCP at /mcp, for Connector access tokens only. It is stateless, as Cloud
-// Run may send each request to a different instance.
+// MCP at /mcp, for Connector access tokens only, and keeps what each Tool
+// provider says its Tools let a Connector do, for the consent page. It is
+// stateless, as Cloud Run may send each request to a different instance.
 type MCPService struct {
 	connectors model.ConnectorsRepository
 	// tools are every provider's Tools, checked when added.
 	tools []model.Tool
+	// toolsDescriptions are what each provider with Tools says they let a
+	// Connector do, in the order the providers were added.
+	toolsDescriptions []string
 	// handler is the MCP Go SDK's Streamable HTTP transport.
 	handler http.Handler
 	// resourceMetadataURL is where a Connector learns how to get a token.
@@ -43,12 +47,21 @@ func NewMCP(connectors model.ConnectorsRepository, apiURL string, now func() tim
 	return s
 }
 
-// AddToolProvider has /mcp serve p's Tools. Adding is done at startup, so a
-// Tool that can't be served panics then, rather than on every request: one
-// without a name, a handler or an object schema, or whose name another Tool
-// has, which would silently replace it. Nothing of p is added then.
+// AddToolProvider has /mcp serve p's Tools, and the consent page say what
+// they let a Connector do. Adding is done at startup, so a provider that
+// can't be served panics then, rather than on every request: one with Tools
+// but no description of them, which the Owner would approve unawares, or a
+// Tool without a name, a handler or an object schema, or whose name another
+// Tool has, which would silently replace it. Nothing of p is added then.
 func (s *MCPService) AddToolProvider(p model.ToolProvider) {
 	tools := p.Tools()
+	if len(tools) == 0 {
+		return
+	}
+	description := strings.TrimSpace(p.ToolsDescription())
+	if description == "" {
+		panic(errors.New("AddToolProvider: Tools without a description of what they let a Connector do"))
+	}
 	names := map[string]bool{}
 	for _, t := range s.tools {
 		names[t.Name] = true
@@ -63,6 +76,13 @@ func (s *MCPService) AddToolProvider(p model.ToolProvider) {
 		names[t.Name] = true
 	}
 	s.tools = append(s.tools, tools...)
+	s.toolsDescriptions = append(s.toolsDescriptions, description)
+}
+
+// ToolsDescriptions returns what each provider with Tools says they let a
+// Connector do, in the order the providers were added.
+func (s *MCPService) ToolsDescriptions() []string {
+	return append([]string{}, s.toolsDescriptions...)
 }
 
 // checkTool reports what makes t impossible to serve.

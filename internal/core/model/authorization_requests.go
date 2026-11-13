@@ -31,10 +31,12 @@ type AuthorizationRequestsRepository interface {
 // The JSON shapes below are what the API answers with.
 
 // AuthorizationRequestJSON is a pending request as the consent page shows
-// it: which app asks, and the host it will send the Owner back to.
+// it: which app asks, the host it will send the Owner back to, and what the
+// Tools of Core and every Module let it do, as each describes its own.
 type AuthorizationRequestJSON struct {
-	ClientName   string `json:"clientName"`
-	RedirectHost string `json:"redirectHost"`
+	ClientName        string   `json:"clientName"`
+	RedirectHost      string   `json:"redirectHost"`
+	ToolsDescriptions []string `json:"toolsDescriptions"`
 }
 
 // RedirectJSON is where the consent page sends the browser after the Owner

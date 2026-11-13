@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -400,8 +401,9 @@ func TestARegistrationNotApprovedWithinADayIsForgotten(t *testing.T) {
 // pendingRequestJSON is a Connector's pending request as the consent page
 // shows it.
 type pendingRequestJSON struct {
-	ClientName   string `json:"clientName"`
-	RedirectHost string `json:"redirectHost"`
+	ClientName        string   `json:"clientName"`
+	RedirectHost      string   `json:"redirectHost"`
+	ToolsDescriptions []string `json:"toolsDescriptions"`
 }
 
 // redirectJSON is where the consent page sends the browser next.
@@ -470,11 +472,45 @@ func TestTheConsentPageShowsWhichAppAsks(t *testing.T) {
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
 		t.Fatalf("GET the pending request: status = %d, body %q", rec.Code, rec.Body)
 	}
-	if want := (pendingRequestJSON{ClientName: "Claude", RedirectHost: "claude.ai"}); got != want {
+	if want := (pendingRequestJSON{ClientName: "Claude", RedirectHost: "claude.ai", ToolsDescriptions: []string{}}); !reflect.DeepEqual(got, want) {
 		t.Errorf("pending request = %+v, want %+v", got, want)
 	}
 	if rec := mac.do(http.MethodGet, "/auth/connect/unknown", nil); rec.Code != http.StatusNotFound {
 		t.Errorf("GET an unknown request: status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+// toolsDescriptionsOf returns what the consent page is told the Tools let a
+// Connector do, for the pending request.
+func toolsDescriptionsOf(t *testing.T, d *browser, request string) []string {
+	t.Helper()
+	rec := d.do(http.MethodGet, "/auth/connect/"+request, nil)
+	var got pendingRequestJSON
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &got) != nil || got.ToolsDescriptions == nil {
+		t.Fatalf("GET the pending request: status = %d, body %q; want toolsDescriptions", rec.Code, rec.Body)
+	}
+	return got.ToolsDescriptions
+}
+
+func TestTheConsentPageSaysWhatEachModulesToolsLetAConnectorDo(t *testing.T) {
+	n := newNando(t)
+	n.core.AddToolProvider(testTools{})
+	n.core.AddToolProvider(workoutTools{})
+	_, request := n.mustAuthorize()
+
+	got := toolsDescriptionsOf(t, n.newBrowser("Mac"), request)
+
+	if want := []string{"repeat what you tell it, and fail to forget anything", "log your workouts"}; !slices.Equal(got, want) {
+		t.Errorf("toolsDescriptions = %q, want %q", got, want)
+	}
+}
+
+func TestTheConsentPageIsToldOfNoToolsWhenNoModuleHasAny(t *testing.T) {
+	n := newNando(t)
+	_, request := n.mustAuthorize()
+
+	if got := toolsDescriptionsOf(t, n.newBrowser("Mac"), request); len(got) != 0 {
+		t.Errorf("toolsDescriptions = %q, want none", got)
 	}
 }
 

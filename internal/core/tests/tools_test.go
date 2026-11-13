@@ -19,6 +19,10 @@ import (
 // testTools is a Module's Tool provider, as a test Module supplies one.
 type testTools struct{}
 
+func (testTools) ToolsDescription() string {
+	return "repeat what you tell it, and fail to forget anything"
+}
+
 func (testTools) Tools() []model.Tool {
 	return []model.Tool{
 		{
@@ -318,6 +322,22 @@ type toolsOf []model.Tool
 
 func (p toolsOf) Tools() []model.Tool { return p }
 
+func (p toolsOf) ToolsDescription() string { return "use a test's Tools" }
+
+// workoutTools is a second test Module's Tool provider, with one Tool.
+type workoutTools struct{}
+
+func (workoutTools) ToolsDescription() string { return "log your workouts" }
+
+func (workoutTools) Tools() []model.Tool {
+	return []model.Tool{{
+		Name:        "workouts_log",
+		Description: "Logs a workout.",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handle:      func(context.Context, json.RawMessage) (any, error) { return map[string]bool{"logged": true}, nil },
+	}}
+}
+
 // addingPanics reports whether adding p as a Tool provider panics, and with what.
 func addingPanics(n *nando, p model.ToolProvider) (panicked any) {
 	defer func() { panicked = recover() }()
@@ -346,6 +366,39 @@ func TestAToolProviderWithABadToolIsRefusedAtStartup(t *testing.T) {
 	// The Tools already added are still served, unchanged.
 	listed, err := n.mustConnectMCP(connectorTokens(t, n).AccessToken).ListTools(context.Background(), nil)
 	if err != nil || len(listed.Tools) != 2 || listed.Tools[0].Description != "Repeats the text it is given." {
+		t.Errorf("tools/list after the refused providers: %v, %+v", err, listed)
+	}
+}
+
+// describedAs is provider p with its Tools described as description.
+type describedAs struct {
+	model.ToolProvider
+	description string
+}
+
+func (p describedAs) ToolsDescription() string { return p.description }
+
+func TestAToolProviderThatDoesntSayWhatItsToolsDoIsRefusedAtStartup(t *testing.T) {
+	n := newNando(t)
+
+	if addingPanics(n, describedAs{workoutTools{}, ""}) == nil {
+		t.Errorf("adding Tools without a description didn't panic")
+	}
+	if addingPanics(n, describedAs{workoutTools{}, "  "}) == nil {
+		t.Errorf("adding Tools described as blank didn't panic")
+	}
+	// A provider with no Tools has nothing to describe.
+	if p := addingPanics(n, describedAs{toolsOf{}, ""}); p != nil {
+		t.Errorf("adding no Tools without a description panicked: %v", p)
+	}
+
+	// Nothing of the refused providers was added.
+	_, request := n.mustAuthorize()
+	if got := toolsDescriptionsOf(t, n.newBrowser("Mac"), request); len(got) != 0 {
+		t.Errorf("toolsDescriptions after the refused providers = %q, want none", got)
+	}
+	listed, err := n.mustConnectMCP(connectorTokens(t, n).AccessToken).ListTools(context.Background(), nil)
+	if err != nil || len(listed.Tools) != 0 {
 		t.Errorf("tools/list after the refused providers: %v, %+v", err, listed)
 	}
 }
