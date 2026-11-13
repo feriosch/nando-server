@@ -132,6 +132,10 @@ _Avoid_: Sketch, handwriting, canvas, image
 One of the up to 8 kanji recognised for a Drawing, best guess first. A Candidate may be a stored Kanji or one the Owner hasn't studied.
 _Avoid_: Result, prediction, match, suggestion
 
+**Kanji Lookup**:
+What Nando finds out about a kanji the Owner hasn't stored, from kanjiapi.dev and jisho.org: its English meanings, readings, strokes, grade and JLPT level, and some common words with it. It is read when asked for, never stored, and never made for a stored Kanji.
+_Avoid_: Preview, external Kanji, unstored Kanji page
+
 ## Body
 
 Measurements of the Owner, kept in Core so that any Module can read them.

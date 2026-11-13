@@ -12,8 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 	"github.com/feriosch/nando-server/internal/japanese/model"
 	"github.com/feriosch/nando-server/internal/japanese/utils"
 )
@@ -48,6 +50,104 @@ func NewLookup(kanji model.KanjiRepository, jishoURL, kanjiAPIURL string, kanjiA
 		client:       &http.Client{Timeout: 15 * time.Second},
 		kanjiAPIPace: kanjiAPIPace,
 	}
+}
+
+// Routes adds the Kanji Lookup route.
+func (s *LookupService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/japanese/lookup/kanji/{kanji}", s.getKanjiLookup)
+}
+
+// maxLookupWords is how many of Jisho's common words a Kanji Lookup shows at most.
+const maxLookupWords = 5
+
+// getKanjiLookup answers a Kanji Lookup: kanjiapi.dev and Jisho, asked at once. Only for a kanji
+// the Owner hasn't stored: a stored one already has its page, so neither is asked.
+func (s *LookupService) getKanjiLookup(w http.ResponseWriter, r *http.Request) {
+	character := r.PathValue("kanji")
+	if first, size := utf8.DecodeRuneInString(character); size != len(character) || !isKanji(first) {
+		http.Error(w, "kanji must be one kanji", http.StatusBadRequest)
+		return
+	}
+	stored, err := s.kanji.GetOneByCharacter(r.Context(), character)
+	switch {
+	case err == nil:
+		coreutils.WriteJSON(w, http.StatusConflict, model.StoredKanjiJSON{ID: stored.ID})
+		return
+	case !errors.Is(err, coreutils.ErrNotFound):
+		coreutils.ServerError(w, err)
+		return
+	}
+	var words []model.LookupWordJSON
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		words = s.commonWordsWith(r.Context(), character)
+	}()
+	k, found, known, err := s.askKanjiAPI(r.Context(), character)
+	<-done
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	if !known {
+		http.Error(w, "kanjiapi.dev couldn't be asked; try again later", http.StatusServiceUnavailable)
+		return
+	}
+	if !found {
+		http.Error(w, "kanjiapi.dev doesn't know this kanji", http.StatusNotFound)
+		return
+	}
+	joyo := k.Grade != nil && *k.Grade >= 1 && *k.Grade <= 8
+	coreutils.WriteJSON(w, http.StatusOK, model.KanjiLookupJSON{
+		Kanji:    character,
+		Meanings: utils.OrEmptyList(k.Meanings),
+		On:       utils.OrEmptyList(k.OnReadings),
+		Kun:      utils.OrEmptyList(k.KunReadings),
+		Strokes:  k.StrokeCount,
+		Grade:    k.Grade,
+		Joyo:     joyo,
+		JLPT:     k.JLPT,
+		Words:    words,
+	})
+}
+
+// commonWordsWith asks Jisho for up to maxLookupWords common words spelled with character, in
+// its order; none if it doesn't answer.
+func (s *LookupService) commonWordsWith(ctx context.Context, character string) []model.LookupWordJSON {
+	var found struct {
+		Data []struct {
+			IsCommon bool `json:"is_common"`
+			Japanese []struct {
+				Word    string `json:"word"`
+				Reading string `json:"reading"`
+			} `json:"japanese"`
+			Senses []struct {
+				English []string `json:"english_definitions"`
+			} `json:"senses"`
+		} `json:"data"`
+	}
+	words := []model.LookupWordJSON{}
+	if err := s.get(ctx, s.jishoURL+"/api/v1/search/words?"+url.Values{"keyword": {character}}.Encode(), &found); err != nil {
+		return words
+	}
+	for _, d := range found.Data {
+		if len(words) == maxLookupWords {
+			break
+		}
+		if !d.IsCommon || len(d.Japanese) == 0 || len(d.Senses) == 0 {
+			continue
+		}
+		first := d.Japanese[0]
+		spelling := first.Word
+		if spelling == "" {
+			spelling = first.Reading
+		}
+		if !strings.Contains(spelling, character) {
+			continue
+		}
+		words = append(words, model.LookupWordJSON{Word: spelling, Reading: first.Reading, Meanings: utils.OrEmptyList(d.Senses[0].English)})
+	}
+	return words
 }
 
 // Tools are the LookupService's Tools for Connectors.
@@ -118,22 +218,31 @@ func (s *LookupService) checkJoyoTool(ctx context.Context, arguments json.RawMes
 	return answer, nil
 }
 
-// kanjiGrade asks kanjiapi.dev for character's grade. known is false if it
-// couldn't tell after kanjiAPIAttempts: a reply with no grade key, another
-// status, or no reply, as when it rate-limits. grade is nil when it has
-// none, or kanjiapi.dev doesn't know the character (404), which isn't jōyō.
-func (s *LookupService) kanjiGrade(ctx context.Context, character string) (grade *int, known bool, err error) {
+// kanjiAPIKanji is what kanjiapi.dev knows about a kanji.
+type kanjiAPIKanji struct {
+	Grade       *int     `json:"grade"`
+	StrokeCount int      `json:"stroke_count"`
+	Meanings    []string `json:"meanings"`
+	KunReadings []string `json:"kun_readings"`
+	OnReadings  []string `json:"on_readings"`
+	JLPT        *int     `json:"jlpt"`
+}
+
+// askKanjiAPI asks kanjiapi.dev about character, at most kanjiAPIAttempts times at its pace.
+// found is false when it doesn't know the character (404). known is false if it couldn't tell:
+// a reply with no grade key, another status, or no reply, as when it rate-limits.
+func (s *LookupService) askKanjiAPI(ctx context.Context, character string) (k kanjiAPIKanji, found, known bool, err error) {
 	address := s.kanjiAPIURL + "/v1/kanji/" + url.PathEscape(character)
 	for range kanjiAPIAttempts {
 		if err := s.waitForKanjiAPI(ctx); err != nil {
-			return nil, false, err
+			return kanjiAPIKanji{}, false, false, err
 		}
 		status, body, err := s.fetch(ctx, address)
 		switch {
 		case err != nil:
 			continue
 		case status == http.StatusNotFound:
-			return nil, true, nil
+			return kanjiAPIKanji{}, false, true, nil
 		case status != http.StatusOK:
 			continue
 		}
@@ -141,16 +250,23 @@ func (s *LookupService) kanjiGrade(ctx context.Context, character string) (grade
 		if json.Unmarshal(body, &reply) != nil {
 			continue
 		}
-		raw, ok := reply["grade"]
-		if !ok {
+		if _, ok := reply["grade"]; !ok {
 			continue // rate limited: kanjiapi.dev answers without a grade
 		}
-		if err := json.Unmarshal(raw, &grade); err != nil {
+		if err := json.Unmarshal(body, &k); err != nil {
 			continue
 		}
-		return grade, true, nil
+		return k, true, true, nil
 	}
-	return nil, false, nil
+	return kanjiAPIKanji{}, false, false, nil
+}
+
+// kanjiGrade asks kanjiapi.dev for character's grade. known is false if it couldn't tell (see
+// askKanjiAPI). grade is nil when it has none, or kanjiapi.dev doesn't know the character (404),
+// which isn't jōyō.
+func (s *LookupService) kanjiGrade(ctx context.Context, character string) (grade *int, known bool, err error) {
+	k, _, known, err := s.askKanjiAPI(ctx, character)
+	return k.Grade, known, err
 }
 
 // waitForKanjiAPI waits until kanjiapi.dev may be asked again, and books the

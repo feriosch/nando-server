@@ -91,4 +91,5 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	m.words.Routes(mux)
 	m.kanji.Routes(mux)
 	m.anki.Routes(mux)
+	m.lookup.Routes(mux)
 }
