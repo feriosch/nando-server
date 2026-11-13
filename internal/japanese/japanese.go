@@ -3,7 +3,7 @@
 //
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests
-// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files) and repository holds all database
+// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files, WordRequestsService for the Owner's Word Requests) and repository holds all database
 // code. The services see only the repository and CoreService interfaces,
 // never a database.
 package japanese
@@ -29,6 +29,8 @@ type Module struct {
 	kanji  *service.KanjiService
 	anki   *service.AnkiService
 	lookup *service.LookupService
+	// requests are the Owner's Word Requests.
+	requests *service.WordRequestsService
 }
 
 // Config is where the Module finds the outside services it looks Words up
@@ -64,11 +66,12 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 		return nil, err
 	}
 	return &Module{
-		search: service.NewSearch(words, kanji),
-		words:  service.NewWords(words, repository.NewGroups(db), kanji),
-		kanji:  service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
-		anki:   service.NewAnki(words, core),
-		lookup: service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
+		search:   service.NewSearch(words, kanji),
+		words:    service.NewWords(words, repository.NewGroups(db), kanji),
+		kanji:    service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
+		anki:     service.NewAnki(words, core),
+		lookup:   service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
+		requests: service.NewWordRequests(repository.NewWordRequests(db), words, core.Now),
 	}, nil
 }
 
@@ -98,4 +101,5 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	m.kanji.Routes(mux)
 	m.anki.Routes(mux)
 	m.lookup.Routes(mux)
+	m.requests.Routes(mux)
 }

@@ -237,6 +237,76 @@ Then one row per Word studied for the JLPT: every Word in the JLPT N3, N2 and N1
 
 The Usage and Related fields are HTML, written as stored, unescaped.
 
+## Word Requests
+
+A Word Request is the Owner's ask for Claude to add a word or to improve a stored Word ([ADR 0006](../../docs/adr/0006-word-requests-through-a-scheduled-task.md)). The Owner creates, answers, retries and dismisses Word Requests here; a Claude run takes them and records what came of them through the Module's Tools. These routes list them for the Pending strip of Japanese search.
+
+A Word Request:
+
+```json
+{
+  "id": "6af743080428f77297d429c9",
+  "text": "かける",
+  "kind": "add",
+  "group": "anime",
+  "wordId": null,
+  "state": "needs_answer",
+  "answer": null,
+  "summary": null,
+  "suggestions": [],
+  "question": "Which かける: to hang, or to call?",
+  "choices": ["掛ける (to hang)", "架ける (to call)"]
+}
+```
+
+- `kind`: `"add"` or `"improve"`.
+- `group`: for `"add"`, the Group the Owner found the word in; `null` for `"improve"`.
+- `wordId`: for `"improve"`, the Word to improve; once `"done"`, the Word added or improved.
+- `state`:
+  - `"pending"`: waiting for a Claude run.
+  - `"working"`: a Claude run has it.
+  - `"done"`: added or improved; `summary` says what Claude did, and `suggestions` what Claude thinks the Owner should do in Claude Code, such as move the Word to another Group.
+  - `"needs_answer"`: Claude asks `question`, usually with `choices`.
+  - `"failed"`: given up on.
+- `answer`: the Owner's answer to `question`, once given.
+
+### `GET /api/japanese/word-requests`
+
+`200`: the Word Requests for the Pending strip, newest first: every open one (`"pending"`, `"working"`, `"needs_answer"`), and every `"done"` or `"failed"` one the Owner hasn't dismissed that finished in the last 7 days.
+
+### `POST /api/japanese/word-requests`
+
+Asks Claude to add a word or to improve a stored Word.
+
+- To add: `{ "kind": "add", "text": "食べた", "group": "gaming" }`. `text` is as the Owner typed it, conjugated or in kana if so; Claude stores the dictionary form. `group` is where the Owner found the word: `literature`, `gaming`, `anime`, `movie`, `miscellaneous` or `jlpt_n1`. The JLPT N2, JLPT N3 and Basic Groups aren't the Owner's to pick: Claude takes them from jisho.org's JLPT level.
+- To improve: `{ "kind": "improve", "wordId": "…" }`. The Word Request's `text` is the Word's spelling.
+
+Answers:
+
+- `201`: the new Word Request, `"pending"`.
+- `200`: an open Word Request with the same `kind` and `text` (and `wordId`) was already there, and it is returned instead of a second one. A finished one doesn't count.
+- `400`: blank `text`, a `group` not in the list above, or a `kind` that isn't `"add"` or `"improve"`.
+- `404`: no Word with that `wordId`.
+
+### `POST /api/japanese/word-requests/{id}/answer`
+
+Answers Claude's question: `{ "answer": "掛ける (to hang)" }`, one of the `choices` or the Owner's own words. The Word Request goes back to `"pending"` with the `answer`, and keeps its `question`, so that Claude reads both.
+
+### `POST /api/japanese/word-requests/{id}/retry`
+
+Sends a `"failed"` Word Request back to `"pending"`.
+
+### `POST /api/japanese/word-requests/{id}/dismiss`
+
+Takes a `"done"` or `"failed"` Word Request off the Pending strip, as when the Owner opens it.
+
+These three answer:
+
+- `200`: the Word Request as it is now.
+- `400` (answer only): a blank `answer`.
+- `404`: no such Word Request.
+- `409`: the Word Request isn't in a state this applies to: only a `"needs_answer"` one can be answered, only a `"failed"` one retried, and only a `"done"` or `"failed"` one dismissed.
+
 ## Tools
 
 The Module offers these Tools to Connectors, such as Claude, at Core's `/mcp` with a Connector's access token (see [Core's API](../core/API.md#connectors)). Each takes a JSON object of arguments and answers JSON; a Tool that can't do what it's asked fails with a message saying why, for Claude to read. Word and Kanji answers are shaped as the [Word page](#words) and [Kanji page](#kanji) show them, and search answers as the [search](#search). The server enforces the structural rules: both sides of a Word Link, swapped Nuance Tags, stored Groups, one Word per spelling and reading. Judgment, such as which Group or what a note says, is Claude's.

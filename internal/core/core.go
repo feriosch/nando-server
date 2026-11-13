@@ -133,7 +133,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		oauth:             service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, mcp.ToolsDescriptions, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
-	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns}
+	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns, now: now}
 	c.body = service.NewBody(weighIns, c.settings)
 	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, c.oauth, cfg.Domain, cfg.Origins, now)
 	if err != nil {
@@ -181,6 +181,11 @@ func (c *Core) Service() model.CoreService {
 type coreService struct {
 	settings *service.SettingsService
 	weighIns *service.WeighInsService
+	now      func() time.Time
+}
+
+func (s coreService) Now() time.Time {
+	return s.now()
 }
 
 func (s coreService) OwnerTimeZone(ctx context.Context) (*time.Location, error) {
