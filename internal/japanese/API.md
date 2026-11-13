@@ -1,6 +1,6 @@
 # Japanese API
 
-The Japanese Module: searching the Owner's Words and Kanji, the Word and Kanji pages, and the JLPT deck for Anki. Every route is under `/api/japanese/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). The routes are read-only: Claude adds and improves Words through the Module's [Tools](#tools), not through this API. Bodies are JSON, except the deck file. Errors are a status code with a short plain-text message.
+The Japanese Module: searching the Owner's Words and Kanji, the Word and Kanji pages, and the JLPT deck for Anki. Every route is under `/api/japanese/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Words and Kanji are read-only here: Claude adds and improves Words through the Module's [Tools](#tools), not through this API. Word Requests are the one thing the Owner writes, since they are the Owner's own asks for Claude ([ADR 0006](../../docs/adr/0006-word-requests-through-a-scheduled-task.md)). Bodies are JSON, except the deck file. Errors are a status code with a short plain-text message.
 
 Ids are the 24-character hex ObjectIds the Words and Kanji have had since benkyo, which are also Anki's `Id`. Word Tags and Nuance Tags are returned as stored, in snake_case (`usually_kana`, `jlpt_n1`); the web app writes them for display. Optional strings are `null` when not set, and lists are `[]`, never `null`.
 

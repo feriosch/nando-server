@@ -82,7 +82,7 @@ _Avoid_: Target, goal, budget, allowance
 
 ## Japanese
 
-The Module for the Owner's Japanese vocabulary and kanji study: Claude adds and improves what is stored, and the Owner searches it and takes it to Anki.
+The Module for the Owner's Japanese vocabulary and kanji study: Claude adds and improves what is stored, either in the Claude app or by working through the Owner's Word Requests, and the Owner searches it and takes it to Anki.
 
 **Word**:
 A Japanese word or Expression the Owner is learning, stored once in its kanji spelling (if it has one) with its reading, Spanish meaning, Group, Word Tags, example sentences and Word Links.
@@ -111,6 +111,10 @@ _Avoid_: Link (alone), relation, related word, URL
 **Nuance Tag**:
 A label on one side of a Word Link saying how the other Word differs from this one, such as formal or written. When a Word Link is made, the other side gets the opposite Nuance Tags (formal and casual, spoken and written, Expression and Part swap).
 _Avoid_: Tag (alone), Word Tag
+
+**Word Request**:
+The Owner's ask, made in Nando, for Claude to add a word (with the Group the Owner found it in) or to improve a stored Word. It waits until a Claude run takes it, then holds the outcome: done, with a short summary and any suggestions for the Owner; a question for the Owner to answer; or failed.
+_Avoid_: Pending word, job, task, topic, inbox item
 
 **Hint**:
 A one-way, text-only pointer from a Word to an everyday word that isn't stored as a Word, such as 天気. It has no other side.
