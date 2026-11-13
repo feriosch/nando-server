@@ -122,14 +122,15 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	// apiURL is the API's own URL, which Connectors reach it at, and webURL
 	// the web app's.
 	apiURL, webURL := "https://api."+cfg.Domain, "https://web."+cfg.Domain
+	mcp := service.NewMCP(connectors, apiURL, now)
 	c := &Core{
 		sessions:          service.NewSessions(sessionsRepo, cfg.Domain, now),
 		passkeys:          service.NewPasskeys(passkeys),
 		settings:          service.NewSettings(repository.NewSettings(db), now),
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
-		mcp:               service.NewMCP(connectors, apiURL, now),
+		mcp:               mcp,
 		connectors:        service.NewConnectors(connectors, oauthClients, now),
-		oauth:             service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, now),
+		oauth:             service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, mcp.ToolsDescriptions, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns}
@@ -201,10 +202,12 @@ func (c *Core) AddNotificationProvider(p model.NotificationProvider) {
 	c.notifications.AddNotificationProvider(p)
 }
 
-// AddToolProvider has Core serve p's Tools to every Connector at /mcp. Each
-// Module with Tools adds its provider once, at startup, before serving. It
-// panics if a Tool can't be served: one without a name, a handler or an
-// object schema, or whose name another Tool already has.
+// AddToolProvider has Core serve p's Tools to every Connector at /mcp, and
+// tell the consent page what p says they let a Connector do. Each Module with
+// Tools adds its provider once, at startup, before serving. It panics if p
+// has Tools but no description of them, or if a Tool can't be served: one
+// without a name, a handler or an object schema, or whose name another Tool
+// already has.
 func (c *Core) AddToolProvider(p model.ToolProvider) {
 	c.mcp.AddToolProvider(p)
 }

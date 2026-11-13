@@ -34,7 +34,10 @@ type OAuthService struct {
 	// consentURL is the web app's consent page, where the Owner approves a
 	// Connector.
 	consentURL string
-	now        func() time.Time
+	// toolsDescriptions returns what the Tools of Core and every Module let a
+	// Connector do, for the consent page.
+	toolsDescriptions func() []string
+	now               func() time.Time
 }
 
 const (
@@ -66,16 +69,18 @@ func NewOAuth(
 	connectors model.ConnectorsRepository,
 	codes model.AuthorizationCodesRepository,
 	apiURL, webURL string,
+	toolsDescriptions func() []string,
 	now func() time.Time,
 ) *OAuthService {
 	return &OAuthService{
-		clients:    clients,
-		requests:   requests,
-		connectors: connectors,
-		codes:      codes,
-		apiURL:     apiURL,
-		consentURL: webURL + "/connect",
-		now:        now,
+		clients:           clients,
+		requests:          requests,
+		connectors:        connectors,
+		codes:             codes,
+		apiURL:            apiURL,
+		consentURL:        webURL + "/connect",
+		toolsDescriptions: toolsDescriptions,
+		now:               now,
 	}
 }
 
@@ -270,8 +275,9 @@ func (s *OAuthService) pendingRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	utils.WriteJSON(w, http.StatusOK, model.AuthorizationRequestJSON{
-		ClientName:   client.Name,
-		RedirectHost: redirect.Hostname(),
+		ClientName:        client.Name,
+		RedirectHost:      redirect.Hostname(),
+		ToolsDescriptions: s.toolsDescriptions(),
 	})
 }
 

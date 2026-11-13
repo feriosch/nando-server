@@ -305,10 +305,14 @@ The Connector sends the Owner's browser here with `response_type=code`, `client_
 
 ### `GET /auth/connect/{request}`
 
-For the consent page, which may run in a browser without a Session. `200`: which app asks.
+For the consent page, which may run in a browser without a Session. `200`: which app asks, the host it returns to, and what Nando's Tools would let it do: one description per Tool provider with Tools, in the order they were added, each worded to follow "It will be able to" and written by its Module (`model.ToolProvider`'s `ToolsDescription`). `[]` when no provider has Tools.
 
 ```json
-{ "clientName": "Claude", "redirectHost": "claude.ai" }
+{
+  "clientName": "Claude",
+  "redirectHost": "claude.ai",
+  "toolsDescriptions": ["search your Words and Kanji, and add and change your Words"]
+}
 ```
 
 `404`: the request is unknown, already approved or denied, or expired.

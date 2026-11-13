@@ -50,6 +50,16 @@ type wordsJSON struct {
 	Words []wordJSON `json:"words"`
 }
 
+func TestTheConsentPageSaysWhatJapanesesToolsLetAConnectorDo(t *testing.T) {
+	n := newNando(t)
+
+	got := testconnector.ToolsDescriptions(t, n.handler, webOrigin)
+
+	if want := []string{"search your Words and Kanji, and add and change your Words"}; !slices.Equal(got, want) {
+		t.Errorf("toolsDescriptions = %q, want %q", got, want)
+	}
+}
+
 func TestAConnectorGetsAWordByIDSpellingOrReading(t *testing.T) {
 	n, phone := signedInBrowser(t)
 	n.store("groups", group("jlpt_n2", "JLPT N2", n2Picture))

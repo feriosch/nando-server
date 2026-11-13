@@ -81,6 +81,12 @@ func (m *Module) ToolProvider() coremodel.ToolProvider {
 // toolProvider gathers the Tools of the Module's services.
 type toolProvider struct{ m *Module }
 
+// ToolsDescription says what the Module's Tools let a Connector do, for the
+// consent page.
+func (p toolProvider) ToolsDescription() string {
+	return "search your Words and Kanji, and add and change your Words"
+}
+
 func (p toolProvider) Tools() []coremodel.Tool {
 	return slices.Concat(p.m.words.Tools(), p.m.search.Tools(), p.m.kanji.Tools(), p.m.lookup.Tools())
 }
