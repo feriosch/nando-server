@@ -1,9 +1,12 @@
 package tests
 
 import (
+	"bytes"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -283,30 +286,72 @@ func TestAskingAgainWakesTheScheduledTaskWhenTheFirstWakeFailed(t *testing.T) {
 	}
 }
 
-func TestATokenPastedWithANewlineStillWakesTheScheduledTask(t *testing.T) {
-	trigger := newFakeTrigger(t)
-	cfg := trigger.config()
-	cfg.WordRequestsTriggerToken = triggerToken + "\n"
-	_, phone := signedInBrowserWith(t, cfg)
-
-	askFor(phone, map[string]any{"text": "食べた", "kind": "add", "group": "gaming"}, http.StatusCreated)
-
-	fires := trigger.received()
-	if len(fires) != 1 || fires[0].header.Get("Authorization") != "Bearer "+triggerToken {
-		t.Fatalf("fires = %+v; want one, with the token's newline left out", fires)
-	}
+// captureLog has the log write to the returned buffer until the test ends.
+func captureLog(t *testing.T) *lockedBuffer {
+	t.Helper()
+	buf := &lockedBuffer{}
+	prev := log.Writer()
+	log.SetOutput(buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	return buf
 }
 
-func TestATokenWithControlCharactersNeverReachesTheTrigger(t *testing.T) {
-	trigger := newFakeTrigger(t)
-	cfg := trigger.config()
-	// Three Down arrows, pasted into the secret instead of the token.
-	cfg.WordRequestsTriggerToken = "\x1b[B\x1b[B\x1b[B"
-	_, phone := signedInBrowserWith(t, cfg)
+// lockedBuffer is a bytes.Buffer safe to write from several goroutines.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
 
-	askFor(phone, map[string]any{"text": "食べた", "kind": "add", "group": "gaming"}, http.StatusCreated)
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
 
-	if fires := trigger.received(); len(fires) != 0 {
-		t.Fatalf("the trigger was fired %d times with an unusable token; want never", len(fires))
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestATriggerPastedBadlyIsCleanedOrSaidAtStartup(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		// bad changes the fake trigger's config as a paste might.
+		bad func(japanese.Config) japanese.Config
+		// fires is how many times the trigger should be fired; log, what
+		// startup should say (empty for nothing).
+		fires int
+		log   string
+	}{
+		{"a token with a trailing newline", func(c japanese.Config) japanese.Config { c.WordRequestsTriggerToken += "\n"; return c }, 1, ""},
+		{"a URL with a trailing newline", func(c japanese.Config) japanese.Config { c.WordRequestsTriggerURL += "\n"; return c }, 1, ""},
+		{"a token of pasted arrow keys", func(c japanese.Config) japanese.Config { c.WordRequestsTriggerToken = "\x1b[B\x1b[B\x1b[B"; return c }, 0,
+			"WORD_REQUESTS_TRIGGER_TOKEN has control characters"},
+		{"a token that is only a newline", func(c japanese.Config) japanese.Config { c.WordRequestsTriggerToken = "\n"; return c }, 0,
+			"WORD_REQUESTS_TRIGGER_TOKEN is empty"},
+		{"a URL with a space inside", func(c japanese.Config) japanese.Config {
+			c.WordRequestsTriggerURL = strings.Replace(c.WordRequestsTriggerURL, "/fire", " /fire", 1)
+			return c
+		}, 0, "WORD_REQUESTS_TRIGGER_URL isn't a URL"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			trigger := newFakeTrigger(t)
+			logged := captureLog(t)
+			_, phone := signedInBrowserWith(t, c.bad(trigger.config()))
+
+			askFor(phone, map[string]any{"text": "食べた", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+			fires := trigger.received()
+			if len(fires) != c.fires {
+				t.Fatalf("the trigger was fired %d times; want %d", len(fires), c.fires)
+			}
+			if c.fires == 1 && fires[0].header.Get("Authorization") != "Bearer "+triggerToken {
+				t.Errorf("Authorization = %q; want the token without what was pasted around it", fires[0].header.Get("Authorization"))
+			}
+			if c.log != "" && !strings.Contains(logged.String(), c.log) {
+				t.Errorf("startup logged %q; want it to say %q", logged.String(), c.log)
+			}
+		})
 	}
 }

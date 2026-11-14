@@ -121,9 +121,7 @@ func (s *WordRequestsService) create(w http.ResponseWriter, r *http.Request) {
 	if created {
 		status = http.StatusCreated
 	}
-	// Asking again wakes Claude too, as when an earlier wake failed: Wake
-	// does nothing while a run holds a Word Request or within 2 minutes of
-	// the last fire.
+	// Asking again wakes Claude too, so retrying after a failed wake works.
 	s.scheduledTask.Wake(r.Context())
 	coreutils.WriteJSON(w, status, wordRequestJSON(stored))
 }
