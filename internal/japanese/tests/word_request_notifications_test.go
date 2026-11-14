@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/feriosch/nando-server/internal/testpush"
 )
@@ -101,5 +102,27 @@ func TestAWordRequestClaudeFinishedDoesNotNotifyTheOwner(t *testing.T) {
 
 	if got := push.Received(); len(got) != 0 {
 		t.Errorf("received %+v, want nothing", got)
+	}
+}
+
+func TestARetriedTickNeverNotifiesTheOwnerTwice(t *testing.T) {
+	n, phone, push := subscribedPhone(t)
+	askAt(n, phone, "かける")
+	run, wordRequestID := claimOne(t, phone)
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id":       wordRequestID,
+		"outcome":  "needs_answer",
+		"question": "Which かける: to hang, or to call?",
+		"choices":  []string{"掛ける (to hang)", "架ける (to call)"},
+	})
+
+	n.tick()
+	n.clock.Set(n.clock.Now().Add(time.Minute)) // Cloud Scheduler retries a tick it thinks failed
+	n.tick()
+	n.clock.Set(n.clock.Now().Add(30 * time.Minute)) // the next tick, still unanswered
+	n.tick()
+
+	if got := push.Received(); len(got) != 1 {
+		t.Errorf("received %d push messages, want 1: %+v", len(got), got)
 	}
 }
