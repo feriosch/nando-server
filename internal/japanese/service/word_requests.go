@@ -380,11 +380,21 @@ func (s *WordRequestsService) DueNotifications(ctx context.Context, slot time.Ti
 			continue
 		}
 		due = append(due, coremodel.Notification{
-			ID:    fmt.Sprintf("japanese:word-request:%s:%s:%d", request.ID, request.State, request.Attempts),
+			ID:    wordRequestNotificationID(request),
 			Title: title,
 			Body:  body,
 			URL:   "/japanese",
 		})
 	}
 	return due, nil
+}
+
+// wordRequestNotificationID names the Notification for request as it is now,
+// such as "japanese:word-request:<id>:needs_answer:<ms>". The time it entered
+// its state tells one round from the next: attempts can't, since an answer
+// or a retry sets them back to 0, so a second question or failure would look
+// like the first. Waiting in that state doesn't change the time, so the
+// Owner is notified once per round.
+func wordRequestNotificationID(request model.WordRequest) string {
+	return fmt.Sprintf("japanese:word-request:%s:%s:%d", request.ID, request.State, request.UpdatedAt.UnixMilli())
 }

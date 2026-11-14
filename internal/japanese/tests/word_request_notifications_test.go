@@ -126,3 +126,31 @@ func TestARetriedTickNeverNotifiesTheOwnerTwice(t *testing.T) {
 		t.Errorf("received %d push messages, want 1: %+v", len(got), got)
 	}
 }
+
+func TestASecondQuestionOnTheSameWordRequestNotifiesTheOwnerAgain(t *testing.T) {
+	n, phone, push := subscribedPhone(t)
+	askAt(n, phone, "かける")
+	run, wordRequestID := claimOne(t, phone)
+	ask := func(question string) {
+		callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+			"id": wordRequestID, "outcome": "needs_answer", "question": question, "choices": []string{"one", "two"},
+		})
+	}
+	ask("Which かける?")
+	n.tick()
+	n.clock.Set(n.clock.Now().Add(10 * time.Minute)) // the Owner answers
+	act(phone, wordRequestID, "answer", map[string]any{"answer": "one"})
+	run, _ = claimOne(t, phone)
+
+	ask("Which sense of 掛ける?")
+	n.clock.Set(n.clock.Now().Add(30 * time.Minute))
+	n.tick()
+
+	want := []testpush.Notification{
+		{Title: "Claude has a question", Body: "「かける」: Which かける?", URL: "/japanese"},
+		{Title: "Claude has a question", Body: "「かける」: Which sense of 掛ける?", URL: "/japanese"},
+	}
+	if got := push.Received(); !slices.Equal(got, want) {
+		t.Errorf("received %+v, want %+v", got, want)
+	}
+}
