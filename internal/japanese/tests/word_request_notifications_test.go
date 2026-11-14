@@ -83,3 +83,23 @@ func TestAWordRequestClaudeGivesUpOnNotifiesTheOwnerWhy(t *testing.T) {
 		t.Errorf("received %+v, want %+v", got, want)
 	}
 }
+
+func TestAWordRequestClaudeFinishedDoesNotNotifyTheOwner(t *testing.T) {
+	n, phone, push := subscribedPhone(t)
+	eat := word("食べる", "たべる", "comer", "basic")
+	n.store("words", eat)
+	askAt(n, phone, "食べた")
+	run, wordRequestID := claimOne(t, phone)
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id":      wordRequestID,
+		"outcome": "done",
+		"summary": "Added 食べる",
+		"wordId":  id(eat),
+	})
+
+	n.tick()
+
+	if got := push.Received(); len(got) != 0 {
+		t.Errorf("received %+v, want nothing", got)
+	}
+}
