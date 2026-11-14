@@ -34,6 +34,10 @@ const pushMessageTTL = 12 * time.Hour
 // Subscription: the Owner revoked it or uninstalled that copy of Nando.
 var errPushSubscriptionGone = errors.New("the push service no longer knows this Push Subscription")
 
+// pushTimeout is how long Core waits for a push service to take a push
+// message before giving up on it.
+const pushTimeout = 10 * time.Second
+
 // pushServiceError is a push service answering a push message with an
 // unsuccessful status other than gone.
 type pushServiceError struct {
@@ -46,8 +50,11 @@ func (e pushServiceError) Error() string {
 
 // deliver sends n to sub as a push message through sub's push service,
 // signed with vapid. It returns errPushSubscriptionGone if the push service no
-// longer knows sub, and a pushServiceError if it answers another failure.
+// longer knows sub, and a pushServiceError if it answers another failure. It
+// gives up after pushTimeout.
 func deliver(ctx context.Context, vapid VAPID, sub model.PushSubscription, n model.Notification) error {
+	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
+	defer cancel()
 	message, err := json.Marshal(model.PushMessageJSON{Title: n.Title, Body: n.Body, URL: n.URL})
 	if err != nil {
 		return err

@@ -382,3 +382,166 @@ func TestATickJobThatFailsStopsNoNotificationNorAnotherJob(t *testing.T) {
 			failing.runs, next.runs, len(push.Received()))
 	}
 }
+
+// testNotificationResultJSON is what POST /api/push-subscriptions/test answers.
+type testNotificationResultJSON struct {
+	Sent    int `json:"sent"`
+	Removed int `json:"removed"`
+	Failed  []struct {
+		PushService string `json:"pushService"`
+		Status      int    `json:"status"`
+		Reason      string `json:"reason"`
+	} `json:"failed"`
+}
+
+// sendTestNotification sends the test Notification from Settings.
+func (d *browser) sendTestNotification() testNotificationResultJSON {
+	d.nando.t.Helper()
+	rec := d.do(http.MethodPost, "/api/push-subscriptions/test", nil)
+	if rec.Code != http.StatusOK {
+		d.nando.t.Fatalf("POST /api/push-subscriptions/test: status = %d, body %q; want 200", rec.Code, rec.Body)
+	}
+	var result testNotificationResultJSON
+	if err := json.Unmarshal(rec.Body.Bytes(), &result); err != nil {
+		d.nando.t.Fatalf("POST /api/push-subscriptions/test: %v; body %q", err, rec.Body)
+	}
+	return result
+}
+
+// theTestNotification is the test Notification as the device shows it.
+var theTestNotification = testpush.Notification{Title: "Test Notification", Body: "Notifications reach this device.", URL: "/settings"}
+
+func TestATestNotificationReachesEveryPushSubscriptionAtOnce(t *testing.T) {
+	_, phone := signedInBrowser(t, wednesday)
+	homeScreenApp, mac := testpush.New(t), testpush.New(t)
+	phone.subscribe(homeScreenApp)
+	phone.subscribe(mac)
+
+	result := phone.sendTestNotification()
+
+	if result.Sent != 2 || result.Removed != 0 || len(result.Failed) != 0 {
+		t.Errorf("answer = %+v; want sent to both Push Subscriptions", result)
+	}
+	for name, push := range map[string]*testpush.Service{"Home Screen app": homeScreenApp, "Mac": mac} {
+		if got := push.Received(); !slices.Equal(got, []testpush.Notification{theTestNotification}) {
+			t.Errorf("%s received %+v; want the test Notification", name, got)
+		}
+	}
+}
+
+func TestATestNotificationCanBeSentAgainRightAway(t *testing.T) {
+	_, phone := signedInBrowser(t, wednesday)
+	push := testpush.New(t)
+	phone.subscribe(push)
+
+	phone.sendTestNotification()
+	again := phone.sendTestNotification()
+
+	if again.Sent != 1 {
+		t.Errorf("second answer = %+v; want sent again", again)
+	}
+	if got := push.Received(); !slices.Equal(got, []testpush.Notification{theTestNotification, theTestNotification}) {
+		t.Errorf("received %+v; want the test Notification twice", got)
+	}
+}
+
+func TestATestNotificationDeletesAPushSubscriptionThePushServiceNoLongerKnows(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusGone} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			_, phone := signedInBrowser(t, wednesday)
+			uninstalled, mac := testpush.New(t), testpush.New(t)
+			phone.subscribe(uninstalled)
+			phone.subscribe(mac)
+			uninstalled.Answer(status)
+
+			result := phone.sendTestNotification()
+
+			if result.Sent != 1 || result.Removed != 1 || len(result.Failed) != 0 {
+				t.Errorf("answer = %+v; want sent to the Mac and the unknown Push Subscription removed", result)
+			}
+			phone.sendTestNotification()
+			if got := uninstalled.RequestCount(); got != 1 {
+				t.Errorf("removed Push Subscription was sent %d push messages; want 1, then none", got)
+			}
+		})
+	}
+}
+
+func TestATestNotificationReportsAFailingPushServiceByItsHost(t *testing.T) {
+	_, phone := signedInBrowser(t, wednesday)
+	failing := testpush.New(t)
+	phone.subscribe(failing)
+	failing.Answer(http.StatusInternalServerError)
+
+	result := phone.sendTestNotification()
+
+	endpoint, err := url.Parse(failing.Endpoint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Sent != 0 || result.Removed != 0 || len(result.Failed) != 1 {
+		t.Fatalf("answer = %+v; want one failure", result)
+	}
+	failed := result.Failed[0]
+	if failed.PushService != endpoint.Hostname() || failed.Status != http.StatusInternalServerError ||
+		failed.Reason != "push service answered 500 Internal Server Error" {
+		t.Errorf("failure = %+v; want push service %s answering 500", failed, endpoint.Hostname())
+	}
+	phone.sendTestNotification()
+	if got := failing.RequestCount(); got != 2 {
+		t.Errorf("failing Push Subscription was sent %d push messages; want it kept and sent another", got)
+	}
+}
+
+func TestATestNotificationWithNoPushSubscriptionSendsNothing(t *testing.T) {
+	_, phone := signedInBrowser(t, wednesday)
+
+	rec := phone.do(http.MethodPost, "/api/push-subscriptions/test", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /api/push-subscriptions/test: status = %d, body %q; want 200", rec.Code, rec.Body)
+	}
+	var answer map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if failed, ok := answer["failed"].([]any); answer["sent"] != 0.0 || answer["removed"] != 0.0 || !ok || len(failed) != 0 {
+		t.Errorf("answer = %s; want nothing sent and an empty failed list", rec.Body)
+	}
+}
+
+func TestATestNotificationNeedsASession(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	push := testpush.New(t)
+	phone.subscribe(push)
+
+	rec := n.newBrowser("Stranger").do(http.MethodPost, "/api/push-subscriptions/test", nil)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("POST /api/push-subscriptions/test without a Session: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	if got := push.RequestCount(); got != 0 {
+		t.Errorf("Push Subscription was sent %d push messages; want none", got)
+	}
+}
+
+func TestATestNotificationGivesUpOnAPushServiceThatDoesNotAnswer(t *testing.T) {
+	_, phone := signedInBrowser(t, wednesday)
+	silent, mac := testpush.New(t), testpush.New(t)
+	phone.subscribe(silent)
+	phone.subscribe(mac)
+	silent.Hang()
+
+	start := time.Now()
+	result := phone.sendTestNotification()
+
+	if took := time.Since(start); took > 15*time.Second {
+		t.Errorf("answered after %s; want within 15s", took.Round(time.Second))
+	}
+	if result.Sent != 1 || len(result.Failed) != 1 {
+		t.Fatalf("answer = %+v; want sent to the Mac and one failure", result)
+	}
+	if failed := result.Failed[0]; failed.Status != 0 || failed.Reason != "push service didn't answer within 10s" {
+		t.Errorf("failure = %+v; want no status and that it didn't answer", failed)
+	}
+}

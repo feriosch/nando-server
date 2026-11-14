@@ -18,6 +18,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Service is a browser's push service (Apple's, Google's, ...) holding one
@@ -32,6 +33,7 @@ type Service struct {
 
 	mu        sync.Mutex
 	status    int
+	hang      bool
 	requests  int
 	delivered []Notification
 	headers   []http.Header
@@ -101,6 +103,14 @@ func (p *Service) Answer(status int) {
 	p.status = status
 }
 
+// Hang makes the push service answer no later push message: it holds each
+// until the sender gives up, or for a minute.
+func (p *Service) Hang() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.hang = true
+}
+
 // Received returns the push delivered delivered so far.
 func (p *Service) Received() []Notification {
 	p.mu.Lock()
@@ -135,6 +145,15 @@ func (p *Service) receive(w http.ResponseWriter, r *http.Request) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.requests++
+	if p.hang {
+		p.mu.Unlock()
+		select {
+		case <-r.Context().Done():
+		case <-time.After(time.Minute):
+		}
+		p.mu.Lock()
+		return
+	}
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		p.t.Errorf("push service: read body: %v", err)

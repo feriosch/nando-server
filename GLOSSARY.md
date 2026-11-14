@@ -173,7 +173,7 @@ _Avoid_: Integration, client, app, bot, token
 ## Notifications
 
 **Notification**:
-A short message delivered to the Owner's installed devices. Core always sends it, either on a Module's behalf or for itself (such as the Weigh-in reminder).
+A short message delivered to the Owner's installed devices. Core always sends it, either on a Module's behalf or for itself (such as the Weigh-in reminder, or the test Notification the Owner sends from Settings to see that Notifications reach their devices).
 _Avoid_: Alert, push, message
 
 **Push Subscription**:

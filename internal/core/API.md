@@ -230,9 +230,15 @@ It goes outside the tick and isn't recorded as sent, so the Owner can send it ag
 }
 ```
 
-- `sent`: how many push services took it. With no Push Subscription, this is `0`, as are the others.
+- `sent`: how many push services took it. With no Push Subscription, it is `0`, `removed` is `0` and `failed` is empty.
 - `removed`: how many push services no longer knew theirs (`404` or `410`). Core deleted them, as at the tick.
-- `failed`: the others, always a list. `pushService` is the endpoint's host, never the endpoint, which is a secret capability URL. `status` is what the push service answered, left out if it didn't answer (a network error or timeout). `reason` says what went wrong.
+- `failed`: the others, always a list. `pushService` is the endpoint's host, never the endpoint, which is a secret capability URL. `status` is what the push service answered, left out if it didn't answer. `reason` is one of:
+  - `push service answered {status}`, such as `push service answered 403 Forbidden`,
+  - `push service didn't answer within 10s`: Core gives up on a push service after 10 seconds, at the tick too,
+  - `couldn't reach the push service`, such as a network error,
+  - `push service no longer knows it, and it couldn't be removed`: Core tries again at the next send.
+
+`500`: the Push Subscriptions couldn't be read, so nothing was sent.
 
 ### The push message
 
