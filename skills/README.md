@@ -6,6 +6,7 @@ Skills Claude follows to work with the Owner's data in Nando, through the Nando 
 | --- | --- |
 | [`japanese/add-word`](japanese/add-word/SKILL.md) | Adds a Japanese word or Expression, or reviews and improves a stored Word |
 | [`japanese/suggest-related`](japanese/suggest-related/SKILL.md) | Checks a Word Link the Owner thought of while studying, and adds it if it holds |
+| [`japanese/word-requests`](japanese/word-requests/SKILL.md) | Works through the Owner's Word Requests from Nando, with no Owner present |
 
 `internal/japanese/tests/skills_test.go` checks that every Tool a skill names is one Nando serves, so a renamed Tool fails the build until its skills follow.
 
@@ -31,9 +32,13 @@ ln -s "$PWD/skills/japanese/add-word" ~/.claude/skills/add-word
 ln -s "$PWD/skills/japanese/suggest-related" ~/.claude/skills/suggest-related
 ```
 
+## Use word-requests in a scheduled task
+
+The Owner's Word Requests are worked through by a cloud scheduled task in Claude Code on the web, which Nando wakes through its API trigger ([ADR 0006](../docs/adr/0006-word-requests-through-a-scheduled-task.md)). The task has the nando-server repo attached and the Nando Connector on, and its prompt points at the skill: "Follow skills/japanese/word-requests/SKILL.md". The run reads that file, and `add-word` with it, from the repo, so neither is uploaded or linked for it.
+
 ## Add the Nando Connector
 
-The skills need the Connector to reach the Tools. Connecting sends you to Nando's consent page, where you approve with your Passkey (Face ID). That page, `https://web.nanders.app/connect`, is still to be built in nando-web; until then, connecting stops there.
+The skills need the Connector to reach the Tools. Connecting sends you to Nando's consent page, `https://web.nanders.app/connect`, which shows what each Module's Tools let the Connector do; approve there with your Passkey (Face ID).
 
 - **Claude app:** in claude.ai, open **Settings**, then **Connectors**, choose **Add custom connector**, and give it the URL `https://api.nanders.app/mcp`. Then **Connect**, and approve on Nando's page.
 - **Claude Code:**
