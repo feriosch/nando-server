@@ -360,3 +360,25 @@ func (s *WordRequestsService) listTool(ctx context.Context, _ json.RawMessage) (
 	}
 	return model.ClaimedWordRequestsJSON{WordRequests: claimed}, nil
 }
+
+// DueNotifications returns a Notification for each Word Request that needs
+// the Owner.
+func (s *WordRequestsService) DueNotifications(ctx context.Context, slot time.Time) ([]coremodel.Notification, error) {
+	requests, err := s.requests.GetListed(ctx, s.now().Add(-finishedListedFor))
+	if err != nil {
+		return nil, err
+	}
+	var due []coremodel.Notification
+	for _, request := range requests {
+		if request.State != model.NeedsAnswer {
+			continue
+		}
+		due = append(due, coremodel.Notification{
+			ID:    fmt.Sprintf("japanese:word-request:%s:%s:%d", request.ID, request.State, request.Attempts),
+			Title: "Claude has a question",
+			Body:  "「" + request.Text + "」: " + request.Question,
+			URL:   "/japanese",
+		})
+	}
+	return due, nil
+}
