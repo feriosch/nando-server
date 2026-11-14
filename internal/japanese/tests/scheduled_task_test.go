@@ -215,3 +215,28 @@ func TestTheTickWakesTheScheduledTaskOnlyForWordRequestsWaitingForClaude(t *test
 		}
 	})
 }
+
+func TestWithoutATriggerNothingIsWokenAndWordRequestsStillWork(t *testing.T) {
+	for name, half := range map[string]func(japanese.Config) japanese.Config{
+		"no token": func(c japanese.Config) japanese.Config { c.ClaudeTriggerToken = ""; return c },
+		"no URL":   func(c japanese.Config) japanese.Config { c.ClaudeTriggerURL = ""; return c },
+	} {
+		t.Run(name, func(t *testing.T) {
+			trigger := newFakeTrigger(t)
+			n, phone := signedInBrowserWith(t, half(trigger.config()))
+
+			askAt(n, phone, "一")
+			run, wordRequestID := claimOne(t, phone)
+			askAt(n, phone, "二")
+			callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+				"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word 一",
+			})
+			n.clock.Set(n.clock.Now().Add(30 * time.Minute))
+			n.tick()
+
+			if fires := trigger.received(); len(fires) != 0 {
+				t.Fatalf("the trigger was fired %d times; want never, as it isn't fully configured", len(fires))
+			}
+		})
+	}
+}
