@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
@@ -111,5 +112,23 @@ func TestAnAnsweredOrRetriedWordRequestWakesTheScheduledTask(t *testing.T) {
 				t.Fatalf("after the Owner's %s the trigger was fired %d times; want once", tc.action, len(fires))
 			}
 		})
+	}
+}
+
+func TestTheScheduledTaskIsWokenAtMostOnceEveryTwoMinutes(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firstAt := n.clock.Now()
+	askFor(phone, map[string]any{"text": "一", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	n.clock.Set(firstAt.Add(2*time.Minute - time.Second))
+	askFor(phone, map[string]any{"text": "二", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	early := len(trigger.received())
+	n.clock.Set(firstAt.Add(2 * time.Minute))
+	askFor(phone, map[string]any{"text": "三", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	late := len(trigger.received())
+
+	if early != 1 || late != 2 {
+		t.Fatalf("fired %d times by a second short of 2 minutes and %d by 2 minutes; want 1, then 2", early, late)
 	}
 }

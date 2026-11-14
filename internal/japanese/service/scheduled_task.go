@@ -7,33 +7,51 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/feriosch/nando-server/internal/japanese/model"
 )
 
 // ScheduledTaskService wakes Claude: it fires the API trigger of the cloud
 // scheduled task whose runs work through the Word Requests (ADR 0006). It
 // serves no route.
 type ScheduledTaskService struct {
+	scheduledTask            model.ScheduledTaskRepository
 	triggerURL, triggerToken string
 	client                   *http.Client
+	now                      func() time.Time
 }
 
 // NewScheduledTask returns the ScheduledTaskService firing the trigger at
-// triggerURL with triggerToken. If either is empty, it never fires.
-func NewScheduledTask(triggerURL, triggerToken string) *ScheduledTaskService {
+// triggerURL with triggerToken, recording its fires in scheduledTask and
+// reading the time from now. If triggerURL or triggerToken is empty, it
+// never fires.
+func NewScheduledTask(scheduledTask model.ScheduledTaskRepository, triggerURL, triggerToken string, now func() time.Time) *ScheduledTaskService {
 	return &ScheduledTaskService{
-		triggerURL:   triggerURL,
-		triggerToken: triggerToken,
-		client:       &http.Client{Timeout: 10 * time.Second},
+		scheduledTask: scheduledTask,
+		triggerURL:    triggerURL,
+		triggerToken:  triggerToken,
+		client:        &http.Client{Timeout: 10 * time.Second},
+		now:           now,
 	}
 }
 
-// Wake fires the trigger. A trigger that fails is only logged: waking Claude
-// never fails what the Owner or a run asked for.
+// quietFor is how long after a fire Nando doesn't fire again: a run just
+// woken re-lists the queue until it is empty, so it takes what came since.
+const quietFor = 2 * time.Minute
+
+// Wake fires the trigger, unless it was fired in the last 2 minutes. A
+// trigger that fails, or a fire that can't be recorded, is only logged:
+// waking Claude never fails what the Owner or a run asked for.
 func (s *ScheduledTaskService) Wake(ctx context.Context) {
 	if s.triggerURL == "" || s.triggerToken == "" {
 		return
 	}
-	if err := s.fire(ctx); err != nil {
+	now := s.now()
+	claimed, err := s.scheduledTask.ClaimFire(ctx, now, now.Add(-quietFor))
+	if err == nil && claimed {
+		err = s.fire(ctx)
+	}
+	if err != nil {
 		log.Printf("wake the scheduled task: %v", err)
 	}
 }
