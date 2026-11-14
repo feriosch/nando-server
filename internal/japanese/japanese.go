@@ -82,7 +82,7 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 		kanji:    service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
 		anki:     service.NewAnki(words, core),
 		lookup:   service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
-		requests: service.NewWordRequests(requests, words, service.NewScheduledTask(repository.NewScheduledTask(db), cfg.ClaudeTriggerURL, cfg.ClaudeTriggerToken, core.Now), core.Now),
+		requests: service.NewWordRequests(requests, words, service.NewScheduledTask(repository.NewScheduledTask(db), requests, cfg.ClaudeTriggerURL, cfg.ClaudeTriggerToken, core.Now), core.Now),
 	}, nil
 }
 

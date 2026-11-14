@@ -243,6 +243,17 @@ func (r wordRequests) ClaimNext(ctx context.Context, now, claimedUntil time.Time
 	return doc.wordRequest(), nil
 }
 
+func (r wordRequests) AnyClaimed(ctx context.Context, now time.Time) (bool, error) {
+	err := r.collection.FindOne(ctx, bson.D{
+		{Key: "state", Value: string(model.Working)},
+		{Key: "claimedUntil", Value: bson.D{{Key: "$gt", Value: now}}},
+	}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (r wordRequests) GetOneByID(ctx context.Context, id string) (model.WordRequest, error) {
 	oid, err := bson.ObjectIDFromHex(id)
 	if err != nil {

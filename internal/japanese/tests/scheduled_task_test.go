@@ -132,3 +132,17 @@ func TestTheScheduledTaskIsWokenAtMostOnceEveryTwoMinutes(t *testing.T) {
 		t.Fatalf("fired %d times by a second short of 2 minutes and %d by 2 minutes; want 1, then 2", early, late)
 	}
 }
+
+func TestTheScheduledTaskIsNotWokenWhileARunHoldsAWordRequest(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	askAt(n, phone, "一")
+	claimOne(t, phone)
+
+	n.clock.Set(n.clock.Now().Add(5 * time.Minute))
+	askFor(phone, map[string]any{"text": "二", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	if fires := trigger.received(); len(fires) != 1 {
+		t.Fatalf("the trigger was fired %d times; want only for 一, as the run holding it lists 二 next", len(fires))
+	}
+}

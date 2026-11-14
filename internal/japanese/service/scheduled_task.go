@@ -16,18 +16,20 @@ import (
 // serves no route.
 type ScheduledTaskService struct {
 	scheduledTask            model.ScheduledTaskRepository
+	requests                 model.WordRequestsRepository
 	triggerURL, triggerToken string
 	client                   *http.Client
 	now                      func() time.Time
 }
 
 // NewScheduledTask returns the ScheduledTaskService firing the trigger at
-// triggerURL with triggerToken, recording its fires in scheduledTask and
-// reading the time from now. If triggerURL or triggerToken is empty, it
-// never fires.
-func NewScheduledTask(scheduledTask model.ScheduledTaskRepository, triggerURL, triggerToken string, now func() time.Time) *ScheduledTaskService {
+// triggerURL with triggerToken, recording its fires in scheduledTask,
+// reading the Word Requests from requests and the time from now. If
+// triggerURL or triggerToken is empty, it never fires.
+func NewScheduledTask(scheduledTask model.ScheduledTaskRepository, requests model.WordRequestsRepository, triggerURL, triggerToken string, now func() time.Time) *ScheduledTaskService {
 	return &ScheduledTaskService{
 		scheduledTask: scheduledTask,
+		requests:      requests,
 		triggerURL:    triggerURL,
 		triggerToken:  triggerToken,
 		client:        &http.Client{Timeout: 10 * time.Second},
@@ -39,21 +41,29 @@ func NewScheduledTask(scheduledTask model.ScheduledTaskRepository, triggerURL, t
 // woken re-lists the queue until it is empty, so it takes what came since.
 const quietFor = 2 * time.Minute
 
-// Wake fires the trigger, unless it was fired in the last 2 minutes. A
-// trigger that fails, or a fire that can't be recorded, is only logged:
-// waking Claude never fails what the Owner or a run asked for.
+// Wake fires the trigger, unless a run holds a Word Request, as it lists
+// the rest before it stops, or the trigger was fired in the last 2 minutes.
+// A trigger that fails, or Word Requests or a fire that can't be read or
+// recorded, is only logged: waking Claude never fails what the Owner or a
+// run asked for.
 func (s *ScheduledTaskService) Wake(ctx context.Context) {
-	if s.triggerURL == "" || s.triggerToken == "" {
-		return
-	}
-	now := s.now()
-	claimed, err := s.scheduledTask.ClaimFire(ctx, now, now.Add(-quietFor))
-	if err == nil && claimed {
-		err = s.fire(ctx)
-	}
-	if err != nil {
+	if err := s.wake(ctx); err != nil {
 		log.Printf("wake the scheduled task: %v", err)
 	}
+}
+
+func (s *ScheduledTaskService) wake(ctx context.Context) error {
+	if s.triggerURL == "" || s.triggerToken == "" {
+		return nil
+	}
+	now := s.now()
+	if claimed, err := s.requests.AnyClaimed(ctx, now); err != nil || claimed {
+		return err
+	}
+	if claimed, err := s.scheduledTask.ClaimFire(ctx, now, now.Add(-quietFor)); err != nil || !claimed {
+		return err
+	}
+	return s.fire(ctx)
 }
 
 // fire calls the trigger, which starts a run, and logs the run's session.
