@@ -44,8 +44,8 @@ jobs:
           --project "${{ vars.GCP_PROJECT_ID }}"
           --region "${{ vars.GCP_REGION }}"
           --image "$IMAGE"
-          --set-secrets "MONGO_URI=nandoproject-mongo:latest,VAPID_PRIVATE_KEY=nandoproject-vapid-private-key:latest,CLAUDE_TRIGGER_TOKEN=nandoproject-claude-trigger-token:latest"
-          --set-env-vars "DOMAIN=$DOMAIN,ALLOWED_ORIGINS=$WEB_ORIGIN,VAPID_PUBLIC_KEY=${{ vars.VAPID_PUBLIC_KEY }},PUSH_CONTACT=$WEB_ORIGIN,TICK_AUDIENCE=${{ vars.TICK_AUDIENCE }},SCHEDULER_SERVICE_ACCOUNT=${{ vars.GCP_SCHEDULER_SA }},CLAUDE_TRIGGER_URL=${{ vars.CLAUDE_TRIGGER_URL }}"
+          --set-secrets "MONGO_URI=nandoproject-mongo:latest,VAPID_PRIVATE_KEY=nandoproject-vapid-private-key:latest,WORD_REQUESTS_TRIGGER_TOKEN=nandoproject-word-requests-trigger-token:latest"
+          --set-env-vars "DOMAIN=$DOMAIN,ALLOWED_ORIGINS=$WEB_ORIGIN,VAPID_PUBLIC_KEY=${{ vars.VAPID_PUBLIC_KEY }},PUSH_CONTACT=$WEB_ORIGIN,TICK_AUDIENCE=${{ vars.TICK_AUDIENCE }},SCHEDULER_SERVICE_ACCOUNT=${{ vars.GCP_SCHEDULER_SA }},WORD_REQUESTS_TRIGGER_URL=${{ vars.WORD_REQUESTS_TRIGGER_URL }}"
       # Checks the CORS header, not just the status: Cloud Run's placeholder
       # image answers 200 on any path, and the header shows ALLOWED_ORIGINS
       # arrived. Retries while the domain mapping picks up the new revision.

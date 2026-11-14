@@ -44,10 +44,10 @@ type config struct {
 	// /internal/tick accepts only Google-signed OIDC tokens for this audience
 	// (as the Cloud Scheduler job sets it) issued to this service account.
 	tickAudience, schedulerServiceAccount string
-	// CLAUDE_TRIGGER_URL and CLAUDE_TRIGGER_TOKEN, optional: the API trigger
-	// of the cloud scheduled task that works through Word Requests, and its
-	// bearer token. Without both, Claude is never woken.
-	claudeTriggerURL, claudeTriggerToken string
+	// WORD_REQUESTS_TRIGGER_URL and WORD_REQUESTS_TRIGGER_TOKEN, optional:
+	// the API trigger of the cloud scheduled task that works through Word
+	// Requests, and its bearer token. Without both, Claude is never woken.
+	wordRequestsTriggerURL, wordRequestsTriggerToken string
 }
 
 func loadConfig() (config, error) {
@@ -61,10 +61,10 @@ func loadConfig() (config, error) {
 			PrivateKey: os.Getenv("VAPID_PRIVATE_KEY"),
 			Contact:    os.Getenv("PUSH_CONTACT"),
 		},
-		tickAudience:            os.Getenv("TICK_AUDIENCE"),
-		schedulerServiceAccount: os.Getenv("SCHEDULER_SERVICE_ACCOUNT"),
-		claudeTriggerURL:        os.Getenv("CLAUDE_TRIGGER_URL"),
-		claudeTriggerToken:      os.Getenv("CLAUDE_TRIGGER_TOKEN"),
+		tickAudience:             os.Getenv("TICK_AUDIENCE"),
+		schedulerServiceAccount:  os.Getenv("SCHEDULER_SERVICE_ACCOUNT"),
+		wordRequestsTriggerURL:   os.Getenv("WORD_REQUESTS_TRIGGER_URL"),
+		wordRequestsTriggerToken: os.Getenv("WORD_REQUESTS_TRIGGER_TOKEN"),
 	}
 	if cfg.mongoURI == "" {
 		return config{}, errors.New("MONGO_URI is required")
@@ -169,8 +169,8 @@ func run() error {
 	}
 	nandoCore.AddNotificationProvider(caloriesModule.NotificationProvider())
 	japaneseModule, err := japanese.NewJapaneseModule(connectCtx, dbs.Japanese, nandoCore.Service(), japanese.Config{
-		ClaudeTriggerURL:   cfg.claudeTriggerURL,
-		ClaudeTriggerToken: cfg.claudeTriggerToken,
+		WordRequestsTriggerURL:   cfg.wordRequestsTriggerURL,
+		WordRequestsTriggerToken: cfg.wordRequestsTriggerToken,
 	})
 	if err != nil {
 		return err
