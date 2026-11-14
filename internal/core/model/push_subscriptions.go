@@ -23,6 +23,12 @@ type PushSubscriptionsRepository interface {
 	Save(ctx context.Context, sub PushSubscription) error
 	List(ctx context.Context) ([]PushSubscription, error)
 	Delete(ctx context.Context, endpoint string) error
+	// Forget deletes the Push Subscription at endpoint because its push
+	// service no longer knows it, and remembers so until expiresAt.
+	Forget(ctx context.Context, endpoint string, now, expiresAt time.Time) error
+	// Forgotten reports whether Forget was told, before now and still
+	// remembered, that endpoint's push service no longer knows it.
+	Forgotten(ctx context.Context, endpoint string, now time.Time) (bool, error)
 }
 
 // PushSubscriptionJSON is a Push Subscription as PushSubscription.toJSON()

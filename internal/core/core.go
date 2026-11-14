@@ -117,7 +117,10 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	}
 	passkeys := repository.NewPasskeys(db)
 	weighIns := repository.NewWeighIns(db)
-	pushSubscriptions := repository.NewPushSubscriptions(db)
+	pushSubscriptions, err := repository.NewPushSubscriptions(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 
 	// apiURL is the API's own URL, which Connectors reach it at, and webURL
 	// the web app's.

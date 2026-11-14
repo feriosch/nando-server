@@ -19,6 +19,12 @@ import (
 // returning it.
 const sentNotificationTTL = 30 * 24 * time.Hour
 
+// forgottenPushSubscriptionTTL is how long Core refuses to register again a
+// Push Subscription its push service no longer knew, answering that the web
+// app should subscribe afresh: long enough for the Owner to open Settings on
+// that device.
+const forgottenPushSubscriptionTTL = 30 * 24 * time.Hour
+
 // NotificationsService runs the tick, which only the scheduler may call. It
 // sends the due Notifications: it asks every Notification provider for them,
 // records each as sent, and sends it to every Push Subscription. It also runs
@@ -249,7 +255,8 @@ type sendFailure struct {
 }
 
 // sendToEveryPushSubscription sends n to each of subs, deleting those whose
-// push service no longer knows them, as the push service asks. One that fails
+// push service no longer knows them, as the push service asks, and
+// remembering that they are forgotten. One that fails
 // doesn't stop the others. It logs nothing: logOutcome does.
 func (s *NotificationsService) sendToEveryPushSubscription(ctx context.Context, subs []model.PushSubscription, n model.Notification) sendOutcome {
 	var outcome sendOutcome
@@ -260,7 +267,7 @@ func (s *NotificationsService) sendToEveryPushSubscription(ctx context.Context, 
 		case err == nil:
 			outcome.reached = append(outcome.reached, sub.Endpoint)
 		case errors.As(err, &answered) && answered.gone():
-			if err := s.pushSubscriptions.Delete(ctx, sub.Endpoint); err != nil {
+			if err := s.pushSubscriptions.Forget(ctx, sub.Endpoint, s.now(), s.now().Add(forgottenPushSubscriptionTTL)); err != nil {
 				outcome.failed = append(outcome.failed, sendFailure{
 					sub: sub, status: answered.Status,
 					reason: "push service no longer knows it, and it couldn't be removed",

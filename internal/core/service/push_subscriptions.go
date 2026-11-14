@@ -73,6 +73,10 @@ func decodeKey(key string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(strings.TrimRight(key, "="))
 }
 
+// postPushSubscription registers the Push Subscription in the body, or
+// answers 410 Gone if its push service no longer knows it: the browser still
+// holds such a Push Subscription, and the web app must unsubscribe it and
+// subscribe afresh.
 func (s *PushSubscriptionsService) postPushSubscription(w http.ResponseWriter, r *http.Request) {
 	var j model.PushSubscriptionJSON
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
@@ -81,6 +85,15 @@ func (s *PushSubscriptionsService) postPushSubscription(w http.ResponseWriter, r
 	}
 	if err := checkPushSubscription(j); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	forgotten, err := s.pushSubscriptions.Forgotten(r.Context(), j.Endpoint, s.now())
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	if forgotten {
+		http.Error(w, "its push service no longer knows this Push Subscription: subscribe afresh", http.StatusGone)
 		return
 	}
 	sub := model.PushSubscription{
