@@ -367,3 +367,24 @@ func TestAFinishedWordRequestNoLongerOffersAnEarlierQuestion(t *testing.T) {
 		t.Fatalf("the done Word Request is %+v; want no question or choices left, and only real suggestions", done)
 	}
 }
+
+func TestAnImprovedWordRequestIsDoneOnlyForTheWordTheOwnerAskedAbout(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	hang := word("掛ける", "かける", "colgar", "jlpt_n2")
+	bridge := word("架ける", "かける", "tender (un puente)", "jlpt_n1")
+	n.store("words", hang, bridge)
+	askFor(phone, map[string]any{"kind": "improve", "wordId": id(hang)}, http.StatusCreated)
+	run, wordRequestID := claimOne(t, phone)
+
+	toolError(t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "done", "summary": "Improved 架ける", "wordId": id(bridge),
+	})
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "done", "summary": "Improved 掛ける", "wordId": id(hang),
+	})
+
+	done := get[[]wordRequestJSON](phone, "/api/japanese/word-requests")[0]
+	if done.State != "done" || done.WordID == nil || *done.WordID != id(hang) {
+		t.Fatalf("the Owner sees %+v; want it done for 掛ける, the Word they asked to improve", done)
+	}
+}

@@ -242,3 +242,15 @@ func (r wordRequests) ClaimNext(ctx context.Context, now, claimedUntil time.Time
 	}
 	return doc.wordRequest(), nil
 }
+
+func (r wordRequests) GetOneByID(ctx context.Context, id string) (model.WordRequest, error) {
+	oid, err := bson.ObjectIDFromHex(id)
+	if err != nil {
+		return model.WordRequest{}, coreutils.ErrNotFound
+	}
+	var doc wordRequestDocument
+	if err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: oid}}).Decode(&doc); err != nil {
+		return model.WordRequest{}, coreutils.NotFound(err)
+	}
+	return doc.wordRequest(), nil
+}

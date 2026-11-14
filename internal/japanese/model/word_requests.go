@@ -143,6 +143,9 @@ type WordRequestsRepository interface {
 	// claimedUntil, with one more attempt. It returns Core's
 	// utils.ErrNotFound if there is none.
 	ClaimNext(ctx context.Context, now, claimedUntil time.Time, maxAttempts int) (WordRequest, error)
+	// GetOneByID returns the Word Request with id, or Core's
+	// utils.ErrNotFound.
+	GetOneByID(ctx context.Context, id string) (WordRequest, error)
 	// GetListed returns, newest first, the Word Requests the Owner hasn't
 	// dismissed that are open or finished (Done or Failed) after
 	// finishedAfter.

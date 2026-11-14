@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"slices"
 	"strings"
@@ -231,7 +232,7 @@ func (s *WordRequestsService) Tools() []coremodel.Tool {
 	}, {
 		Name: "japanese_resolve_word_request",
 		Description: "Records what came of a Word Request this run claimed with japanese_list_word_requests. " +
-			"done: the word was added or the Word improved; wordId is that Word, summary one line for the Owner " +
+			"done: the word was added or the Word improved; wordId is that Word (for an improve, the Word asked about), summary one line for the Owner " +
 			"(\"Added 食べる · 3 Word Links · 1 Hint\"), and suggestions what the Owner should do in Claude Code, " +
 			"such as a merge or a Group change, which a run never does itself. " +
 			"needs_answer: something only the Owner can settle (which homograph, which reading gets the kanji spelling); " +
@@ -284,6 +285,15 @@ func (s *WordRequestsService) resolveTool(ctx context.Context, arguments json.Ra
 				return nil, errors.New("done needs wordId, the stored Word added or improved")
 			}
 			return nil, err
+		}
+		// An improve is done for the Word the Owner asked about, so that
+		// Open word opens it; work on another Word is a suggestion.
+		asked, err := s.requests.GetOneByID(ctx, args.ID)
+		if err != nil && !errors.Is(err, coreutils.ErrNotFound) {
+			return nil, err
+		}
+		if err == nil && asked.Kind == model.ImproveWord && asked.WordID != args.WordID {
+			return nil, fmt.Errorf("this Word Request improves the Word %s (%s): done names that wordId; suggest changes to other Words instead", asked.WordID, asked.Text)
 		}
 		changes.Summary = &summary
 		changes.WordID = &args.WordID
