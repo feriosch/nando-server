@@ -361,8 +361,10 @@ func (s *WordRequestsService) listTool(ctx context.Context, _ json.RawMessage) (
 	return model.ClaimedWordRequestsJSON{WordRequests: claimed}, nil
 }
 
-// DueNotifications returns a Notification for each Word Request that needs
-// the Owner.
+// DueNotifications returns, at every tick, a Notification for each Word
+// Request in the Pending strip that needs the Owner: one waiting for an
+// answer, or one that failed. Core sends each only once (see
+// wordRequestNotificationID).
 func (s *WordRequestsService) DueNotifications(ctx context.Context, slot time.Time) ([]coremodel.Notification, error) {
 	requests, err := s.requests.GetListed(ctx, s.now().Add(-finishedListedFor))
 	if err != nil {

@@ -3,7 +3,7 @@
 //
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests
-// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files, WordRequestsService for the Owner's Word Requests) and repository holds all database
+// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files, WordRequestsService for the Owner's Word Requests and their Notifications) and repository holds all database
 // code. The services see only the repository and CoreService interfaces,
 // never a database.
 package japanese

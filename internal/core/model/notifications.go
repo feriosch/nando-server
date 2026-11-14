@@ -8,7 +8,9 @@ import (
 // Notification is a short message delivered to every Push Subscription. Core
 // sends it, either on a Module's behalf or for itself.
 type Notification struct {
-	// ID names this one Notification for good; make it with NotificationID.
+	// ID names this one Notification for good; make it with NotificationID,
+	// or, for one that isn't once a day or week, as area:kind: and then what
+	// tells it apart, such as "japanese:word-request:<id>:<state>:<ms>".
 	// Core sends each ID at most once.
 	ID    string
 	Title string
