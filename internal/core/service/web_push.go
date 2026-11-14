@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -30,28 +29,35 @@ type VAPID struct {
 // deliver yet, such as while the device is off.
 const pushMessageTTL = 12 * time.Hour
 
-// errPushSubscriptionGone means the push service no longer knows a Push
-// Subscription: the Owner revoked it or uninstalled that copy of Nando.
-var errPushSubscriptionGone = errors.New("the push service no longer knows this Push Subscription")
-
 // pushTimeout is how long Core waits for a push service to take a push
 // message before giving up on it.
 const pushTimeout = 10 * time.Second
 
 // pushServiceError is a push service answering a push message with an
-// unsuccessful status other than gone.
+// unsuccessful status.
 type pushServiceError struct {
 	Status int
 }
 
 func (e pushServiceError) Error() string {
-	return fmt.Sprintf("push service answered %d %s", e.Status, http.StatusText(e.Status))
+	return "push service answered " + e.status()
+}
+
+// status is the status the push service answered, such as "410 Gone".
+func (e pushServiceError) status() string {
+	return fmt.Sprintf("%d %s", e.Status, http.StatusText(e.Status))
+}
+
+// gone reports whether the push service no longer knows the Push
+// Subscription: the Owner revoked it or uninstalled that copy of Nando.
+func (e pushServiceError) gone() bool {
+	return e.Status == http.StatusNotFound || e.Status == http.StatusGone
 }
 
 // deliver sends n to sub as a push message through sub's push service,
-// signed with vapid. It returns errPushSubscriptionGone if the push service no
-// longer knows sub, and a pushServiceError if it answers another failure. It
-// gives up after pushTimeout.
+// signed with vapid. It returns a pushServiceError if the push service
+// answers a failure, gone if it no longer knows sub. It gives up after
+// pushTimeout.
 func deliver(ctx context.Context, vapid VAPID, sub model.PushSubscription, n model.Notification) error {
 	ctx, cancel := context.WithTimeout(ctx, pushTimeout)
 	defer cancel()
@@ -74,9 +80,6 @@ func deliver(ctx context.Context, vapid VAPID, sub model.PushSubscription, n mod
 	}
 	defer resp.Body.Close()
 	_, _ = io.Copy(io.Discard, resp.Body)
-	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
-		return errPushSubscriptionGone
-	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return pushServiceError{Status: resp.StatusCode}
 	}

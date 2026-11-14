@@ -43,6 +43,9 @@ type nando struct {
 	core    *core.Core
 	handler http.Handler
 	clock   *clock
+	// db is Core's database, only for a test to set up what the API can't,
+	// never to check what Core did.
+	db *mongo.Database
 }
 
 func newNando(t *testing.T) *nando {
@@ -79,6 +82,7 @@ func newNando(t *testing.T) *nando {
 		core:    c,
 		handler: server.New(server.Config{AllowedOrigins: allowedOrigins, Core: c}),
 		clock:   clk,
+		db:      client.Database("core"),
 	}
 }
 

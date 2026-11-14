@@ -34,6 +34,7 @@ type Service struct {
 	mu        sync.Mutex
 	status    int
 	hang      bool
+	location  string
 	requests  int
 	delivered []Notification
 	headers   []http.Header
@@ -103,6 +104,18 @@ func (p *Service) Answer(status int) {
 	p.status = status
 }
 
+// Stop shuts the push service down, so that sending to it fails before any
+// answer, as when it can't be reached.
+func (p *Service) Stop() { p.server.Close() }
+
+// Redirect makes the push service answer later push messages with a 307 to
+// location.
+func (p *Service) Redirect(location string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.location = location
+}
+
 // Hang makes the push service answer no later push message: it holds each
 // until the sender gives up, or for a minute.
 func (p *Service) Hang() {
@@ -152,6 +165,10 @@ func (p *Service) receive(w http.ResponseWriter, r *http.Request) {
 		case <-time.After(time.Minute):
 		}
 		p.mu.Lock()
+		return
+	}
+	if p.location != "" {
+		http.Redirect(w, r, p.location, http.StatusTemporaryRedirect)
 		return
 	}
 	body, err := io.ReadAll(r.Body)

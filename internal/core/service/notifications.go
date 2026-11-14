@@ -115,13 +115,19 @@ func (s *NotificationsService) tick(w http.ResponseWriter, r *http.Request) {
 func (s *NotificationsService) sendDueNotifications(ctx context.Context) error {
 	slot, err := s.currentSlot(ctx)
 	if err != nil {
+		logTick(nil, 0, 1)
 		return err
 	}
 	subs, err := s.pushSubscriptions.List(ctx)
 	if err != nil {
+		logTick(nil, 0, 1)
 		return err
 	}
 	var errs []error
+	var sent []sentNotification
+	// Push Subscriptions removed while sending one Notification aren't sent
+	// the next.
+	live := subs
 	for _, p := range s.providers {
 		due, err := p.DueNotifications(ctx, slot)
 		if err != nil {
@@ -139,12 +145,67 @@ func (s *NotificationsService) sendDueNotifications(ctx context.Context) error {
 			if !claimed {
 				continue
 			}
-			for _, f := range s.sendToEveryPushSubscription(ctx, subs, n).failed {
-				log.Printf("send Notification %s: %v", n.ID, f.err)
-			}
+			outcome := s.sendToEveryPushSubscription(ctx, live, n)
+			logOutcome("send Notification "+n.ID, outcome)
+			sent = append(sent, sentNotification{id: n.ID, reached: len(outcome.reached), of: len(live)})
+			live = withoutRemoved(live, outcome)
 		}
 	}
+	logTick(sent, len(subs), len(errs))
 	return errors.Join(errs...)
+}
+
+// logTick logs the tick's one line: the Notifications it sent to how many
+// Push Subscriptions, and how many errors it met, which ServerError logs on
+// their own. Only a tick without errors says nothing was due.
+func logTick(sent []sentNotification, subs, errs int) {
+	switch {
+	case len(sent) == 0 && errs == 0:
+		log.Print("tick: no Notifications due")
+	case len(sent) == 0:
+		log.Printf("tick: no Notifications sent, %s", counted(errs, "error"))
+	default:
+		head := fmt.Sprintf("tick: sent %s to %s", counted(len(sent), "Notification"), counted(subs, "Push Subscription"))
+		if errs > 0 {
+			head += ", " + counted(errs, "error")
+		}
+		reports := make([]string, len(sent))
+		for i, n := range sent {
+			reports[i] = n.String()
+		}
+		log.Printf("%s: %s", head, strings.Join(reports, ", "))
+	}
+}
+
+// sentNotification is a Notification the tick sent, and how many of the Push
+// Subscriptions it was sent to took it.
+type sentNotification struct {
+	id          string
+	reached, of int
+}
+
+// String is how the tick's log line reports it, such as
+// "calories:evening-summary:2026-10-20 (reached 1 of 2)".
+func (n sentNotification) String() string {
+	return fmt.Sprintf("%s (reached %d of %d)", n.id, n.reached, n.of)
+}
+
+// withoutRemoved is subs without the Push Subscriptions outcome removed.
+func withoutRemoved(subs []model.PushSubscription, outcome sendOutcome) []model.PushSubscription {
+	if len(outcome.removed) == 0 {
+		return subs
+	}
+	removed := map[string]bool{}
+	for _, r := range outcome.removed {
+		removed[r.sub.Endpoint] = true
+	}
+	var kept []model.PushSubscription
+	for _, sub := range subs {
+		if !removed[sub.Endpoint] {
+			kept = append(kept, sub)
+		}
+	}
+	return kept
 }
 
 // currentSlot is the start of the half hour it is now in the Owner Time
@@ -162,8 +223,17 @@ func (s *NotificationsService) currentSlot(ctx context.Context) (time.Time, erro
 // sendOutcome is what came of sending one Notification to every Push
 // Subscription.
 type sendOutcome struct {
-	sent, removed int
-	failed        []sendFailure
+	// reached are the endpoints of the Push Subscriptions that took it.
+	reached []string
+	removed []removal
+	failed  []sendFailure
+}
+
+// removal is a Push Subscription deleted because its push service no longer
+// knew it, and the status it answered, such as "410 Gone".
+type removal struct {
+	sub    model.PushSubscription
+	status string
 }
 
 // sendFailure is a Push Subscription that didn't take a Notification.
@@ -173,29 +243,33 @@ type sendFailure struct {
 	status int
 	// reason says what went wrong in words that never quote the endpoint.
 	reason string
-	// err is the whole error, for the log.
+	// err is the whole error, for the log, with the endpoint replaced by its
+	// push service's host.
 	err error
 }
 
 // sendToEveryPushSubscription sends n to each of subs, deleting those whose
 // push service no longer knows them, as the push service asks. One that fails
-// doesn't stop the others.
+// doesn't stop the others. It logs nothing: logOutcome does.
 func (s *NotificationsService) sendToEveryPushSubscription(ctx context.Context, subs []model.PushSubscription, n model.Notification) sendOutcome {
 	var outcome sendOutcome
 	for _, sub := range subs {
 		err := deliver(ctx, s.vapid, sub, n)
+		var answered pushServiceError
 		switch {
 		case err == nil:
-			outcome.sent++
-		case errors.Is(err, errPushSubscriptionGone):
+			outcome.reached = append(outcome.reached, sub.Endpoint)
+		case errors.As(err, &answered) && answered.gone():
 			if err := s.pushSubscriptions.Delete(ctx, sub.Endpoint); err != nil {
 				outcome.failed = append(outcome.failed, sendFailure{
-					sub: sub, reason: "push service no longer knows it, and it couldn't be removed",
-					err: fmt.Errorf("delete a Push Subscription its push service no longer knows: %w", err),
+					sub: sub, status: answered.Status,
+					reason: "push service no longer knows it, and it couldn't be removed",
+					err: withoutEndpoint(fmt.Errorf("delete a Push Subscription its push service no longer knows (%s): %w",
+						answered.status(), err), sub),
 				})
 				continue
 			}
-			outcome.removed++
+			outcome.removed = append(outcome.removed, removal{sub: sub, status: answered.status()})
 		default:
 			outcome.failed = append(outcome.failed, deliveryFailure(sub, err))
 		}
@@ -203,11 +277,22 @@ func (s *NotificationsService) sendToEveryPushSubscription(ctx context.Context, 
 	return outcome
 }
 
+// logOutcome logs what of outcome Cloud Logging should show: each Push
+// Subscription removed, and each failure, as what failed.
+func logOutcome(what string, outcome sendOutcome) {
+	for _, r := range outcome.removed {
+		log.Printf("removed Push Subscription at %s: %s", pushServiceHost(r.sub), r.status)
+	}
+	for _, f := range outcome.failed {
+		log.Printf("%s: %v", what, f.err)
+	}
+}
+
 // deliveryFailure is sub failing to take a Notification with err, which
 // deliver returned. Its reason is one of a few fixed phrases, since the
 // errors of an HTTP request quote its URL, the endpoint.
 func deliveryFailure(sub model.PushSubscription, err error) sendFailure {
-	f := sendFailure{sub: sub, reason: "couldn't reach the push service", err: err}
+	f := sendFailure{sub: sub, reason: "couldn't reach the push service", err: withoutEndpoint(err, sub)}
 	var answered pushServiceError
 	switch {
 	case errors.As(err, &answered):
@@ -232,13 +317,13 @@ func (s *NotificationsService) sendTestNotification(w http.ResponseWriter, r *ht
 		return
 	}
 	outcome := s.sendToEveryPushSubscription(r.Context(), subs, testNotification)
+	logOutcome("send the test Notification", outcome)
 	result := model.TestNotificationResultJSON{
-		Sent:    outcome.sent,
-		Removed: outcome.removed,
+		Sent:    len(outcome.reached),
+		Removed: len(outcome.removed),
 		Failed:  make([]model.TestNotificationFailureJSON, 0, len(outcome.failed)),
 	}
 	for _, f := range outcome.failed {
-		log.Printf("send the test Notification: %v", f.err)
 		result.Failed = append(result.Failed, model.TestNotificationFailureJSON{
 			PushService: pushServiceHost(f.sub), Status: f.status, Reason: f.reason,
 		})
@@ -255,4 +340,30 @@ func pushServiceHost(sub model.PushSubscription) string {
 		return ""
 	}
 	return endpoint.Hostname()
+}
+
+// counted is n of thing, such as "1 Notification" or "2 Notifications".
+func counted(n int, thing string) string {
+	if n == 1 {
+		return "1 " + thing
+	}
+	return fmt.Sprintf("%d %ss", n, thing)
+}
+
+// withoutEndpoint is err with no endpoint, a secret capability URL, left in
+// it. An HTTP request's error quotes the URL it last tried, re-serialised, which
+// after a redirect isn't sub's: it is cut to its host. Any other mention of
+// sub's endpoint is replaced by its push service's host.
+func withoutEndpoint(err error, sub model.PushSubscription) error {
+	var request *url.Error
+	if errors.As(err, &request) {
+		host := ""
+		if u, parseErr := url.Parse(request.URL); parseErr == nil {
+			host = u.Hostname()
+		}
+		cut := *request
+		cut.URL = host
+		err = &cut
+	}
+	return errors.New(strings.ReplaceAll(err.Error(), sub.Endpoint, pushServiceHost(sub)))
 }
