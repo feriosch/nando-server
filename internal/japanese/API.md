@@ -277,10 +277,11 @@ A Word Request:
 Nando wakes Claude by firing the API trigger of a cloud scheduled task, which starts a run ([ADR 0006](../../docs/adr/0006-word-requests-through-a-scheduled-task.md)). It tries:
 
 - when a Word Request becomes `"pending"`: created, answered or retried;
-- when a run resolves a Word Request, for any others still waiting;
-- at Core's half-hourly tick, for any left waiting, such as after the Owner's usage limit ran out.
+- at Core's half-hourly tick, for any left waiting, such as after the Owner's usage limit ran out, or after a run stopped at its limit of 10 with more waiting.
 
-It fires only if a Word Request is waiting for a run (`"pending"`, or `"working"` with its claim run out and claims left), and not if a run still holds a claim, since that run lists the rest before it stops, nor if it fired in the last 2 minutes, on any instance. A trigger that fails or refuses (`429`: it allows 30 fires an hour) is logged and fails neither the Owner's request nor the Tool call; the next tick tries again. Without a trigger configured (`CLAUDE_TRIGGER_URL` and `CLAUDE_TRIGGER_TOKEN`), Nando never wakes Claude.
+It doesn't when a run resolves a Word Request: that run lists the queue again itself, and a second run would only share the queue, at the Owner's usage.
+
+It fires only if a Word Request is waiting for a run (`"pending"`, or `"working"` with its claim run out and claims left), and not if a run still holds a claim, since that run lists the rest before it stops, nor if it fired in the last 2 minutes, on any instance. A trigger that fails or refuses (`429`: it allows 30 fires an hour) is logged and doesn't fail the Owner's request; the next tick tries again. Without a trigger configured (`CLAUDE_TRIGGER_URL` and `CLAUDE_TRIGGER_TOKEN`), Nando never wakes Claude.
 
 ### `GET /api/japanese/word-requests`
 

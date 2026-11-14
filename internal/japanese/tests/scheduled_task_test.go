@@ -147,20 +147,23 @@ func TestTheScheduledTaskIsNotWokenWhileARunHoldsAWordRequest(t *testing.T) {
 	}
 }
 
-func TestARunResolvingAWordRequestWakesTheScheduledTaskForTheOthersWaiting(t *testing.T) {
+func TestARunResolvingItsLastWordRequestDoesNotWakeASecondRun(t *testing.T) {
 	trigger := newFakeTrigger(t)
 	n, phone := signedInBrowserWith(t, trigger.config())
 	askAt(n, phone, "一")
 	run, wordRequestID := claimOne(t, phone)
-	askAt(n, phone, "二")
+	askAt(n, phone, "二") // waiting, while the run holds 一
 
 	n.clock.Set(n.clock.Now().Add(5 * time.Minute))
 	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
 		"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word 一",
 	})
 
-	if fires := trigger.received(); len(fires) != 2 {
-		t.Fatalf("the trigger was fired %d times; want twice: for 一, then for 二 once the run resolved 一", len(fires))
+	// The run lists again itself and takes 二: a second run would only
+	// share the queue, at the Owner's usage. Leftovers after a run stops at
+	// its limit wait for the Owner's next ask or the tick.
+	if fires := trigger.received(); len(fires) != 1 {
+		t.Fatalf("the trigger was fired %d times; want once, for 一 only", len(fires))
 	}
 }
 

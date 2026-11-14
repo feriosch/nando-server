@@ -47,7 +47,7 @@ const quietFor = 2 * time.Minute
 // or Working with its claim run out and claims left. It doesn't while a run
 // holds a Word Request, as that run lists the rest before it stops, nor if
 // the trigger was fired in the last 2 minutes. Any error is only logged:
-// waking Claude never fails what the Owner or a run asked for.
+// waking Claude never fails what the Owner asked for.
 func (s *ScheduledTaskService) Wake(ctx context.Context) {
 	// The Owner may leave Nando the moment they've asked: their request's
 	// context ending must not cancel a fire whose 2-minute slot is already
