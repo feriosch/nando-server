@@ -1,22 +1,24 @@
 ---
 name: word-requests
 description: >-
-  Work through the Owner's Word Requests in Nando: add each requested word, or improve the requested Word, following the add-word skill, and record each outcome for the Owner. Use when a scheduled task points here, or when the Owner asks to work through their Word Requests.
+  Work through the Owner's Word Requests in Nando, unattended: add each requested word, or improve the requested Word, following the add-word skill, and record each outcome for the Owner. Use when a scheduled task's prompt points here.
 ---
 
 # Work through the Word Requests
 
 A Word Request is the Owner's ask, made in Nando, to add a word (`kind: "add"`, with the `text` they typed and the `group` they found it in) or to improve a stored Word (`kind: "improve"`, with its `wordId`). This run is unattended: the Owner is not reading it. They see only what you record with `japanese_resolve_word_request`, in the Pending strip of Japanese search, so every outcome, question and suggestion goes there.
 
+If the Owner is in the chat with you, this skill isn't for that: follow `add-word` with them directly, asking as it says.
+
 Each Word Request follows the `add-word` skill. Read all of it now from `skills/japanese/add-word/SKILL.md` in the attached nando-server repo; scheduled tasks may not load skills on their own. Every lookup and write goes through the Japanese Tools of the Nando Connector.
 
 ## 1. Claim
 
-`japanese_list_word_requests` claims up to 3 Word Requests for this run, for 15 minutes. If it answers none, stop: the run is done.
+`japanese_list_word_requests` claims the oldest waiting Word Request for this run, for 15 minutes. If it answers none, stop: the run is done.
 
 ## 2. Work each one through add-word
 
-Take the claimed Word Requests one at a time, and resolve each (step 4) before starting the next, so their claims don't run out.
+Resolve the claimed Word Request (step 4) before claiming the next, so its 15 minutes cover only that word.
 
 **`add`**
 - `text` is as the Owner typed it, maybe conjugated (食べた) or in kana (どこ). Resolve it to the dictionary-form Word as add-word step 1 and **Kanji spelling** say, and add that Word. If it is stored already, run add-word's **Repeated Words** on it instead.
@@ -54,4 +56,4 @@ If `japanese_resolve_word_request` refuses because the Word Request isn't `"work
 
 ## 5. Repeat
 
-Back to step 1 until it answers none, or until this run has resolved 10 Word Requests: then stop, after resolving every Word Request already claimed. Nando starts the next run itself.
+Back to step 1 until it answers none, or until this run has resolved 10 Word Requests: then stop. Nando starts another run for any left, at the Owner's next ask or within half an hour.

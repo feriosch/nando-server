@@ -34,7 +34,7 @@ ln -s "$PWD/skills/japanese/suggest-related" ~/.claude/skills/suggest-related
 
 ## Use `word-requests` in a scheduled task
 
-The Owner adds or improves a word from Nando as a Word Request, and Nando wakes a cloud scheduled task (Claude Code on the web) through its API trigger to work through them ([ADR 0006](../docs/adr/0006-word-requests-through-a-scheduled-task.md)). The task has this repo attached and the Nando Connector, and its prompt points at the skill:
+The Owner adds or improves a word from Nando as a Word Request, and Nando wakes a cloud scheduled task (Claude Code on the web) through its API trigger to work through them ([ADR 0006](../docs/adr/0006-word-requests-through-a-scheduled-task.md)). The task has **no schedule**, only the API trigger, so it runs only when Nando wakes it and an empty queue costs nothing. It has this repo attached and the Nando Connector, and its prompt points at the skill:
 
 ```text
 Follow skills/japanese/word-requests/SKILL.md
