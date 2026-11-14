@@ -1,6 +1,6 @@
 # Japanese API
 
-The Japanese Module: searching the Owner's Words and Kanji, the Word and Kanji pages, and the JLPT deck for Anki. Every route is under `/api/japanese/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Words and Kanji are read-only here: Claude adds and improves Words through the Module's [Tools](#tools), not through this API. Word Requests are the one thing the Owner writes, since they are the Owner's own asks for Claude ([ADR 0006](../../docs/adr/0006-word-requests-through-a-scheduled-task.md)). Bodies are JSON, except the deck file. Errors are a status code with a short plain-text message.
+The Japanese Module: searching the Owner's Words and Kanji, the Word and Kanji pages, the JLPT deck for Anki, and the Owner's Word Requests, with their Notifications. Every route is under `/api/japanese/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Words and Kanji are read-only here: Claude adds and improves Words through the Module's [Tools](#tools), not through this API. Word Requests are the one thing the Owner writes, since they are the Owner's own asks for Claude ([ADR 0006](../../docs/adr/0006-word-requests-through-a-scheduled-task.md)). Bodies are JSON, except the deck file. Errors are a status code with a short plain-text message.
 
 Ids are the 24-character hex ObjectIds the Words and Kanji have had since benkyo, which are also Anki's `Id`. Word Tags and Nuance Tags are returned as stored, in snake_case (`usually_kana`, `jlpt_n1`); the web app writes them for display. Optional strings are `null` when not set, and lists are `[]`, never `null`.
 
@@ -319,6 +319,15 @@ These three answer:
 - `400` (answer only): a blank `answer`.
 - `404`: no such Word Request.
 - `409`: the Word Request isn't in a state this applies to: only a `"needs_answer"` one can be answered, only a `"failed"` one retried, and only a `"done"` or `"failed"` one dismissed.
+
+### Notifications
+
+The Module is a Notification provider ([Core's Notifications](../core/API.md#notifications)). At each tick it has Core send one Notification for each Word Request the Owner hasn't dismissed that needs them, opening `/japanese`:
+
+- `"needs_answer"`: `{ "title": "Claude has a question", "body": "「かける」: Which かける: to hang, or to call?", "url": "/japanese" }`, the `text` and Claude's `question`.
+- `"failed"`: `{ "title": "Couldn't add a word", "body": "「たべたべ」: jisho.org has no word たべたべ, and it isn't a conjugation of one", "url": "/japanese" }`, the `text` and the `summary` saying why, which every failed Word Request has; for an improve, the title is "Couldn't improve a word". A Word Request whose 3rd claim has run out is failed at the tick too, so the Owner hears of it even if nobody has listed Word Requests since.
+
+A `"done"` Word Request sends none: it shows in the Pending strip. Each Notification is sent once per round: its ID, `japanese:word-request:<id>:<state>:<ms>`, has the time the Word Request entered that state, so it stays the same while the Word Request waits, and a second question, or a second failure after a retry, notifies again. `attempts` can't tell rounds apart, since an answer or a retry sets them back to 0.
 
 ## Tools
 

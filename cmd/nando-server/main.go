@@ -176,6 +176,7 @@ func run() error {
 		return err
 	}
 	nandoCore.AddToolProvider(japaneseModule.ToolProvider())
+	nandoCore.AddNotificationProvider(japaneseModule.NotificationProvider())
 	nandoCore.AddTickJob(japaneseModule.TickJob())
 
 	switch args := os.Args[1:]; {

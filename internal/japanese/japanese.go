@@ -3,7 +3,7 @@
 //
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests
-// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files, WordRequestsService for the Owner's Word Requests, ScheduledTaskService to wake Claude for them) and repository holds all database
+// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files, WordRequestsService for the Owner's Word Requests and their Notifications, ScheduledTaskService to wake Claude for them) and repository holds all database
 // code. The services see only the repository and CoreService interfaces,
 // never a database.
 package japanese
@@ -94,6 +94,13 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 // Core.AddToolProvider.
 func (m *Module) ToolProvider() coremodel.ToolProvider {
 	return toolProvider{m}
+}
+
+// NotificationProvider is what the Module tells Core to send at each tick:
+// a Notification for each Word Request that needs the Owner, for
+// Core.AddNotificationProvider.
+func (m *Module) NotificationProvider() coremodel.NotificationProvider {
+	return m.requests
 }
 
 // TickJob is what the Module does at every tick, for Core.AddTickJob: it

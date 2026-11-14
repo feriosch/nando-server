@@ -80,6 +80,7 @@ func newNandoWith(t *testing.T, cfg japanese.Config) *nando {
 		t.Fatalf("NewJapaneseModule: %v", err)
 	}
 	c.AddToolProvider(module.ToolProvider())
+	c.AddNotificationProvider(module.NotificationProvider())
 	c.AddTickJob(module.TickJob())
 	return &nando{
 		t:        t,
