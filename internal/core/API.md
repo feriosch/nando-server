@@ -266,6 +266,18 @@ At each tick Core asks every Notification provider (Core's own and every Module'
 - `401`: no token, or not the scheduler's.
 - `500`: a provider or a tick job failed, or a Notification couldn't be recorded as sent. Everything else was still sent and every other tick job still ran, and Cloud Scheduler's retry won't send a Notification again.
 
+Each tick logs, to Cloud Logging, one line saying what it sent:
+
+- `tick: sent 2 Notifications to 1 Push Subscription: calories:no-entries:2026-10-20, calories:evening-summary:2026-10-20`: the IDs of the Notifications it sent, and how many Push Subscriptions took at least one. `to 0 Push Subscriptions` means none reached a device.
+- `tick: no Notifications due`: nothing was due, or a retried tick found it all sent already.
+
+Whenever Core sends, at the tick or for the test Notification, it also logs:
+
+- `removed Push Subscription at web.push.apple.com: 410 Gone`: the push service no longer knew it (`404` or `410`), so Core deleted it.
+- `send Notification calories:evening-summary:2026-10-20: …`: a push service failed to take it, with the error.
+
+Logs name a push service by its host and never hold an endpoint, which is a secret capability URL, nor what a Notification says: only its ID.
+
 ## Connectors
 
 A Connector, such as the Claude app, uses the Tools of Core and every Module over MCP at `https://api.<DOMAIN>/mcp`. It never signs in. Nando is its own OAuth 2.1 authorization server: authorization code with PKCE (`S256` only) and dynamic client registration, for public clients only. The Owner approves each Connector on the web app's consent page with a Passkey, always, even in a browser with a Session ([ADR 0004](../../docs/adr/0004-connectors-over-oauth.md)).

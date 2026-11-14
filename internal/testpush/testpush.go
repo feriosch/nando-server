@@ -103,6 +103,10 @@ func (p *Service) Answer(status int) {
 	p.status = status
 }
 
+// Stop shuts the push service down, so that sending to it fails before any
+// answer, as when it can't be reached.
+func (p *Service) Stop() { p.server.Close() }
+
 // Hang makes the push service answer no later push message: it holds each
 // until the sender gives up, or for a minute.
 func (p *Service) Hang() {

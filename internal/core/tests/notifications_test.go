@@ -1,14 +1,17 @@
 package tests
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -543,5 +546,154 @@ func TestATestNotificationGivesUpOnAPushServiceThatDoesNotAnswer(t *testing.T) {
 	}
 	if failed := result.Failed[0]; failed.Status != 0 || failed.Reason != "push service didn't answer within 10s" {
 		t.Errorf("failure = %+v; want no status and that it didn't answer", failed)
+	}
+}
+
+// captureLog has the log write to the returned buffer until the test ends.
+func captureLog(t *testing.T) *lockedBuffer {
+	t.Helper()
+	buf := &lockedBuffer{}
+	prev := log.Writer()
+	log.SetOutput(buf)
+	t.Cleanup(func() { log.SetOutput(prev) })
+	return buf
+}
+
+// lockedBuffer is a bytes.Buffer safe to write from several goroutines.
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+// noEntriesReminder is a second Notification due with eveningSummary.
+var noEntriesReminder = model.Notification{ID: "calories:no-entries:2026-10-20", Title: "Calories", Body: "Nothing logged yet"}
+
+func TestATickLogsWhichNotificationsItSent(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	homeScreenApp, safari := testpush.New(t), testpush.New(t)
+	phone.subscribe(homeScreenApp)
+	phone.subscribe(safari)
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{noEntriesReminder, eveningSummary}})
+	logs := captureLog(t)
+
+	n.mustTick()
+
+	want := "tick: sent 2 Notifications to 2 Push Subscriptions: calories:no-entries:2026-10-20, calories:evening-summary:2026-10-20\n"
+	if !strings.Contains(logs.String(), want) {
+		t.Errorf("log = %q; want a line %q", logs, want)
+	}
+}
+
+func TestATickLogsANotificationThatReachedNoPushSubscription(t *testing.T) {
+	n := newNando(t)
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
+	logs := captureLog(t)
+
+	n.mustTick()
+
+	want := "tick: sent 1 Notification to 0 Push Subscriptions: calories:evening-summary:2026-10-20\n"
+	if !strings.Contains(logs.String(), want) {
+		t.Errorf("log = %q; want a line %q", logs, want)
+	}
+}
+
+func TestATickWithNothingDueSaysSo(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	phone.subscribe(testpush.New(t))
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
+	n.mustTick()
+	logs := captureLog(t)
+
+	n.clock.Advance(time.Minute) // a retried tick: the evening summary was sent already
+	n.mustTick()
+
+	if got, want := logs.String(), "tick: no Notifications due\n"; !strings.HasSuffix(got, want) || strings.Contains(got, "tick: sent") {
+		t.Errorf("log = %q; want only %q", got, want)
+	}
+}
+
+func TestATickLogsAPushSubscriptionItRemovesByItsPushServiceHost(t *testing.T) {
+	for _, status := range []int{http.StatusGone, http.StatusNotFound} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			n, phone := signedInBrowser(t, wednesday)
+			uninstalled := testpush.New(t)
+			phone.subscribe(uninstalled)
+			uninstalled.Answer(status)
+			n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
+			logs := captureLog(t)
+
+			n.mustTick()
+
+			endpoint, err := url.Parse(uninstalled.Endpoint())
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := map[int]string{
+				http.StatusGone:     "removed Push Subscription at 127.0.0.1: 410 Gone\n",
+				http.StatusNotFound: "removed Push Subscription at 127.0.0.1: 404 Not Found\n",
+			}[status]
+			if got := logs.String(); !strings.Contains(got, want) {
+				t.Errorf("log = %q; want a line %q", got, want)
+			}
+			if got := logs.String(); strings.Contains(got, endpoint.Path) {
+				t.Errorf("log = %q; gives away the endpoint", got)
+			}
+		})
+	}
+}
+
+func TestATickNeverLogsWhatANotificationSays(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	delivered, uninstalled, failing := testpush.New(t), testpush.New(t), testpush.New(t)
+	phone.subscribe(delivered)
+	phone.subscribe(uninstalled)
+	phone.subscribe(failing)
+	uninstalled.Answer(http.StatusGone)
+	failing.Answer(http.StatusInternalServerError)
+	private := model.Notification{ID: "japanese:word-request-failed:abc", Title: "Couldn't add a word", Body: "ぬぺぽぴゃ: not a word Jisho knows"}
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{private}})
+	logs := captureLog(t)
+
+	n.mustTick()
+
+	for _, text := range []string{private.Title, private.Body, "ぬぺぽぴゃ"} {
+		if got := logs.String(); strings.Contains(got, text) {
+			t.Errorf("log = %q; gives away %q", got, text)
+		}
+	}
+}
+
+func TestATickLogsAPushServiceItCannotReachWithoutTheEndpoint(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	unreachable := testpush.New(t)
+	phone.subscribe(unreachable)
+	unreachable.Stop()
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
+	logs := captureLog(t)
+
+	n.mustTick()
+
+	endpoint, err := url.Parse(unreachable.Endpoint())
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := logs.String()
+	if !strings.Contains(got, "send Notification calories:evening-summary:2026-10-20: ") || !strings.Contains(got, endpoint.Hostname()) {
+		t.Errorf("log = %q; want the failed send, naming the push service %s", got, endpoint.Hostname())
+	}
+	if strings.Contains(got, endpoint.Path) {
+		t.Errorf("log = %q; gives away the endpoint", got)
 	}
 }
