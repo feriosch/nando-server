@@ -176,7 +176,7 @@ Logs the Weigh-in for `week`, replacing any it already has.
 
 ## Notifications
 
-Core sends every Notification, for a Module or for itself, to every Push Subscription. Each one is sent at most once, even if the scheduler retries a tick.
+Core sends every Notification, for a Module or for itself, to every Push Subscription. Each one is sent at most once, even if the scheduler retries a tick. The test Notification is the exception: the Owner sends it on demand.
 
 ### `GET /api/push-subscriptions/vapid-public-key`
 
@@ -209,6 +209,36 @@ Unregisters the Push Subscription with this `endpoint` (URL-encoded), for exampl
 
 - `204`: that endpoint gets no more Notifications. This is also the answer if it wasn't registered.
 - `400`: `endpoint` is missing.
+
+### `POST /api/push-subscriptions/test`
+
+Sends the test Notification to every Push Subscription right away, so the Owner can check that Notifications reach their devices from Settings. No body.
+
+```json
+{ "title": "Test Notification", "body": "Notifications reach this device.", "url": "/settings" }
+```
+
+It goes outside the tick and isn't recorded as sent, so the Owner can send it again at any time.
+
+`200`: what happened to each Push Subscription.
+
+```json
+{
+  "sent": 1,
+  "removed": 1,
+  "failed": [{ "pushService": "web.push.apple.com", "status": 403, "reason": "push service answered 403 Forbidden" }]
+}
+```
+
+- `sent`: how many push services took it. With no Push Subscription, it is `0`, `removed` is `0` and `failed` is empty.
+- `removed`: how many push services no longer knew theirs (`404` or `410`). Core deleted them, as at the tick.
+- `failed`: the others, always a list. `pushService` is the endpoint's host, never the endpoint, which is a secret capability URL. `status` is what the push service answered, left out if it didn't answer. `reason` is one of:
+  - `push service answered {status}`, such as `push service answered 403 Forbidden`,
+  - `push service didn't answer within 10s`: Core gives up on a push service after 10 seconds, at the tick too,
+  - `couldn't reach the push service`, such as a network error,
+  - `push service no longer knows it, and it couldn't be removed`: Core tries again at the next send.
+
+`500`: the Push Subscriptions couldn't be read, so nothing was sent.
 
 ### The push message
 

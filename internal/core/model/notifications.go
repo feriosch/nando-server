@@ -46,3 +46,22 @@ type PushMessageJSON struct {
 	Body  string `json:"body,omitempty"`
 	URL   string `json:"url,omitempty"`
 }
+
+// TestNotificationResultJSON is what came of sending the test Notification:
+// how many Push Subscriptions took it, how many their push service no longer
+// knew and were deleted, and which push services failed.
+type TestNotificationResultJSON struct {
+	Sent    int                           `json:"sent"`
+	Removed int                           `json:"removed"`
+	Failed  []TestNotificationFailureJSON `json:"failed"`
+}
+
+// TestNotificationFailureJSON is a push service that didn't take the test
+// Notification, named by its host so that the endpoint, a secret capability
+// URL, never leaves the server.
+type TestNotificationFailureJSON struct {
+	PushService string `json:"pushService"`
+	// Status is what the push service answered, or 0 (left out) if it didn't.
+	Status int    `json:"status,omitempty"`
+	Reason string `json:"reason"`
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -21,7 +22,8 @@ const sentNotificationTTL = 30 * 24 * time.Hour
 // NotificationsService runs the tick, which only the scheduler may call. It
 // sends the due Notifications: it asks every Notification provider for them,
 // records each as sent, and sends it to every Push Subscription. It also runs
-// every tick job. It asks the SettingsService for the Owner Time Zone.
+// every tick job, and sends the Owner's test Notification on demand. It asks
+// the SettingsService for the Owner Time Zone.
 type NotificationsService struct {
 	pushSubscriptions model.PushSubscriptionsRepository
 	sentNotifications model.SentNotificationsRepository
@@ -61,9 +63,11 @@ func NewNotifications(
 	}, nil
 }
 
-// Routes adds the tick's route to mux, /internal/tick.
+// Routes adds the tick's route to mux, /internal/tick, and the test
+// Notification's, under /api/.
 func (s *NotificationsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /internal/tick", s.tick)
+	mux.HandleFunc("POST /api/push-subscriptions/test", s.sendTestNotification)
 }
 
 // AddNotificationProvider has Core ask p for its due Notifications at every
@@ -135,14 +139,8 @@ func (s *NotificationsService) sendDueNotifications(ctx context.Context) error {
 			if !claimed {
 				continue
 			}
-			for _, sub := range subs {
-				err := deliver(ctx, s.vapid, sub, n)
-				if errors.Is(err, errPushSubscriptionGone) {
-					err = s.pushSubscriptions.Delete(ctx, sub.Endpoint)
-				}
-				if err != nil {
-					log.Printf("send Notification %s: %v", n.ID, err)
-				}
+			for _, f := range s.sendToEveryPushSubscription(ctx, subs, n).failed {
+				log.Printf("send Notification %s: %v", n.ID, f.err)
 			}
 		}
 	}
@@ -159,4 +157,102 @@ func (s *NotificationsService) currentSlot(ctx context.Context) (time.Time, erro
 	}
 	now := s.now().In(loc)
 	return time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), now.Minute()/30*30, 0, 0, loc), nil
+}
+
+// sendOutcome is what came of sending one Notification to every Push
+// Subscription.
+type sendOutcome struct {
+	sent, removed int
+	failed        []sendFailure
+}
+
+// sendFailure is a Push Subscription that didn't take a Notification.
+type sendFailure struct {
+	sub model.PushSubscription
+	// status is what the push service answered, or 0 if it didn't.
+	status int
+	// reason says what went wrong in words that never quote the endpoint.
+	reason string
+	// err is the whole error, for the log.
+	err error
+}
+
+// sendToEveryPushSubscription sends n to each of subs, deleting those whose
+// push service no longer knows them, as the push service asks. One that fails
+// doesn't stop the others.
+func (s *NotificationsService) sendToEveryPushSubscription(ctx context.Context, subs []model.PushSubscription, n model.Notification) sendOutcome {
+	var outcome sendOutcome
+	for _, sub := range subs {
+		err := deliver(ctx, s.vapid, sub, n)
+		switch {
+		case err == nil:
+			outcome.sent++
+		case errors.Is(err, errPushSubscriptionGone):
+			if err := s.pushSubscriptions.Delete(ctx, sub.Endpoint); err != nil {
+				outcome.failed = append(outcome.failed, sendFailure{
+					sub: sub, reason: "push service no longer knows it, and it couldn't be removed",
+					err: fmt.Errorf("delete a Push Subscription its push service no longer knows: %w", err),
+				})
+				continue
+			}
+			outcome.removed++
+		default:
+			outcome.failed = append(outcome.failed, deliveryFailure(sub, err))
+		}
+	}
+	return outcome
+}
+
+// deliveryFailure is sub failing to take a Notification with err, which
+// deliver returned. Its reason is one of a few fixed phrases, since the
+// errors of an HTTP request quote its URL, the endpoint.
+func deliveryFailure(sub model.PushSubscription, err error) sendFailure {
+	f := sendFailure{sub: sub, reason: "couldn't reach the push service", err: err}
+	var answered pushServiceError
+	switch {
+	case errors.As(err, &answered):
+		f.status, f.reason = answered.Status, answered.Error()
+	case errors.Is(err, context.DeadlineExceeded):
+		f.reason = fmt.Sprintf("push service didn't answer within %s", pushTimeout)
+	}
+	return f
+}
+
+// testNotification is the Notification the Owner sends from Settings to see
+// that Notifications reach their devices.
+var testNotification = model.Notification{Title: "Test Notification", Body: "Notifications reach this device.", URL: "/settings"}
+
+// sendTestNotification sends the test Notification to every Push Subscription
+// at once, outside the tick and without recording it as sent, and answers
+// what came of it.
+func (s *NotificationsService) sendTestNotification(w http.ResponseWriter, r *http.Request) {
+	subs, err := s.pushSubscriptions.List(r.Context())
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	outcome := s.sendToEveryPushSubscription(r.Context(), subs, testNotification)
+	result := model.TestNotificationResultJSON{
+		Sent:    outcome.sent,
+		Removed: outcome.removed,
+		Failed:  make([]model.TestNotificationFailureJSON, 0, len(outcome.failed)),
+	}
+	for _, f := range outcome.failed {
+		log.Printf("send the test Notification: %v", f.err)
+		result.Failed = append(result.Failed, model.TestNotificationFailureJSON{
+			PushService: pushServiceHost(f.sub), Status: f.status, Reason: f.reason,
+		})
+	}
+	utils.WriteJSON(w, http.StatusOK, result)
+}
+
+// pushServiceHost names sub's push service, such as web.push.apple.com,
+// without the rest of the endpoint.
+func pushServiceHost(sub model.PushSubscription) string {
+	endpoint, err := url.Parse(sub.Endpoint)
+	if err != nil {
+		// Never: an endpoint is checked to be an absolute URL when registered.
+		return ""
+	}
+	return endpoint.Hostname()
 }
