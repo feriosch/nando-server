@@ -85,6 +85,12 @@ func (m *Module) ToolProvider() coremodel.ToolProvider {
 	return toolProvider{m}
 }
 
+// NotificationProvider is the Module's Notification provider, for Core to ask
+// at every tick: the Word Requests waiting on the Owner.
+func (m *Module) NotificationProvider() coremodel.NotificationProvider {
+	return m.requests
+}
+
 // toolProvider gathers the Tools of the Module's services.
 type toolProvider struct{ m *Module }
 
