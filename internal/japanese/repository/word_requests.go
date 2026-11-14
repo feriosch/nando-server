@@ -216,15 +216,21 @@ func (r wordRequests) FailUnfinished(ctx context.Context, now time.Time, maxAtte
 	return err
 }
 
+// claimable matches the Word Requests a Claude run may claim: Pending, or
+// Working with its claim run out by now and fewer than maxAttempts claims.
+func claimable(now time.Time, maxAttempts int) bson.D {
+	return bson.D{{Key: "$or", Value: bson.A{
+		bson.D{{Key: "state", Value: string(model.Pending)}},
+		// A run that stopped without resolving it lets it go, while it
+		// has claims left.
+		append(runOut(now), bson.E{Key: "attempts", Value: bson.D{{Key: "$lt", Value: maxAttempts}}}),
+	}}}
+}
+
 func (r wordRequests) ClaimNext(ctx context.Context, now, claimedUntil time.Time, maxAttempts int) (model.WordRequest, error) {
 	var doc wordRequestDocument
 	err := r.collection.FindOneAndUpdate(ctx,
-		bson.D{{Key: "$or", Value: bson.A{
-			bson.D{{Key: "state", Value: string(model.Pending)}},
-			// A run that stopped without resolving it lets it go, while it
-			// has claims left.
-			append(runOut(now), bson.E{Key: "attempts", Value: bson.D{{Key: "$lt", Value: maxAttempts}}}),
-		}}},
+		claimable(now, maxAttempts),
 		bson.D{
 			{Key: "$set", Value: bson.D{
 				{Key: "state", Value: string(model.Working)},
@@ -243,11 +249,20 @@ func (r wordRequests) ClaimNext(ctx context.Context, now, claimedUntil time.Time
 	return doc.wordRequest(), nil
 }
 
+func (r wordRequests) AnyClaimable(ctx context.Context, now time.Time, maxAttempts int) (bool, error) {
+	return r.any(ctx, claimable(now, maxAttempts))
+}
+
 func (r wordRequests) AnyClaimed(ctx context.Context, now time.Time) (bool, error) {
-	err := r.collection.FindOne(ctx, bson.D{
+	return r.any(ctx, bson.D{
 		{Key: "state", Value: string(model.Working)},
 		{Key: "claimedUntil", Value: bson.D{{Key: "$gt", Value: now}}},
-	}, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
+	})
+}
+
+// any reports whether a Word Request matches filter.
+func (r wordRequests) any(ctx context.Context, filter bson.D) (bool, error) {
+	err := r.collection.FindOne(ctx, filter, options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}})).Err()
 	if errors.Is(err, mongo.ErrNoDocuments) {
 		return false, nil
 	}

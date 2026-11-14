@@ -207,6 +207,13 @@ func (c *Core) AddNotificationProvider(p model.NotificationProvider) {
 	c.notifications.AddNotificationProvider(p)
 }
 
+// AddTickJob has Core run j at every tick, after sending the due
+// Notifications. Each Module with work to do every half hour adds its job
+// once, at startup, before serving.
+func (c *Core) AddTickJob(j model.TickJob) {
+	c.notifications.AddTickJob(j)
+}
+
 // AddToolProvider has Core serve p's Tools to every Connector at /mcp, and
 // tell the consent page what p says they let a Connector do. Each Module with
 // Tools adds its provider once, at startup, before serving. It panics if p

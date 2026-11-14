@@ -163,3 +163,55 @@ func TestARunResolvingAWordRequestWakesTheScheduledTaskForTheOthersWaiting(t *te
 		t.Fatalf("the trigger was fired %d times; want twice: for 一, then for 二 once the run resolved 一", len(fires))
 	}
 }
+
+// tick calls POST /internal/tick as Cloud Scheduler does, and fails the test
+// unless it succeeds.
+func (n *nando) tick() {
+	n.t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/internal/tick", nil)
+	req.Header.Set("Authorization", "Bearer google-signed-scheduler-token")
+	rec := httptest.NewRecorder()
+	n.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		n.t.Fatalf("tick: status = %d, body %q", rec.Code, rec.Body)
+	}
+}
+
+func TestTheTickWakesTheScheduledTaskOnlyForWordRequestsWaitingForClaude(t *testing.T) {
+	t.Run("one still pending", func(t *testing.T) {
+		trigger := newFakeTrigger(t)
+		n, phone := signedInBrowserWith(t, trigger.config())
+		askAt(n, phone, "食べた") // say the run it woke hit the Owner's usage limit
+
+		n.clock.Set(n.clock.Now().Add(30 * time.Minute))
+		n.tick()
+
+		if fires := trigger.received(); len(fires) != 2 {
+			t.Fatalf("the trigger was fired %d times; want twice: when the Owner asked, and at the tick", len(fires))
+		}
+	})
+	t.Run("one whose run stopped", func(t *testing.T) {
+		trigger := newFakeTrigger(t)
+		n, _ := signedInBrowserWith(t, trigger.config())
+		stuck := storedRequest("食べた", "add", "working")
+		stuck["claimedUntil"] = n.clock.Now().Add(-time.Minute)
+		n.store("word_requests", stuck)
+
+		n.tick()
+
+		if fires := trigger.received(); len(fires) != 1 {
+			t.Fatalf("the trigger was fired %d times; want once, for the Word Request no run finished", len(fires))
+		}
+	})
+	t.Run("none", func(t *testing.T) {
+		trigger := newFakeTrigger(t)
+		n, _ := signedInBrowserWith(t, trigger.config())
+		n.store("word_requests", storedRequest("見た", "add", "done"), parkedRequest("かける"), storedRequest("聞いた", "add", "failed"))
+
+		n.tick()
+
+		if fires := trigger.received(); len(fires) != 0 {
+			t.Fatalf("the trigger was fired %d times with nothing waiting for Claude; want never", len(fires))
+		}
+	})
+}

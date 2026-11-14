@@ -31,6 +31,8 @@ type Module struct {
 	lookup *service.LookupService
 	// requests are the Owner's Word Requests.
 	requests *service.WordRequestsService
+	// scheduledTask wakes Claude to work through them.
+	scheduledTask *service.ScheduledTaskService
 }
 
 // Config is where the Module finds the outside services it looks Words up
@@ -76,13 +78,15 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	if err != nil {
 		return nil, err
 	}
+	scheduledTask := service.NewScheduledTask(repository.NewScheduledTask(db), requests, cfg.ClaudeTriggerURL, cfg.ClaudeTriggerToken, core.Now)
 	return &Module{
-		search:   service.NewSearch(words, kanji),
-		words:    service.NewWords(words, repository.NewGroups(db), kanji),
-		kanji:    service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
-		anki:     service.NewAnki(words, core),
-		lookup:   service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
-		requests: service.NewWordRequests(requests, words, service.NewScheduledTask(repository.NewScheduledTask(db), requests, cfg.ClaudeTriggerURL, cfg.ClaudeTriggerToken, core.Now), core.Now),
+		search:        service.NewSearch(words, kanji),
+		words:         service.NewWords(words, repository.NewGroups(db), kanji),
+		kanji:         service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
+		anki:          service.NewAnki(words, core),
+		lookup:        service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
+		requests:      service.NewWordRequests(requests, words, scheduledTask, core.Now),
+		scheduledTask: scheduledTask,
 	}, nil
 }
 
@@ -90,6 +94,20 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 // Core.AddToolProvider.
 func (m *Module) ToolProvider() coremodel.ToolProvider {
 	return toolProvider{m}
+}
+
+// TickJob is what the Module does at every tick, for Core.AddTickJob: it
+// wakes Claude for Word Requests still waiting, such as those whose run
+// stopped.
+func (m *Module) TickJob() coremodel.TickJob {
+	return tickJob{m}
+}
+
+// tickJob is the Module's work at every tick.
+type tickJob struct{ m *Module }
+
+func (j tickJob) RunAtTick(ctx context.Context) error {
+	return j.m.scheduledTask.WakeAtTick(ctx)
 }
 
 // toolProvider gathers the Tools of the Module's services.

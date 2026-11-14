@@ -41,18 +41,23 @@ func NewScheduledTask(scheduledTask model.ScheduledTaskRepository, requests mode
 // woken re-lists the queue until it is empty, so it takes what came since.
 const quietFor = 2 * time.Minute
 
-// Wake fires the trigger, unless a run holds a Word Request, as it lists
-// the rest before it stops, or the trigger was fired in the last 2 minutes.
-// A trigger that fails, or Word Requests or a fire that can't be read or
-// recorded, is only logged: waking Claude never fails what the Owner or a
-// run asked for.
+// Wake fires the trigger if a Word Request is waiting for a run: Pending,
+// or Working with its claim run out and claims left. It doesn't while a run
+// holds a Word Request, as that run lists the rest before it stops, nor if
+// the trigger was fired in the last 2 minutes. Any error is only logged:
+// waking Claude never fails what the Owner or a run asked for.
 func (s *ScheduledTaskService) Wake(ctx context.Context) {
-	if err := s.wake(ctx); err != nil {
+	if err := s.WakeAtTick(ctx); err != nil {
 		log.Printf("wake the scheduled task: %v", err)
 	}
 }
 
-func (s *ScheduledTaskService) wake(ctx context.Context) error {
+// WakeAtTick is Wake for Core's tick, which also wakes the scheduled task for
+// Word Requests whose run stopped, such as when the Owner's usage ran out. It
+// returns the error of reading the Word Requests or recording the fire, so
+// that the tick is retried; a trigger that fails is only logged, as the next
+// tick fires again.
+func (s *ScheduledTaskService) WakeAtTick(ctx context.Context) error {
 	if s.triggerURL == "" || s.triggerToken == "" {
 		return nil
 	}
@@ -60,10 +65,16 @@ func (s *ScheduledTaskService) wake(ctx context.Context) error {
 	if claimed, err := s.requests.AnyClaimed(ctx, now); err != nil || claimed {
 		return err
 	}
+	if waiting, err := s.requests.AnyClaimable(ctx, now, maxClaims); err != nil || !waiting {
+		return err
+	}
 	if claimed, err := s.scheduledTask.ClaimFire(ctx, now, now.Add(-quietFor)); err != nil || !claimed {
 		return err
 	}
-	return s.fire(ctx)
+	if err := s.fire(ctx); err != nil {
+		log.Printf("fire the scheduled task's trigger: %v", err)
+	}
+	return nil
 }
 
 // fire calls the trigger, which starts a run, and logs the run's session.
