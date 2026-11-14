@@ -46,12 +46,12 @@ type Config struct {
 	// second, which it allows.
 	KanjiAPIPace time.Duration
 
-	// ClaudeTriggerURL and ClaudeTriggerToken are the API trigger of the
-	// scheduled task that works through Word Requests, and its bearer
-	// token. Unlike the others, an empty one means none: Claude is never
-	// woken.
-	ClaudeTriggerURL   string
-	ClaudeTriggerToken string
+	// WordRequestsTriggerURL and WordRequestsTriggerToken are the API
+	// trigger of the scheduled task that works through Word Requests, and
+	// its bearer token; each scheduled task has its own. Unlike the others,
+	// an empty one means none: Claude is never woken.
+	WordRequestsTriggerURL   string
+	WordRequestsTriggerToken string
 }
 
 // NewJapaneseModule returns the Japanese Module reading its own data through
@@ -78,7 +78,7 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	if err != nil {
 		return nil, err
 	}
-	scheduledTask := service.NewScheduledTask(repository.NewScheduledTask(db), requests, cfg.ClaudeTriggerURL, cfg.ClaudeTriggerToken, core.Now)
+	scheduledTask := service.NewScheduledTask(repository.NewScheduledTask(db), requests, cfg.WordRequestsTriggerURL, cfg.WordRequestsTriggerToken, core.Now)
 	return &Module{
 		search:        service.NewSearch(words, kanji),
 		words:         service.NewWords(words, repository.NewGroups(db), kanji),

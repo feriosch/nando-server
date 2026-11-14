@@ -68,7 +68,7 @@ func (f *fakeTrigger) received() []fire {
 
 // config is the Japanese Module waking this fake.
 func (f *fakeTrigger) config() japanese.Config {
-	return japanese.Config{ClaudeTriggerURL: f.url + triggerPath, ClaudeTriggerToken: triggerToken}
+	return japanese.Config{WordRequestsTriggerURL: f.url + triggerPath, WordRequestsTriggerToken: triggerToken}
 }
 
 func TestANewWordRequestWakesTheScheduledTask(t *testing.T) {
@@ -221,8 +221,8 @@ func TestTheTickWakesTheScheduledTaskOnlyForWordRequestsWaitingForClaude(t *test
 
 func TestWithoutATriggerNothingIsWokenAndWordRequestsStillWork(t *testing.T) {
 	for name, half := range map[string]func(japanese.Config) japanese.Config{
-		"no token": func(c japanese.Config) japanese.Config { c.ClaudeTriggerToken = ""; return c },
-		"no URL":   func(c japanese.Config) japanese.Config { c.ClaudeTriggerURL = ""; return c },
+		"no token": func(c japanese.Config) japanese.Config { c.WordRequestsTriggerToken = ""; return c },
+		"no URL":   func(c japanese.Config) japanese.Config { c.WordRequestsTriggerURL = ""; return c },
 	} {
 		t.Run(name, func(t *testing.T) {
 			trigger := newFakeTrigger(t)
