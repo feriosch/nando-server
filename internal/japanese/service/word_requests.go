@@ -21,13 +21,16 @@ import (
 type WordRequestsService struct {
 	requests model.WordRequestsRepository
 	words    model.WordsRepository
-	now      func() time.Time
+	// scheduledTask wakes Claude when a Word Request is waiting for it.
+	scheduledTask *ScheduledTaskService
+	now           func() time.Time
 }
 
 // NewWordRequests returns the WordRequestsService, which reads the Words to
-// improve from words and the time from now.
-func NewWordRequests(requests model.WordRequestsRepository, words model.WordsRepository, now func() time.Time) *WordRequestsService {
-	return &WordRequestsService{requests: requests, words: words, now: now}
+// improve from words, wakes Claude with scheduledTask and reads the time
+// from now.
+func NewWordRequests(requests model.WordRequestsRepository, words model.WordsRepository, scheduledTask *ScheduledTaskService, now func() time.Time) *WordRequestsService {
+	return &WordRequestsService{requests: requests, words: words, scheduledTask: scheduledTask, now: now}
 }
 
 // finishedListedFor is how long a Done or Failed Word Request the Owner
@@ -117,6 +120,7 @@ func (s *WordRequestsService) create(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	if created {
 		status = http.StatusCreated
+		s.scheduledTask.Wake(r.Context())
 	}
 	coreutils.WriteJSON(w, status, wordRequestJSON(stored))
 }
@@ -189,6 +193,9 @@ func (s *WordRequestsService) update(w http.ResponseWriter, r *http.Request, fro
 	case err != nil:
 		coreutils.ServerError(w, err)
 	default:
+		if request.State == model.Pending {
+			s.scheduledTask.Wake(r.Context())
+		}
 		coreutils.WriteJSON(w, http.StatusOK, wordRequestJSON(request))
 	}
 }

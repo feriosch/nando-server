@@ -2,7 +2,6 @@ package tests
 
 import (
 	"net/http"
-	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
@@ -15,19 +14,6 @@ import (
 func (d *browser) subscribe(push *testpush.Service) {
 	d.nando.t.Helper()
 	d.must(http.MethodPost, "/api/push-subscriptions", push.SubscriptionJSON(), http.StatusNoContent)
-}
-
-// tick ticks as Cloud Scheduler does, at the time on Core's clock, failing
-// the test unless the tick succeeds.
-func (n *nando) tick() {
-	n.t.Helper()
-	req := httptest.NewRequest(http.MethodPost, "/internal/tick", nil)
-	req.Header.Set("Authorization", "Bearer scheduler-token")
-	rec := httptest.NewRecorder()
-	n.handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNoContent {
-		n.t.Fatalf("tick: status = %d, body %q", rec.Code, rec.Body)
-	}
 }
 
 // subscribedPhone is a signed-in browser on the Owner's iPhone that has
