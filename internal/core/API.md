@@ -268,15 +268,16 @@ At each tick Core asks every Notification provider (Core's own and every Module'
 
 Each tick logs, to Cloud Logging, one line saying what it sent:
 
-- `tick: sent 2 Notifications to 1 Push Subscription: calories:no-entries:2026-10-20, calories:evening-summary:2026-10-20`: the IDs of the Notifications it sent, and how many Push Subscriptions took at least one. `to 0 Push Subscriptions` means none reached a device.
-- `tick: no Notifications due`: nothing was due, or a retried tick found it all sent already.
+- `tick: sent 2 Notifications to 2 Push Subscriptions: calories:no-entries:2026-10-20 (reached 1 of 2), calories:evening-summary:2026-10-20 (reached 1 of 1)`: how many Push Subscriptions there were, and for each Notification sent, its ID and how many of those it was sent to took it. `reached 0` means it reached no device. A Push Subscription removed while sending one Notification isn't sent the next.
+- `tick: no Notifications due`: nothing was due, or a retried tick found it all sent already, and nothing went wrong.
+- With errors, the line counts them: `tick: no Notifications sent, 1 error`, or `tick: sent 1 Notification to 1 Push Subscription, 1 error: …`. Each error is logged on its own line, and the tick answers `500`.
 
 Whenever Core sends, at the tick or for the test Notification, it also logs:
 
 - `removed Push Subscription at web.push.apple.com: 410 Gone`: the push service no longer knew it (`404` or `410`), so Core deleted it.
 - `send Notification calories:evening-summary:2026-10-20: …`: a push service failed to take it, with the error.
 
-Logs name a push service by its host and never hold an endpoint, which is a secret capability URL, nor what a Notification says: only its ID.
+Logs name a push service by its host and never hold an endpoint, which is a secret capability URL, nor where a push service redirected to, nor what a Notification says: only its ID.
 
 ## Connectors
 

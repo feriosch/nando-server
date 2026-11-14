@@ -590,7 +590,7 @@ func TestATickLogsWhichNotificationsItSent(t *testing.T) {
 
 	n.mustTick()
 
-	want := "tick: sent 2 Notifications to 2 Push Subscriptions: calories:no-entries:2026-10-20, calories:evening-summary:2026-10-20\n"
+	want := "tick: sent 2 Notifications to 2 Push Subscriptions: calories:no-entries:2026-10-20 (reached 2 of 2), calories:evening-summary:2026-10-20 (reached 2 of 2)\n"
 	if !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q; want a line %q", logs, want)
 	}
@@ -603,7 +603,7 @@ func TestATickLogsANotificationThatReachedNoPushSubscription(t *testing.T) {
 
 	n.mustTick()
 
-	want := "tick: sent 1 Notification to 0 Push Subscriptions: calories:evening-summary:2026-10-20\n"
+	want := "tick: sent 1 Notification to 0 Push Subscriptions: calories:evening-summary:2026-10-20 (reached 0 of 0)\n"
 	if !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q; want a line %q", logs, want)
 	}
@@ -695,5 +695,98 @@ func TestATickLogsAPushServiceItCannotReachWithoutTheEndpoint(t *testing.T) {
 	}
 	if strings.Contains(got, endpoint.Path) {
 		t.Errorf("log = %q; gives away the endpoint", got)
+	}
+}
+
+func TestATickSendsNoMoreToAPushSubscriptionItRemoved(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	uninstalled, mac := testpush.New(t), testpush.New(t)
+	phone.subscribe(uninstalled)
+	phone.subscribe(mac)
+	uninstalled.Answer(http.StatusGone)
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{noEntriesReminder, eveningSummary}})
+	logs := captureLog(t)
+
+	n.mustTick()
+
+	if got := uninstalled.RequestCount(); got != 1 {
+		t.Errorf("removed Push Subscription was sent %d push messages; want 1", got)
+	}
+	got := logs.String()
+	if count := strings.Count(got, "removed Push Subscription at 127.0.0.1: 410 Gone\n"); count != 1 {
+		t.Errorf("log = %q; want the removal logged once, not %d times", got, count)
+	}
+	want := "tick: sent 2 Notifications to 2 Push Subscriptions: calories:no-entries:2026-10-20 (reached 1 of 2), calories:evening-summary:2026-10-20 (reached 1 of 1)\n"
+	if !strings.Contains(got, want) {
+		t.Errorf("log = %q; want a line %q", got, want)
+	}
+}
+
+func TestATickWithErrorsDoesNotSayNothingWasDue(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		due  []model.Notification
+		want string
+	}{
+		{name: "nothing sent", want: "tick: no Notifications sent, 1 error\n"},
+		{
+			name: "something sent",
+			due:  []model.Notification{eveningSummary},
+			want: "tick: sent 1 Notification to 1 Push Subscription, 1 error: calories:evening-summary:2026-10-20 (reached 1 of 1)\n",
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			n, phone := signedInBrowser(t, wednesday)
+			phone.subscribe(testpush.New(t))
+			n.core.AddNotificationProvider(brokenProvider{})
+			n.core.AddNotificationProvider(&provider{due: c.due})
+			logs := captureLog(t)
+
+			n.tick(schedulerToken)
+
+			if got := logs.String(); !strings.Contains(got, c.want) || strings.Contains(got, "no Notifications due") {
+				t.Errorf("log = %q; want a line %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestATickThatCannotReadThePushSubscriptionsStillLogsItsLine(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	phone.subscribe(testpush.New(t))
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
+	// A Push Subscription whose keys aren't text, so reading them fails.
+	if _, err := n.db.Collection("push_subscriptions").InsertOne(context.Background(), map[string]any{"_id": "https://broken.example/push", "p256dh": 5}); err != nil {
+		t.Fatal(err)
+	}
+	logs := captureLog(t)
+
+	rec := n.tick(schedulerToken)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("tick: status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+	if got, want := logs.String(), "tick: no Notifications sent, 1 error\n"; !strings.Contains(got, want) {
+		t.Errorf("log = %q; want a line %q", got, want)
+	}
+}
+
+func TestATickLogsAPushServiceThatRedirectsNowhereWithoutAnyEndpoint(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	redirecting, gone := testpush.New(t), testpush.New(t)
+	phone.subscribe(redirecting)
+	gone.Stop()
+	redirecting.Redirect(gone.Endpoint())
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
+	logs := captureLog(t)
+
+	n.mustTick()
+
+	got := logs.String()
+	if !strings.Contains(got, "send Notification calories:evening-summary:2026-10-20: ") {
+		t.Errorf("log = %q; want the failed send", got)
+	}
+	if strings.Contains(got, "/push/") {
+		t.Errorf("log = %q; gives away an endpoint", got)
 	}
 }
