@@ -7,8 +7,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/feriosch/nando-server/internal/japanese/model"
 )
@@ -27,8 +29,10 @@ type ScheduledTaskService struct {
 // NewScheduledTask returns the ScheduledTaskService firing the trigger at
 // triggerURL with triggerToken, recording its fires in scheduledTask,
 // reading the Word Requests from requests and the time from now. If
-// triggerURL or triggerToken is empty, it never fires.
+// triggerURL or triggerToken is empty, it never fires; see checkTrigger for
+// what a paste can get wrong.
 func NewScheduledTask(scheduledTask model.ScheduledTaskRepository, requests model.WordRequestsRepository, triggerURL, triggerToken string, now func() time.Time) *ScheduledTaskService {
+	triggerURL, triggerToken = checkTrigger(triggerURL, triggerToken)
 	return &ScheduledTaskService{
 		scheduledTask: scheduledTask,
 		requests:      requests,
@@ -37,6 +41,34 @@ func NewScheduledTask(scheduledTask model.ScheduledTaskRepository, requests mode
 		client:        &http.Client{Timeout: 10 * time.Second},
 		now:           now,
 	}
+}
+
+// checkTrigger returns the trigger's URL and token as pasted, without the
+// spaces and newlines around them, or both empty if they can't be used. What
+// is wrong is logged once, at startup, rather than at the Owner's first ask.
+// Neither set is fine: Claude is simply never woken, as in local development.
+func checkTrigger(triggerURL, triggerToken string) (string, string) {
+	triggerURL, triggerToken = strings.TrimSpace(triggerURL), strings.TrimSpace(triggerToken)
+	unusable := func(why string) (string, string) {
+		log.Printf("%s, so Claude is never woken: store the scheduled task's API trigger again", why)
+		return "", ""
+	}
+	switch {
+	case triggerURL == "" && triggerToken == "":
+		return "", ""
+	case triggerToken == "":
+		return unusable("WORD_REQUESTS_TRIGGER_TOKEN is empty")
+	case triggerURL == "":
+		return unusable("WORD_REQUESTS_TRIGGER_URL is empty")
+	case strings.ContainsFunc(triggerToken, unicode.IsControl):
+		return unusable("WORD_REQUESTS_TRIGGER_TOKEN has control characters, such as pasted arrow keys")
+	}
+	u, err := url.Parse(triggerURL)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" ||
+		strings.ContainsFunc(triggerURL, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) {
+		return unusable("WORD_REQUESTS_TRIGGER_URL isn't a URL")
+	}
+	return triggerURL, triggerToken
 }
 
 // quietFor is how long after a fire Nando doesn't fire again: a run just
