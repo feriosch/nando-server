@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -92,6 +94,11 @@ func (s *ScheduledTaskService) fire(ctx context.Context) error {
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		// 429 is the trigger's limit, 30 fires an hour.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("%s: %s", resp.Status, body)
+	}
 	var fired struct {
 		SessionURL string `json:"claude_code_session_url"`
 	}

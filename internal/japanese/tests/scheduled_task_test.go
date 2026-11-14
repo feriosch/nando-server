@@ -240,3 +240,27 @@ func TestWithoutATriggerNothingIsWokenAndWordRequestsStillWork(t *testing.T) {
 		})
 	}
 }
+
+// answer has the fake trigger answer every fire from now on with status.
+func (f *fakeTrigger) answer(status int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.status = status
+}
+
+func TestATriggerThatFailsNeverFailsTheOwnersRequest(t *testing.T) {
+	for _, status := range []int{http.StatusInternalServerError, http.StatusTooManyRequests} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			trigger := newFakeTrigger(t)
+			trigger.answer(status)
+			_, phone := signedInBrowserWith(t, trigger.config())
+
+			asked := askFor(phone, map[string]any{"text": "食べた", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+			if asked.State != "pending" || len(trigger.received()) != 1 {
+				t.Fatalf("with the trigger answering %d, the Owner got %+v after %d fires; want the pending Word Request, after one",
+					status, asked, len(trigger.received()))
+			}
+		})
+	}
+}
