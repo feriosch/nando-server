@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/feriosch/nando-server/internal/japanese"
 )
 
@@ -86,5 +88,28 @@ func TestANewWordRequestWakesTheScheduledTask(t *testing.T) {
 		got.header.Get("Content-Type") != "application/json" {
 		t.Fatalf("the trigger got %s %s with body %q and headers %v; want POST %s with {}, the bearer token and the anthropic headers",
 			got.method, got.path, got.body, got.header, triggerPath)
+	}
+}
+
+func TestAnAnsweredOrRetriedWordRequestWakesTheScheduledTask(t *testing.T) {
+	for _, tc := range []struct {
+		action string
+		stored bson.M
+		body   any
+	}{
+		{action: "answer", stored: parkedRequest("かける"), body: map[string]any{"answer": "掛ける (to hang)"}},
+		{action: "retry", stored: storedRequest("かける", "add", "failed")},
+	} {
+		t.Run(tc.action, func(t *testing.T) {
+			trigger := newFakeTrigger(t)
+			n, phone := signedInBrowserWith(t, trigger.config())
+			n.store("word_requests", tc.stored)
+
+			act(phone, id(tc.stored), tc.action, tc.body)
+
+			if fires := trigger.received(); len(fires) != 1 {
+				t.Fatalf("after the Owner's %s the trigger was fired %d times; want once", tc.action, len(fires))
+			}
+		})
 	}
 }

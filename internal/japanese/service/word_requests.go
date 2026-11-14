@@ -193,6 +193,9 @@ func (s *WordRequestsService) update(w http.ResponseWriter, r *http.Request, fro
 	case err != nil:
 		coreutils.ServerError(w, err)
 	default:
+		if request.State == model.Pending {
+			s.scheduledTask.Wake(r.Context())
+		}
 		coreutils.WriteJSON(w, http.StatusOK, wordRequestJSON(request))
 	}
 }
