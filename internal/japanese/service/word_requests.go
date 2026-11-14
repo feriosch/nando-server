@@ -370,13 +370,19 @@ func (s *WordRequestsService) DueNotifications(ctx context.Context, slot time.Ti
 	}
 	var due []coremodel.Notification
 	for _, request := range requests {
-		if request.State != model.NeedsAnswer {
+		var title, body string
+		switch request.State {
+		case model.NeedsAnswer:
+			title, body = "Claude has a question", "「"+request.Text+"」: "+request.Question
+		case model.Failed:
+			title, body = "Couldn't add a word", "「"+request.Text+"」: "+request.Summary
+		default:
 			continue
 		}
 		due = append(due, coremodel.Notification{
 			ID:    fmt.Sprintf("japanese:word-request:%s:%s:%d", request.ID, request.State, request.Attempts),
-			Title: "Claude has a question",
-			Body:  "「" + request.Text + "」: " + request.Question,
+			Title: title,
+			Body:  body,
 			URL:   "/japanese",
 		})
 	}

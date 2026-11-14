@@ -61,3 +61,25 @@ func TestAWordRequestNeedingAnAnswerNotifiesTheOwnerWithClaudesQuestion(t *testi
 		t.Errorf("received %+v, want %+v", got, want)
 	}
 }
+
+func TestAWordRequestClaudeGivesUpOnNotifiesTheOwnerWhy(t *testing.T) {
+	n, phone, push := subscribedPhone(t)
+	askAt(n, phone, "たべたべ")
+	run, wordRequestID := claimOne(t, phone)
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id":      wordRequestID,
+		"outcome": "failed",
+		"summary": "jisho.org has no word たべたべ, and it isn't a conjugation of one",
+	})
+
+	n.tick()
+
+	want := []testpush.Notification{{
+		Title: "Couldn't add a word",
+		Body:  "「たべたべ」: jisho.org has no word たべたべ, and it isn't a conjugation of one",
+		URL:   "/japanese",
+	}}
+	if got := push.Received(); !slices.Equal(got, want) {
+		t.Errorf("received %+v, want %+v", got, want)
+	}
+}
