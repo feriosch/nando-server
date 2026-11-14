@@ -164,8 +164,9 @@ func (s *WordRequestsService) answer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "the answer is blank", http.StatusBadRequest)
 		return
 	}
-	pending := model.Pending
-	s.update(w, r, []model.WordRequestState{model.NeedsAnswer}, model.WordRequestChanges{State: &pending, Answer: &answer})
+	// The answer is new to work with, so it gets fresh claims, as a retry does.
+	pending, fresh := model.Pending, 0
+	s.update(w, r, []model.WordRequestState{model.NeedsAnswer}, model.WordRequestChanges{State: &pending, Answer: &answer, Attempts: &fresh})
 }
 
 // update applies changes to the Word Request in the path if it is in one of

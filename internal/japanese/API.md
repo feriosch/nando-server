@@ -292,7 +292,7 @@ Answers:
 
 ### `POST /api/japanese/word-requests/{id}/answer`
 
-Answers Claude's question: `{ "answer": "掛ける (to hang)" }`, one of the `choices` or the Owner's own words. The Word Request goes back to `"pending"` with the `answer`, and keeps its `question`, so that Claude reads both.
+Answers Claude's question: `{ "answer": "掛ける (to hang)" }`, one of the `choices` or the Owner's own words. The Word Request goes back to `"pending"` with the `answer` and `attempts` back at 0, as a retry does, and keeps its `question`, so that Claude reads both.
 
 ### `POST /api/japanese/word-requests/{id}/retry`
 
