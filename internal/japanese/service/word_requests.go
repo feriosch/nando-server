@@ -128,7 +128,7 @@ func (s *WordRequestsService) create(w http.ResponseWriter, r *http.Request) {
 func (s *WordRequestsService) list(w http.ResponseWriter, r *http.Request) {
 	// A Word Request no run finished is failed by the clock, not by the
 	// next run: the Owner shouldn't see "working" until Claude runs again.
-	if err := s.requests.FailUnfinished(r.Context(), s.now(), maxClaims); err != nil {
+	if err := s.failUnfinished(r.Context()); err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
@@ -341,7 +341,7 @@ func trimmed(list []string) []string {
 // listTool answers japanese_list_word_requests: it claims the Word Requests
 // waiting for Claude.
 func (s *WordRequestsService) listTool(ctx context.Context, _ json.RawMessage) (any, error) {
-	if err := s.requests.FailUnfinished(ctx, s.now(), maxClaims); err != nil {
+	if err := s.failUnfinished(ctx); err != nil {
 		return nil, err
 	}
 	claimed := []model.ClaimedWordRequestJSON{}
@@ -368,6 +368,13 @@ func (s *WordRequestsService) listTool(ctx context.Context, _ json.RawMessage) (
 	return model.ClaimedWordRequestsJSON{WordRequests: claimed}, nil
 }
 
+// failUnfinished fails, by the clock, every Word Request whose last claim ran
+// out after maxClaims claims. The Owner's list, a run's claim and the tick's
+// Notifications all start with it, so they agree on which have failed.
+func (s *WordRequestsService) failUnfinished(ctx context.Context) error {
+	return s.requests.FailUnfinished(ctx, s.now(), maxClaims)
+}
+
 // DueNotifications returns, at every tick, a Notification for each Word
 // Request in the Pending strip that needs the Owner: one waiting for an
 // answer, or one that failed. Core sends each only once (see
@@ -375,7 +382,7 @@ func (s *WordRequestsService) listTool(ctx context.Context, _ json.RawMessage) (
 func (s *WordRequestsService) DueNotifications(ctx context.Context, slot time.Time) ([]coremodel.Notification, error) {
 	// A Word Request no run finished fails by the clock, so the tick tells
 	// the Owner even when nobody has listed Word Requests since.
-	if err := s.requests.FailUnfinished(ctx, s.now(), maxClaims); err != nil {
+	if err := s.failUnfinished(ctx); err != nil {
 		return nil, err
 	}
 	requests, err := s.requests.GetListed(ctx, s.now().Add(-finishedListedFor))

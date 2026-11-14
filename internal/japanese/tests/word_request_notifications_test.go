@@ -175,3 +175,20 @@ func TestAnImproveClaudeGivesUpOnSaysItCouldntImproveTheWord(t *testing.T) {
 		t.Errorf("received %+v; want one Notification that 掛ける couldn't be improved", got)
 	}
 }
+
+func TestAFailedWordRequestTheOwnerDismissedSendsNoNotification(t *testing.T) {
+	n, phone, push := subscribedPhone(t)
+	askAt(n, phone, "たべたべ")
+	run, wordRequestID := claimOne(t, phone)
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word たべたべ",
+	})
+	// The Owner saw it in the Pending strip before the tick, and dismissed it.
+	act(phone, wordRequestID, "dismiss", nil)
+
+	n.tick()
+
+	if got := push.Received(); len(got) != 0 {
+		t.Errorf("received %+v; want nothing for a dismissed Word Request", got)
+	}
+}
