@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -209,6 +210,7 @@ func (r wordRequests) FailUnfinished(ctx context.Context, now time.Time, maxAtte
 	filter := append(runOut(now), bson.E{Key: "attempts", Value: bson.D{{Key: "$gte", Value: maxAttempts}}})
 	_, err := r.collection.UpdateMany(ctx, filter, bson.D{{Key: "$set", Value: bson.D{
 		{Key: "state", Value: string(model.Failed)},
+		{Key: "summary", Value: fmt.Sprintf("No Claude run finished it in %d tries.", maxAttempts)},
 		{Key: "updatedAt", Value: now},
 	}}})
 	return err

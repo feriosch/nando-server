@@ -307,3 +307,63 @@ func TestAResolvedWordRequestSaysWhatTheOwnerNeeds(t *testing.T) {
 		}
 	}
 }
+
+func TestTheOwnerSeesAWordRequestNoRunFinishedAsFailedWithoutWaitingForARun(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	stuck := storedRequest("食べた", "add", "working")
+	stuck["attempts"] = 3
+	stuck["claimedUntil"] = n.clock.Now().Add(-time.Minute)
+	n.store("word_requests", stuck)
+
+	listed := get[[]wordRequestJSON](phone, "/api/japanese/word-requests")[0]
+
+	if listed.State != "failed" || listed.Summary == nil || *listed.Summary == "" {
+		t.Fatalf("the Owner sees %+v; want it failed, saying why, with no run having listed", listed)
+	}
+}
+
+func TestASecondQuestionDoesNotCarryTheAnswerToTheFirst(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	askAt(n, phone, "かける")
+	run, wordRequestID := claimOne(t, phone)
+	ask := func(question string) {
+		callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+			"id": wordRequestID, "outcome": "needs_answer", "question": question, "choices": []string{"one", "two"},
+		})
+	}
+	ask("Which かける?")
+	act(phone, wordRequestID, "answer", map[string]any{"answer": "one"})
+	run, _ = claimOne(t, phone)
+
+	ask("Which sense of 掛ける?")
+
+	parked := get[[]wordRequestJSON](phone, "/api/japanese/word-requests")[0]
+	if parked.Answer != nil {
+		t.Fatalf("the second question comes with answer %q; want none yet", *parked.Answer)
+	}
+}
+
+func TestAFinishedWordRequestNoLongerOffersAnEarlierQuestion(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	eat := word("掛ける", "かける", "colgar", "jlpt_n2")
+	n.store("words", eat)
+	askAt(n, phone, "かける")
+	run, wordRequestID := claimOne(t, phone)
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "needs_answer", "question": "Which かける?", "choices": []string{" 掛ける ", "架ける"},
+	})
+	if parked := get[[]wordRequestJSON](phone, "/api/japanese/word-requests")[0]; !slices.Equal(parked.Choices, []string{"掛ける", "架ける"}) {
+		t.Fatalf("choices = %q; want them trimmed", parked.Choices)
+	}
+	act(phone, wordRequestID, "answer", map[string]any{"answer": "掛ける"})
+	run, _ = claimOne(t, phone)
+
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "done", "summary": "Added 掛ける", "wordId": id(eat), "suggestions": []string{" ", "Link 掛かる"},
+	})
+
+	done := get[[]wordRequestJSON](phone, "/api/japanese/word-requests")[0]
+	if done.Question != nil || len(done.Choices) != 0 || !slices.Equal(done.Suggestions, []string{"Link 掛かる"}) {
+		t.Fatalf("the done Word Request is %+v; want no question or choices left, and only real suggestions", done)
+	}
+}

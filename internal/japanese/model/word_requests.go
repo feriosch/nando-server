@@ -134,7 +134,8 @@ type WordRequestsRepository interface {
 	// Request, or ErrWrongState.
 	Update(ctx context.Context, id string, from []WordRequestState, changes WordRequestChanges) (WordRequest, error)
 	// FailUnfinished fails every Word Request that is Working with its claim
-	// run out by now after maxAttempts claims: no run finished it.
+	// run out by now after maxAttempts claims, with a summary saying no run
+	// finished it.
 	FailUnfinished(ctx context.Context, now time.Time, maxAttempts int) error
 	// ClaimNext claims, in one write, the oldest Word Request that is
 	// Pending, or Working with its claim run out by now and fewer than

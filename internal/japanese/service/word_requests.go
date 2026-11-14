@@ -121,6 +121,12 @@ func (s *WordRequestsService) create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *WordRequestsService) list(w http.ResponseWriter, r *http.Request) {
+	// A Word Request no run finished is failed by the clock, not by the
+	// next run: the Owner shouldn't see "working" until Claude runs again.
+	if err := s.requests.FailUnfinished(r.Context(), s.now(), maxClaims); err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
 	requests, err := s.requests.GetListed(r.Context(), s.now().Add(-finishedListedFor))
 	if err != nil {
 		coreutils.ServerError(w, err)
@@ -214,10 +220,11 @@ const claimFor = 15 * time.Minute
 func (s *WordRequestsService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "japanese_list_word_requests",
-		Description: "Claims the Word Requests waiting for Claude, oldest first, for this run: the Owner's asks to add a word " +
+		Description: "Claims up to 3 of the Word Requests waiting for Claude, oldest first, for this run: the Owner's asks to add a word " +
 			"(text as they typed it, maybe conjugated or in kana, with the Group they found it in) or to improve a stored Word (wordId). " +
 			"A Word Request the Owner has answered comes back with Claude's earlier question, its choices and the Owner's answer. " +
-			"Resolve each one with japanese_resolve_word_request. " +
+			"Resolve each one with japanese_resolve_word_request, then call this again until it answers none. " +
+			"A claim lasts 15 minutes. " +
 			"Answers {\"wordRequests\": [{\"id\", \"text\", \"kind\", \"group\", \"wordId\", \"question\", \"choices\", \"answer\"}]}, empty when none are waiting.",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		Handle:      s.listTool,
@@ -260,9 +267,13 @@ func (s *WordRequestsService) resolveTool(ctx context.Context, arguments json.Ra
 		return nil, err
 	}
 	outcome := model.WordRequestState(args.Outcome)
-	changes := model.WordRequestChanges{State: &outcome, UpdatedAt: s.now()}
 	summary := strings.TrimSpace(args.Summary)
 	question := strings.TrimSpace(args.Question)
+	choices := trimmed(args.Choices)
+	suggestions := trimmed(args.Suggestions)
+	// An earlier round's question, choices and answer don't carry over.
+	none, noList := "", []string{}
+	changes := model.WordRequestChanges{State: &outcome, Question: &none, Choices: &noList, UpdatedAt: s.now()}
 	switch outcome {
 	case model.Done:
 		if summary == "" {
@@ -276,13 +287,14 @@ func (s *WordRequestsService) resolveTool(ctx context.Context, arguments json.Ra
 		}
 		changes.Summary = &summary
 		changes.WordID = &args.WordID
-		changes.Suggestions = &args.Suggestions
+		changes.Suggestions = &suggestions
 	case model.NeedsAnswer:
-		if question == "" || len(args.Choices) < 2 || len(args.Choices) > 4 || slices.ContainsFunc(args.Choices, func(c string) bool { return strings.TrimSpace(c) == "" }) {
+		if question == "" || len(choices) < 2 || len(choices) > 4 || len(choices) != len(args.Choices) {
 			return nil, errors.New("needs_answer needs a question and 2 to 4 choices the Owner can tap")
 		}
 		changes.Question = &question
-		changes.Choices = &args.Choices
+		changes.Choices = &choices
+		changes.Answer = &none
 	case model.Failed:
 		if summary == "" {
 			return nil, errors.New("failed needs a summary saying why, for the Owner")
@@ -296,6 +308,17 @@ func (s *WordRequestsService) resolveTool(ctx context.Context, arguments json.Ra
 		return nil, err
 	}
 	return wordRequestJSON(request), nil
+}
+
+// trimmed is list with each item trimmed and the blank ones left out.
+func trimmed(list []string) []string {
+	out := []string{}
+	for _, item := range list {
+		if item = strings.TrimSpace(item); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // listTool answers japanese_list_word_requests: it claims the Word Requests
