@@ -43,11 +43,6 @@ type Config struct {
 	// KanjiAPIPace is how far apart kanjiapi.dev is asked; 0 means a
 	// second, which it allows.
 	KanjiAPIPace time.Duration
-	// ClaudeTriggerURL is the API trigger of the cloud scheduled task that
-	// works through the Word Requests, its /fire URL, and ClaudeTriggerToken
-	// its bearer token. If either is empty, Nando never wakes Claude.
-	ClaudeTriggerURL   string
-	ClaudeTriggerToken string
 }
 
 // NewJapaneseModule returns the Japanese Module reading its own data through
@@ -80,7 +75,7 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 		kanji:    service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
 		anki:     service.NewAnki(words, core),
 		lookup:   service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
-		requests: service.NewWordRequests(requests, words, service.NewClaudeWakes(repository.NewClaudeWakes(db), cfg.ClaudeTriggerURL, cfg.ClaudeTriggerToken, core.Now), core.Now),
+		requests: service.NewWordRequests(requests, words, core.Now),
 	}, nil
 }
 
