@@ -267,3 +267,46 @@ func TestATriggerThatFailsNeverFailsTheOwnersRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestAskingAgainWakesTheScheduledTaskWhenTheFirstWakeFailed(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	trigger.answer(http.StatusUnauthorized) // say, a bad token, since fixed
+	n, phone := signedInBrowserWith(t, trigger.config())
+	askAt(n, phone, "度重なる")
+	trigger.answer(http.StatusOK)
+
+	n.clock.Set(n.clock.Now().Add(2 * time.Minute))
+	askFor(phone, map[string]any{"text": "度重なる", "kind": "add", "group": "literature"}, http.StatusOK)
+
+	if fires := trigger.received(); len(fires) != 2 {
+		t.Fatalf("the trigger was fired %d times; want twice: the failed wake, then again when the Owner asked again", len(fires))
+	}
+}
+
+func TestATokenPastedWithANewlineStillWakesTheScheduledTask(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	cfg := trigger.config()
+	cfg.WordRequestsTriggerToken = triggerToken + "\n"
+	_, phone := signedInBrowserWith(t, cfg)
+
+	askFor(phone, map[string]any{"text": "食べた", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	fires := trigger.received()
+	if len(fires) != 1 || fires[0].header.Get("Authorization") != "Bearer "+triggerToken {
+		t.Fatalf("fires = %+v; want one, with the token's newline left out", fires)
+	}
+}
+
+func TestATokenWithControlCharactersNeverReachesTheTrigger(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	cfg := trigger.config()
+	// Three Down arrows, pasted into the secret instead of the token.
+	cfg.WordRequestsTriggerToken = "\x1b[B\x1b[B\x1b[B"
+	_, phone := signedInBrowserWith(t, cfg)
+
+	askFor(phone, map[string]any{"text": "食べた", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	if fires := trigger.received(); len(fires) != 0 {
+		t.Fatalf("the trigger was fired %d times with an unusable token; want never", len(fires))
+	}
+}

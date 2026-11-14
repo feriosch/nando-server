@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/feriosch/nando-server/internal/japanese/model"
 )
@@ -27,8 +28,16 @@ type ScheduledTaskService struct {
 // NewScheduledTask returns the ScheduledTaskService firing the trigger at
 // triggerURL with triggerToken, recording its fires in scheduledTask,
 // reading the Word Requests from requests and the time from now. If
-// triggerURL or triggerToken is empty, it never fires.
+// triggerURL or triggerToken is empty, it never fires. Spaces and newlines
+// around either, as a paste can leave, are left out; a token with control
+// characters inside (such as pasted arrow keys) can't be sent in a header,
+// so it is logged at startup and Claude is never woken.
 func NewScheduledTask(scheduledTask model.ScheduledTaskRepository, requests model.WordRequestsRepository, triggerURL, triggerToken string, now func() time.Time) *ScheduledTaskService {
+	triggerURL, triggerToken = strings.TrimSpace(triggerURL), strings.TrimSpace(triggerToken)
+	if strings.ContainsFunc(triggerToken, unicode.IsControl) {
+		log.Print("WORD_REQUESTS_TRIGGER_TOKEN has control characters, such as pasted arrow keys, so Claude is never woken: store the scheduled task's token again")
+		triggerToken = ""
+	}
 	return &ScheduledTaskService{
 		scheduledTask: scheduledTask,
 		requests:      requests,
