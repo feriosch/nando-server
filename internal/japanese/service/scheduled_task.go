@@ -49,6 +49,10 @@ const quietFor = 2 * time.Minute
 // the trigger was fired in the last 2 minutes. Any error is only logged:
 // waking Claude never fails what the Owner or a run asked for.
 func (s *ScheduledTaskService) Wake(ctx context.Context) {
+	// The Owner may leave Nando the moment they've asked: their request's
+	// context ending must not cancel a fire whose 2-minute slot is already
+	// taken. The client's timeout still bounds it.
+	ctx = context.WithoutCancel(ctx)
 	if err := s.WakeAtTick(ctx); err != nil {
 		log.Printf("wake the scheduled task: %v", err)
 	}
