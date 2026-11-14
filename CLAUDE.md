@@ -11,3 +11,7 @@ Uses the five default triage labels: `needs-triage`, `needs-info`, `ready-for-ag
 ### Domain docs
 
 Single-context: one `GLOSSARY.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Google Cloud
+
+Nando runs in the GCP project **`benkyo-ferios`**, region **`asia-northeast1`** (Tokyo, ADR 0001): the Cloud Run services `nando-server` and `nando-web`, Secret Manager, Cloud Scheduler's tick and Cloud Logging. Use them in every `gcloud` command (`--project benkyo-ferios`, `--region` or `--location asia-northeast1`) instead of asking the Owner. The deploy workflows read the same values from the repo variables `GCP_PROJECT_ID` and `GCP_REGION`.
