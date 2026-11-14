@@ -3,7 +3,7 @@
 //
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests
-// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files, WordRequestsService for the Owner's Word Requests) and repository holds all database
+// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files, WordRequestsService for the Owner's Word Requests, ScheduledTaskService to wake Claude for them) and repository holds all database
 // code. The services see only the repository and CoreService interfaces,
 // never a database.
 package japanese
@@ -31,6 +31,8 @@ type Module struct {
 	lookup *service.LookupService
 	// requests are the Owner's Word Requests.
 	requests *service.WordRequestsService
+	// scheduledTask wakes Claude to work through them.
+	scheduledTask *service.ScheduledTaskService
 }
 
 // Config is where the Module finds the outside services it looks Words up
@@ -43,6 +45,13 @@ type Config struct {
 	// KanjiAPIPace is how far apart kanjiapi.dev is asked; 0 means a
 	// second, which it allows.
 	KanjiAPIPace time.Duration
+
+	// ClaudeTriggerURL and ClaudeTriggerToken are the API trigger of the
+	// scheduled task that works through Word Requests, and its bearer
+	// token. Unlike the others, an empty one means none: Claude is never
+	// woken.
+	ClaudeTriggerURL   string
+	ClaudeTriggerToken string
 }
 
 // NewJapaneseModule returns the Japanese Module reading its own data through
@@ -69,13 +78,15 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	if err != nil {
 		return nil, err
 	}
+	scheduledTask := service.NewScheduledTask(repository.NewScheduledTask(db), requests, cfg.ClaudeTriggerURL, cfg.ClaudeTriggerToken, core.Now)
 	return &Module{
-		search:   service.NewSearch(words, kanji),
-		words:    service.NewWords(words, repository.NewGroups(db), kanji),
-		kanji:    service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
-		anki:     service.NewAnki(words, core),
-		lookup:   service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
-		requests: service.NewWordRequests(requests, words, core.Now),
+		search:        service.NewSearch(words, kanji),
+		words:         service.NewWords(words, repository.NewGroups(db), kanji),
+		kanji:         service.NewKanji(kanji, repository.NewIrregularComponents(db), words),
+		anki:          service.NewAnki(words, core),
+		lookup:        service.NewLookup(kanji, cfg.JishoURL, cfg.KanjiAPIURL, cfg.KanjiAPIPace),
+		requests:      service.NewWordRequests(requests, words, scheduledTask, core.Now),
+		scheduledTask: scheduledTask,
 	}, nil
 }
 
@@ -83,6 +94,20 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 // Core.AddToolProvider.
 func (m *Module) ToolProvider() coremodel.ToolProvider {
 	return toolProvider{m}
+}
+
+// TickJob is what the Module does at every tick, for Core.AddTickJob: it
+// wakes Claude for Word Requests still waiting, such as those whose run
+// stopped.
+func (m *Module) TickJob() coremodel.TickJob {
+	return tickJob{m}
+}
+
+// tickJob is the Module's work at every tick.
+type tickJob struct{ m *Module }
+
+func (j tickJob) RunAtTick(ctx context.Context) error {
+	return j.m.scheduledTask.WakeAtTick(ctx)
 }
 
 // toolProvider gathers the Tools of the Module's services.

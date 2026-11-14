@@ -351,3 +351,34 @@ func TestANotificationCoreCannotRecordDoesNotStopTheOthers(t *testing.T) {
 		t.Errorf("tick: status = %d, want %d so the scheduler retries", rec.Code, http.StatusInternalServerError)
 	}
 }
+
+// tickJob is a Module's tick job: it counts its runs and fails with err.
+type tickJob struct {
+	runs int
+	err  error
+}
+
+func (j *tickJob) RunAtTick(context.Context) error {
+	j.runs++
+	return j.err
+}
+
+func TestATickJobThatFailsStopsNoNotificationNorAnotherJob(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	push := testpush.New(t)
+	phone.subscribe(push)
+	failing, next := &tickJob{err: errors.New("the database is unreachable")}, &tickJob{}
+	n.core.AddTickJob(failing)
+	n.core.AddTickJob(next)
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
+
+	rec := n.tick(schedulerToken)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Errorf("tick with a failing job: status = %d, want %d so that the scheduler retries it", rec.Code, http.StatusInternalServerError)
+	}
+	if failing.runs != 1 || next.runs != 1 || len(push.Received()) != 1 {
+		t.Errorf("the jobs ran %d and %d times and %d Notifications were sent; want each job once and the Notification sent",
+			failing.runs, next.runs, len(push.Received()))
+	}
+}

@@ -143,6 +143,11 @@ type WordRequestsRepository interface {
 	// claimedUntil, with one more attempt. It returns Core's
 	// utils.ErrNotFound if there is none.
 	ClaimNext(ctx context.Context, now, claimedUntil time.Time, maxAttempts int) (WordRequest, error)
+	// AnyClaimable reports whether ClaimNext would claim a Word Request.
+	AnyClaimable(ctx context.Context, now time.Time, maxAttempts int) (bool, error)
+	// AnyClaimed reports whether a Claude run holds a Word Request: one is
+	// Working with its claim not run out by now.
+	AnyClaimed(ctx context.Context, now time.Time) (bool, error)
 	// GetOneByID returns the Word Request with id, or Core's
 	// utils.ErrNotFound.
 	GetOneByID(ctx context.Context, id string) (WordRequest, error)

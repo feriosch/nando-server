@@ -18,15 +18,16 @@ import (
 // returning it.
 const sentNotificationTTL = 30 * 24 * time.Hour
 
-// NotificationsService sends the due Notifications at every tick, which only
-// the scheduler may call: it asks every Notification provider for them,
-// records each as sent, and sends it to every Push Subscription. It asks the
-// SettingsService for the Owner Time Zone.
+// NotificationsService runs the tick, which only the scheduler may call. It
+// sends the due Notifications: it asks every Notification provider for them,
+// records each as sent, and sends it to every Push Subscription. It also runs
+// every tick job. It asks the SettingsService for the Owner Time Zone.
 type NotificationsService struct {
 	pushSubscriptions model.PushSubscriptionsRepository
 	sentNotifications model.SentNotificationsRepository
 	settings          *SettingsService
 	providers         []model.NotificationProvider
+	tickJobs          []model.TickJob
 
 	verifySchedulerToken func(ctx context.Context, token string) error
 	vapid                VAPID
@@ -72,6 +73,12 @@ func (s *NotificationsService) AddNotificationProvider(p model.NotificationProvi
 	s.providers = append(s.providers, p)
 }
 
+// AddTickJob has Core run j at every tick. Call it only at startup, before
+// serving: tick jobs aren't guarded for concurrent use.
+func (s *NotificationsService) AddTickJob(j model.TickJob) {
+	s.tickJobs = append(s.tickJobs, j)
+}
+
 // tick is called by Cloud Scheduler every half hour. Only the scheduler may
 // call it.
 func (s *NotificationsService) tick(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +92,12 @@ func (s *NotificationsService) tick(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not the scheduler", http.StatusUnauthorized)
 		return
 	}
-	if err := s.sendDueNotifications(r.Context()); err != nil {
+	// A tick job that fails doesn't stop the Notifications, nor they it.
+	errs := []error{s.sendDueNotifications(r.Context())}
+	for _, j := range s.tickJobs {
+		errs = append(errs, j.RunAtTick(r.Context()))
+	}
+	if err := errors.Join(errs...); err != nil {
 		utils.ServerError(w, err)
 		return
 	}
