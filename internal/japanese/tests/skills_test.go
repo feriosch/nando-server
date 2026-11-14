@@ -79,3 +79,43 @@ func TestTheSkillsUseOnlyTheToolsNandoServes(t *testing.T) {
 		})
 	}
 }
+
+// TestTheUnattendedSkillBansEveryDestructiveTool keeps the one guard ADR 0006
+// relies on: no Owner watches a scheduled run, so the word-requests skill's
+// NEVER sentence must name every Tool Nando marks destructive, including any
+// added later.
+func TestTheUnattendedSkillBansEveryDestructiveTool(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	listed, err := phone.connect().ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	var destructive []string
+	for _, tool := range listed.Tools {
+		if tool.Annotations != nil && tool.Annotations.DestructiveHint != nil && *tool.Annotations.DestructiveHint {
+			destructive = append(destructive, tool.Name)
+		}
+	}
+	if len(destructive) == 0 {
+		t.Fatal("no Tool is marked destructive; this test would check nothing")
+	}
+
+	b, err := os.ReadFile(filepath.Join(skillsDir, "word-requests", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read the skill: %v", err)
+	}
+	var ban string
+	for line := range strings.SplitSeq(string(b), "\n") {
+		if strings.Contains(line, "NEVER call") {
+			ban = line
+		}
+	}
+	if ban == "" {
+		t.Fatal("the word-requests skill has no NEVER call sentence banning the destructive Tools")
+	}
+	for _, name := range destructive {
+		if !strings.Contains(ban, "`"+name+"`") {
+			t.Errorf("the word-requests skill's NEVER call sentence doesn't name %s", name)
+		}
+	}
+}

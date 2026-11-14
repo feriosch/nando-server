@@ -67,17 +67,20 @@ func claimedTexts(c claimedJSON) []string {
 	return texts
 }
 
-func TestARunClaimsAtMostThreeWordRequestsAtATimeOldestFirst(t *testing.T) {
+func TestARunClaimsOneWordRequestAtATimeOldestFirst(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	askAt(n, phone, "一", "二", "三", "四", "五")
+	askAt(n, phone, "一", "二", "三")
 	run := phone.connect()
 
-	first := claimedTexts(callTool[claimedJSON](t, run, "japanese_list_word_requests", nil))
-	second := claimedTexts(callTool[claimedJSON](t, run, "japanese_list_word_requests", nil))
-	third := claimedTexts(callTool[claimedJSON](t, run, "japanese_list_word_requests", nil))
+	var claimed [][]string
+	for range 4 {
+		claimed = append(claimed, claimedTexts(callTool[claimedJSON](t, run, "japanese_list_word_requests", nil)))
+	}
 
-	if !slices.Equal(first, []string{"一", "二", "三"}) || !slices.Equal(second, []string{"四", "五"}) || len(third) != 0 {
-		t.Fatalf("claimed %v, then %v, then %v; want 一 二 三, then 四 五, then nothing", first, second, third)
+	// One at a time, so each claim's 15 minutes start when the run takes
+	// that word, not while it is still on an earlier one.
+	if want := [][]string{{"一"}, {"二"}, {"三"}, {}}; !slices.EqualFunc(claimed, want, slices.Equal) {
+		t.Fatalf("claimed %v in turn; want 一, then 二, then 三, then nothing", claimed)
 	}
 }
 
@@ -141,17 +144,20 @@ func TestRunsListingAtOnceNeverClaimTheSameWordRequest(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			result, err := run.CallTool(context.Background(), &mcp.CallToolParams{Name: "japanese_list_word_requests"})
-			if err != nil || result.IsError {
-				claims <- nil
-				return
+			// Each run lists until it gets none, as the skill does.
+			var mine []string
+			for {
+				result, err := run.CallTool(context.Background(), &mcp.CallToolParams{Name: "japanese_list_word_requests"})
+				if err != nil || result.IsError {
+					break
+				}
+				var c claimedJSON
+				if json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &c) != nil || len(c.WordRequests) == 0 {
+					break
+				}
+				mine = append(mine, claimedTexts(c)...)
 			}
-			var c claimedJSON
-			if json.Unmarshal([]byte(result.Content[0].(*mcp.TextContent).Text), &c) != nil {
-				claims <- nil
-				return
-			}
-			claims <- claimedTexts(c)
+			claims <- mine
 		}()
 	}
 	wg.Wait()

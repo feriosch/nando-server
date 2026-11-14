@@ -212,9 +212,10 @@ func (s *WordRequestsService) dismiss(w http.ResponseWriter, r *http.Request) {
 	s.update(w, r, []model.WordRequestState{model.Done, model.Failed}, model.WordRequestChanges{DismissedAt: &now})
 }
 
-// claimAtOnce is how many Word Requests one list claims, so that a run
-// finishes what it holds well within claimFor.
-const claimAtOnce = 3
+// claimAtOnce is how many Word Requests one list claims: one, so that each
+// claim's 15 minutes start when a run takes that word, not while it is still
+// working on an earlier one.
+const claimAtOnce = 1
 
 // maxClaims is how many times a Word Request is claimed before it fails:
 // that many runs took it and none finished it.
@@ -228,12 +229,12 @@ const claimFor = 15 * time.Minute
 func (s *WordRequestsService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "japanese_list_word_requests",
-		Description: "Claims up to 3 of the Word Requests waiting for Claude, oldest first, for this run: the Owner's asks to add a word " +
+		Description: "Claims the oldest Word Request waiting for Claude, for this run: the Owner's ask to add a word " +
 			"(text as they typed it, maybe conjugated or in kana, with the Group they found it in) or to improve a stored Word (wordId). " +
 			"A Word Request the Owner has answered comes back with Claude's earlier question, its choices and the Owner's answer. " +
-			"Resolve each one with japanese_resolve_word_request, then call this again until it answers none. " +
+			"Resolve it with japanese_resolve_word_request, then call this again for the next, until it answers none. " +
 			"A claim lasts 15 minutes. " +
-			"Answers {\"wordRequests\": [{\"id\", \"text\", \"kind\", \"group\", \"wordId\", \"question\", \"choices\", \"answer\"}]}, empty when none are waiting.",
+			"Answers {\"wordRequests\": [{\"id\", \"text\", \"kind\", \"group\", \"wordId\", \"question\", \"choices\", \"answer\"}]}, with one Word Request, or empty when none are waiting.",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		Handle:      s.listTool,
 	}, {
