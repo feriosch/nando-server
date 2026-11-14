@@ -324,6 +324,8 @@ func (s *WordRequestsService) resolveTool(ctx context.Context, arguments json.Ra
 	if err != nil {
 		return nil, err
 	}
+	// Others may have come while this run held its claims.
+	s.scheduledTask.Wake(ctx)
 	return wordRequestJSON(request), nil
 }
 

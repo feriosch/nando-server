@@ -146,3 +146,20 @@ func TestTheScheduledTaskIsNotWokenWhileARunHoldsAWordRequest(t *testing.T) {
 		t.Fatalf("the trigger was fired %d times; want only for 一, as the run holding it lists 二 next", len(fires))
 	}
 }
+
+func TestARunResolvingAWordRequestWakesTheScheduledTaskForTheOthersWaiting(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	askAt(n, phone, "一")
+	run, wordRequestID := claimOne(t, phone)
+	askAt(n, phone, "二")
+
+	n.clock.Set(n.clock.Now().Add(5 * time.Minute))
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word 一",
+	})
+
+	if fires := trigger.received(); len(fires) != 2 {
+		t.Fatalf("the trigger was fired %d times; want twice: for 一, then for 二 once the run resolved 一", len(fires))
+	}
+}
