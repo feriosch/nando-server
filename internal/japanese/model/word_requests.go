@@ -74,6 +74,25 @@ type WordRequestJSON struct {
 	Choices     []string `json:"choices"`
 }
 
+// ClaimedWordRequestsJSON is what japanese_list_word_requests answers: the
+// Word Requests a Claude run has just claimed.
+type ClaimedWordRequestsJSON struct {
+	WordRequests []ClaimedWordRequestJSON `json:"wordRequests"`
+}
+
+// ClaimedWordRequestJSON is a Word Request as a Claude run gets it: what to
+// do, and the Owner's answer to an earlier question, if any.
+type ClaimedWordRequestJSON struct {
+	ID       string   `json:"id"`
+	Text     string   `json:"text"`
+	Kind     string   `json:"kind"`
+	Group    *string  `json:"group"`
+	WordID   *string  `json:"wordId"`
+	Question *string  `json:"question"`
+	Choices  []string `json:"choices"`
+	Answer   *string  `json:"answer"`
+}
+
 // NewWordRequestJSON is the body of a new Word Request.
 type NewWordRequestJSON struct {
 	Text   string `json:"text"`
@@ -88,6 +107,11 @@ type WordRequestChanges struct {
 	State       *WordRequestState
 	Answer      *string
 	Attempts    *int
+	WordID      *string
+	Summary     *string
+	Suggestions *[]string
+	Question    *string
+	Choices     *[]string
 	DismissedAt *time.Time
 	UpdatedAt   time.Time
 }
@@ -109,6 +133,15 @@ type WordRequestsRepository interface {
 	// after. It returns Core's utils.ErrNotFound if there's no such Word
 	// Request, or ErrWrongState.
 	Update(ctx context.Context, id string, from []WordRequestState, changes WordRequestChanges) (WordRequest, error)
+	// FailUnfinished fails every Word Request that is Working with its claim
+	// run out by now after maxAttempts claims: no run finished it.
+	FailUnfinished(ctx context.Context, now time.Time, maxAttempts int) error
+	// ClaimNext claims, in one write, the oldest Word Request that is
+	// Pending, or Working with its claim run out by now and fewer than
+	// maxAttempts claims, for a Claude run: it becomes Working until
+	// claimedUntil, with one more attempt. It returns Core's
+	// utils.ErrNotFound if there is none.
+	ClaimNext(ctx context.Context, now, claimedUntil time.Time, maxAttempts int) (WordRequest, error)
 	// GetListed returns, newest first, the Word Requests the Owner hasn't
 	// dismissed that are open or finished (Done or Failed) after
 	// finishedAfter.

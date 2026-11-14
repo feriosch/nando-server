@@ -156,6 +156,21 @@ func (r wordRequests) Update(ctx context.Context, id string, from []model.WordRe
 	if changes.Attempts != nil {
 		set = append(set, bson.E{Key: "attempts", Value: *changes.Attempts})
 	}
+	if changes.WordID != nil {
+		set = append(set, bson.E{Key: "wordId", Value: *changes.WordID})
+	}
+	if changes.Summary != nil {
+		set = append(set, bson.E{Key: "summary", Value: *changes.Summary})
+	}
+	if changes.Suggestions != nil {
+		set = append(set, bson.E{Key: "suggestions", Value: *changes.Suggestions})
+	}
+	if changes.Question != nil {
+		set = append(set, bson.E{Key: "question", Value: *changes.Question})
+	}
+	if changes.Choices != nil {
+		set = append(set, bson.E{Key: "choices", Value: *changes.Choices})
+	}
 	if changes.DismissedAt != nil {
 		set = append(set, bson.E{Key: "dismissedAt", Value: *changes.DismissedAt})
 	}
@@ -178,6 +193,50 @@ func (r wordRequests) Update(ctx context.Context, id string, from []model.WordRe
 	}
 	if err != nil {
 		return model.WordRequest{}, err
+	}
+	return doc.wordRequest(), nil
+}
+
+// runOut matches the Working Word Requests whose claim has run out by now.
+func runOut(now time.Time) bson.D {
+	return bson.D{
+		{Key: "state", Value: string(model.Working)},
+		{Key: "claimedUntil", Value: bson.D{{Key: "$lte", Value: now}}},
+	}
+}
+
+func (r wordRequests) FailUnfinished(ctx context.Context, now time.Time, maxAttempts int) error {
+	filter := append(runOut(now), bson.E{Key: "attempts", Value: bson.D{{Key: "$gte", Value: maxAttempts}}})
+	_, err := r.collection.UpdateMany(ctx, filter, bson.D{{Key: "$set", Value: bson.D{
+		{Key: "state", Value: string(model.Failed)},
+		{Key: "updatedAt", Value: now},
+	}}})
+	return err
+}
+
+func (r wordRequests) ClaimNext(ctx context.Context, now, claimedUntil time.Time, maxAttempts int) (model.WordRequest, error) {
+	var doc wordRequestDocument
+	err := r.collection.FindOneAndUpdate(ctx,
+		bson.D{{Key: "$or", Value: bson.A{
+			bson.D{{Key: "state", Value: string(model.Pending)}},
+			// A run that stopped without resolving it lets it go, while it
+			// has claims left.
+			append(runOut(now), bson.E{Key: "attempts", Value: bson.D{{Key: "$lt", Value: maxAttempts}}}),
+		}}},
+		bson.D{
+			{Key: "$set", Value: bson.D{
+				{Key: "state", Value: string(model.Working)},
+				{Key: "claimedUntil", Value: claimedUntil},
+				{Key: "updatedAt", Value: now},
+			}},
+			{Key: "$inc", Value: bson.D{{Key: "attempts", Value: 1}}},
+		},
+		options.FindOneAndUpdate().
+			SetSort(bson.D{{Key: "createdAt", Value: 1}, {Key: "_id", Value: 1}}).
+			SetReturnDocument(options.After),
+	).Decode(&doc)
+	if err != nil {
+		return model.WordRequest{}, coreutils.NotFound(err)
 	}
 	return doc.wordRequest(), nil
 }

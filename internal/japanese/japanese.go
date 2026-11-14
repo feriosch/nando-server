@@ -91,11 +91,11 @@ type toolProvider struct{ m *Module }
 // ToolsDescription says what the Module's Tools let a Connector do, for the
 // consent page.
 func (p toolProvider) ToolsDescription() string {
-	return "search your Words and Kanji, and add, change, merge and delete your Words"
+	return "search your Words and Kanji, add, change, merge and delete your Words, and work through your Word Requests"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.words.Tools(), p.m.search.Tools(), p.m.kanji.Tools(), p.m.lookup.Tools())
+	return slices.Concat(p.m.words.Tools(), p.m.search.Tools(), p.m.kanji.Tools(), p.m.lookup.Tools(), p.m.requests.Tools())
 }
 
 // Routes adds the Module's routes to mux, all under /api/japanese/.

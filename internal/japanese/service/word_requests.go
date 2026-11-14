@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 	"github.com/feriosch/nando-server/internal/japanese/model"
 	"github.com/feriosch/nando-server/internal/japanese/utils"
@@ -193,4 +195,134 @@ func (s *WordRequestsService) retry(w http.ResponseWriter, r *http.Request) {
 func (s *WordRequestsService) dismiss(w http.ResponseWriter, r *http.Request) {
 	now := s.now()
 	s.update(w, r, []model.WordRequestState{model.Done, model.Failed}, model.WordRequestChanges{DismissedAt: &now})
+}
+
+// claimAtOnce is how many Word Requests one list claims, so that a run
+// finishes what it holds well within claimFor.
+const claimAtOnce = 3
+
+// maxClaims is how many times a Word Request is claimed before it fails:
+// that many runs took it and none finished it.
+const maxClaims = 3
+
+// claimFor is how long a Claude run holds the Word Requests it claims before
+// another run may take them.
+const claimFor = 15 * time.Minute
+
+// Tools are what a Claude run uses to work through the Word Requests.
+func (s *WordRequestsService) Tools() []coremodel.Tool {
+	return []coremodel.Tool{{
+		Name: "japanese_list_word_requests",
+		Description: "Claims the Word Requests waiting for Claude, oldest first, for this run: the Owner's asks to add a word " +
+			"(text as they typed it, maybe conjugated or in kana, with the Group they found it in) or to improve a stored Word (wordId). " +
+			"A Word Request the Owner has answered comes back with Claude's earlier question, its choices and the Owner's answer. " +
+			"Resolve each one with japanese_resolve_word_request. " +
+			"Answers {\"wordRequests\": [{\"id\", \"text\", \"kind\", \"group\", \"wordId\", \"question\", \"choices\", \"answer\"}]}, empty when none are waiting.",
+		InputSchema: json.RawMessage(`{"type":"object"}`),
+		Handle:      s.listTool,
+	}, {
+		Name: "japanese_resolve_word_request",
+		Description: "Records what came of a Word Request this run claimed with japanese_list_word_requests. " +
+			"done: the word was added or the Word improved; wordId is that Word, summary one line for the Owner " +
+			"(\"Added 食べる · 3 Word Links · 1 Hint\"), and suggestions what the Owner should do in Claude Code, " +
+			"such as a merge or a Group change, which a run never does itself. " +
+			"needs_answer: something only the Owner can settle (which homograph, which reading gets the kanji spelling); " +
+			"question is short, and choices are 2 to 4 answers the Owner can tap. The Word Request comes back with their answer. " +
+			"failed: it can't be done (no such word, even unconjugated); summary says why, for the Owner. " +
+			"Answers the Word Request as the Owner now sees it.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"id":{"type":"string","description":"The Word Request's id."},` +
+			`"outcome":{"type":"string","enum":["done","needs_answer","failed"]},` +
+			`"summary":{"type":"string"},` +
+			`"wordId":{"type":"string","description":"For done: the Word added or improved."},` +
+			`"suggestions":{"type":"array","items":{"type":"string"}},` +
+			`"question":{"type":"string","description":"For needs_answer."},` +
+			`"choices":{"type":"array","items":{"type":"string"},"description":"For needs_answer: 2 to 4."}},` +
+			`"required":["id","outcome"]}`),
+		Handle: s.resolveTool,
+	}}
+}
+
+// resolveTool answers japanese_resolve_word_request with the Word Request as
+// the Owner now sees it.
+func (s *WordRequestsService) resolveTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		ID          string   `json:"id"`
+		Outcome     string   `json:"outcome"`
+		Summary     string   `json:"summary"`
+		WordID      string   `json:"wordId"`
+		Suggestions []string `json:"suggestions"`
+		Question    string   `json:"question"`
+		Choices     []string `json:"choices"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	outcome := model.WordRequestState(args.Outcome)
+	changes := model.WordRequestChanges{State: &outcome, UpdatedAt: s.now()}
+	summary := strings.TrimSpace(args.Summary)
+	question := strings.TrimSpace(args.Question)
+	switch outcome {
+	case model.Done:
+		if summary == "" {
+			return nil, errors.New("done needs a summary for the Owner, such as \"Added 食べる · 3 Word Links\"")
+		}
+		if _, err := s.words.GetOneByID(ctx, args.WordID); err != nil {
+			if errors.Is(err, coreutils.ErrNotFound) {
+				return nil, errors.New("done needs wordId, the stored Word added or improved")
+			}
+			return nil, err
+		}
+		changes.Summary = &summary
+		changes.WordID = &args.WordID
+		changes.Suggestions = &args.Suggestions
+	case model.NeedsAnswer:
+		if question == "" || len(args.Choices) < 2 || len(args.Choices) > 4 || slices.ContainsFunc(args.Choices, func(c string) bool { return strings.TrimSpace(c) == "" }) {
+			return nil, errors.New("needs_answer needs a question and 2 to 4 choices the Owner can tap")
+		}
+		changes.Question = &question
+		changes.Choices = &args.Choices
+	case model.Failed:
+		if summary == "" {
+			return nil, errors.New("failed needs a summary saying why, for the Owner")
+		}
+		changes.Summary = &summary
+	default:
+		return nil, errors.New(`outcome must be "done", "needs_answer" or "failed"`)
+	}
+	request, err := s.requests.Update(ctx, args.ID, []model.WordRequestState{model.Working}, changes)
+	if err != nil {
+		return nil, err
+	}
+	return wordRequestJSON(request), nil
+}
+
+// listTool answers japanese_list_word_requests: it claims the Word Requests
+// waiting for Claude.
+func (s *WordRequestsService) listTool(ctx context.Context, _ json.RawMessage) (any, error) {
+	if err := s.requests.FailUnfinished(ctx, s.now(), maxClaims); err != nil {
+		return nil, err
+	}
+	claimed := []model.ClaimedWordRequestJSON{}
+	for len(claimed) < claimAtOnce {
+		now := s.now()
+		request, err := s.requests.ClaimNext(ctx, now, now.Add(claimFor), maxClaims)
+		if errors.Is(err, coreutils.ErrNotFound) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		claimed = append(claimed, model.ClaimedWordRequestJSON{
+			ID:       request.ID,
+			Text:     request.Text,
+			Kind:     string(request.Kind),
+			Group:    utils.OrNull(request.Group),
+			WordID:   utils.OrNull(request.WordID),
+			Question: utils.OrNull(request.Question),
+			Choices:  utils.OrEmptyList(request.Choices),
+			Answer:   utils.OrNull(request.Answer),
+		})
+	}
+	return model.ClaimedWordRequestsJSON{WordRequests: claimed}, nil
 }

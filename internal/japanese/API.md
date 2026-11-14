@@ -338,6 +338,15 @@ The server asks jisho.org and kanjiapi.dev itself. It asks kanjiapi.dev at most 
 | `japanese_add_hint` | `word` (an id), `text`, `note` | Adds a Hint, unless the Word has one with that text. Refused for text a stored Word is spelled or read as: that's a Word Link. Answers `{"written"}` |
 | `japanese_remove_hint` | `word`, `text` | Removes that Hint and answers the Word page |
 
+### Word Requests
+
+A Claude run works through the Owner's [Word Requests](#word-requests) with these two, following the `word-requests` skill.
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `japanese_list_word_requests` | none | Claims up to 3 Word Requests for this run, oldest first, and answers `{"wordRequests": [{"id", "text", "kind", "group", "wordId", "question", "choices", "answer"}]}`, `[]` when none are waiting. A claimed one is `"working"` for 15 minutes, with one more attempt; if no run has resolved it by then, the next list may claim it again, and after its 3rd claim runs out it is `"failed"` instead. Each claim is one write, so runs listing at once never get the same Word Request. One the Owner has answered comes with Claude's earlier `question`, its `choices` and the Owner's `answer` |
+| `japanese_resolve_word_request` | `id`, `outcome`, and what that outcome needs | Records what came of a `"working"` Word Request and answers it as the Owner now sees it. `done` needs a `summary` for the Owner and the `wordId` of the stored Word added or improved, with optional `suggestions` (what to do in Claude Code, such as a merge). `needs_answer` needs a `question` and 2 to 4 `choices`. `failed` needs a `summary` saying why. Refused for a Word Request that isn't `"working"` |
+
 ### Destructive (`destructiveHint`)
 
 The Owner sets these to ask before each use in the Claude app.

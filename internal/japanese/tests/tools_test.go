@@ -56,7 +56,7 @@ func TestTheConsentPageSaysWhatJapanesesToolsLetAConnectorDo(t *testing.T) {
 	got := testconnector.ToolsDescriptions(t, n.handler, webOrigin)
 
 	// Deleting and merging are said, as they can't be undone.
-	if want := []string{"search your Words and Kanji, and add, change, merge and delete your Words"}; !slices.Equal(got, want) {
+	if want := []string{"search your Words and Kanji, add, change, merge and delete your Words, and work through your Word Requests"}; !slices.Equal(got, want) {
 		t.Errorf("toolsDescriptions = %q, want %q", got, want)
 	}
 }
@@ -899,6 +899,9 @@ func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
 		"japanese_delete_word":      destroy,
 		"japanese_merge_words":      destroy,
 		"japanese_change_group":     destroy,
+		// Claiming changes the Word Requests, so listing them isn't a look-up.
+		"japanese_list_word_requests":   write,
+		"japanese_resolve_word_request": write,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Tools and their hints =\n%v\nwant\n%v", got, want)
