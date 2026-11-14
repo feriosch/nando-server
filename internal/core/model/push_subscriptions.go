@@ -40,3 +40,21 @@ type PushSubscriptionJSON struct {
 type VAPIDPublicKeyJSON struct {
 	PublicKey string `json:"publicKey"`
 }
+
+// TestSentJSON is what came of sending the test Notification: how many
+// devices took it, how many were gone and removed, and which push services
+// failed.
+type TestSentJSON struct {
+	Sent    int              `json:"sent"`
+	Removed int              `json:"removed"`
+	Failed  []TestFailedJSON `json:"failed"`
+}
+
+// TestFailedJSON is a push service that didn't take the test Notification,
+// named by its host so that the endpoint, which identifies a device, never
+// leaves the server.
+type TestFailedJSON struct {
+	PushService string `json:"pushService"`
+	Status      int    `json:"status,omitempty"`
+	Reason      string `json:"reason"`
+}

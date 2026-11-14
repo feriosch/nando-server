@@ -14,18 +14,20 @@ import (
 	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
-// PushSubscriptionsService handles requests about Push Subscriptions. The
-// NotificationsService sends to them.
+// PushSubscriptionsService handles requests about Push Subscriptions, and
+// sends the Owner's test Notification. The NotificationsService sends the
+// others, at the tick.
 type PushSubscriptionsService struct {
 	pushSubscriptions model.PushSubscriptionsRepository
-	vapidPublicKey    string
+	vapid             VAPID
 	now               func() time.Time
 }
 
 // NewPushSubscriptions returns the PushSubscriptionsService, giving the web
-// app vapidPublicKey to subscribe with, and with now as its clock.
-func NewPushSubscriptions(pushSubscriptions model.PushSubscriptionsRepository, vapidPublicKey string, now func() time.Time) *PushSubscriptionsService {
-	return &PushSubscriptionsService{pushSubscriptions: pushSubscriptions, vapidPublicKey: vapidPublicKey, now: now}
+// app vapid's public key to subscribe with and signing test Notifications
+// with vapid, with now as its clock.
+func NewPushSubscriptions(pushSubscriptions model.PushSubscriptionsRepository, vapid VAPID, now func() time.Time) *PushSubscriptionsService {
+	return &PushSubscriptionsService{pushSubscriptions: pushSubscriptions, vapid: vapid, now: now}
 }
 
 // Routes adds the Push Subscription routes to mux, under
@@ -34,12 +36,13 @@ func (s *PushSubscriptionsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/push-subscriptions/vapid-public-key", s.getVAPIDPublicKey)
 	mux.HandleFunc("POST /api/push-subscriptions", s.postPushSubscription)
 	mux.HandleFunc("DELETE /api/push-subscriptions", s.deletePushSubscription)
+	mux.HandleFunc("POST /api/push-subscriptions/test", s.sendTest)
 }
 
 // getVAPIDPublicKey answers the key the web app passes to
 // pushManager.subscribe as its applicationServerKey.
 func (s *PushSubscriptionsService) getVAPIDPublicKey(w http.ResponseWriter, r *http.Request) {
-	utils.WriteJSON(w, http.StatusOK, model.VAPIDPublicKeyJSON{PublicKey: s.vapidPublicKey})
+	utils.WriteJSON(w, http.StatusOK, model.VAPIDPublicKeyJSON{PublicKey: s.vapid.PublicKey})
 }
 
 // checkPushSubscription explains what makes j unusable for sending, if anything.
@@ -109,4 +112,55 @@ func (s *PushSubscriptionsService) deletePushSubscription(w http.ResponseWriter,
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// testNotification is what the Owner's test Notification says.
+var testNotification = model.Notification{Title: "Test Notification", Body: "Notifications reach this device.", URL: "/settings"}
+
+// sendTest sends the test Notification to every Push Subscription at once,
+// outside the tick, and answers what came of it.
+func (s *PushSubscriptionsService) sendTest(w http.ResponseWriter, r *http.Request) {
+	subs, err := s.pushSubscriptions.List(r.Context())
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	sent := model.TestSentJSON{Failed: []model.TestFailedJSON{}}
+	for _, sub := range subs {
+		err := deliver(r.Context(), s.vapid, sub, testNotification)
+		switch {
+		case err == nil:
+			sent.Sent++
+		case errors.Is(err, errPushSubscriptionGone):
+			// The Owner uninstalled Nando there, or turned Notifications off.
+			if err := s.pushSubscriptions.Delete(r.Context(), sub.Endpoint); err != nil {
+				utils.ServerError(w, err)
+				return
+			}
+			sent.Removed++
+		default:
+			sent.Failed = append(sent.Failed, testFailed(sub, err))
+		}
+	}
+	utils.WriteJSON(w, http.StatusOK, sent)
+}
+
+// testFailed reports that sending the test Notification to sub failed with
+// err, naming the push service by its host and leaving out the endpoint, which
+// identifies the device.
+func testFailed(sub model.PushSubscription, err error) model.TestFailedJSON {
+	failed := model.TestFailedJSON{Reason: err.Error()}
+	if endpoint, parseErr := url.Parse(sub.Endpoint); parseErr == nil {
+		failed.PushService = endpoint.Host
+	}
+	var answered pushServiceError
+	var request *url.Error
+	switch {
+	case errors.As(err, &answered):
+		failed.Status = answered.Status
+	case errors.As(err, &request):
+		// Its message quotes the endpoint; keep only what went wrong.
+		failed.Reason = request.Err.Error()
+	}
+	return failed
 }

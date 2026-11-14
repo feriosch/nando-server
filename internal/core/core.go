@@ -127,7 +127,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		sessions:          service.NewSessions(sessionsRepo, cfg.Domain, now),
 		passkeys:          service.NewPasskeys(passkeys),
 		settings:          service.NewSettings(repository.NewSettings(db), now),
-		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
+		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID, now),
 		mcp:               mcp,
 		connectors:        service.NewConnectors(connectors, oauthClients, now),
 		oauth:             service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, mcp.ToolsDescriptions, now),
