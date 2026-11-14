@@ -292,7 +292,7 @@ Answers:
 
 ### `POST /api/japanese/word-requests/{id}/answer`
 
-Answers Claude's question: `{ "answer": "掛ける (to hang)" }`, one of the `choices` or the Owner's own words. The Word Request goes back to `"pending"` with the `answer`, and keeps its `question`, so that Claude reads both.
+Answers Claude's question: `{ "answer": "掛ける (to hang)" }`, one of the `choices` or the Owner's own words. The Word Request goes back to `"pending"` with the `answer` and `attempts` back at 0, as a retry does, and keeps its `question`, so that Claude reads both.
 
 ### `POST /api/japanese/word-requests/{id}/retry`
 
@@ -337,6 +337,15 @@ The server asks jisho.org and kanjiapi.dev itself. It asks kanjiapi.dev at most 
 | `japanese_remove_word_link` | `from`, `to` | Removes both sides. Answers `{"fromSideRemoved", "backSideRemoved"}`; fails if there's neither |
 | `japanese_add_hint` | `word` (an id), `text`, `note` | Adds a Hint, unless the Word has one with that text. Refused for text a stored Word is spelled or read as: that's a Word Link. Answers `{"written"}` |
 | `japanese_remove_hint` | `word`, `text` | Removes that Hint and answers the Word page |
+
+### Word Requests
+
+A Claude run works through the Owner's [Word Requests](#word-requests) with these two, following the `word-requests` skill.
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `japanese_list_word_requests` | none | Claims up to 3 Word Requests for this run, oldest first, and answers `{"wordRequests": [{"id", "text", "kind", "group", "wordId", "question", "choices", "answer"}]}`, `[]` when none are waiting. A claimed one is `"working"` for 15 minutes, with one more attempt; if no run has resolved it by then, the next list may claim it again, and after its 3rd claim runs out it is `"failed"` instead, with a `summary` saying so, as soon as the Owner lists the Word Requests or a run lists them, whichever comes first. Each claim is one write, so runs listing at once never get the same Word Request. One the Owner has answered comes with Claude's earlier `question`, its `choices` and the Owner's `answer` |
+| `japanese_resolve_word_request` | `id`, `outcome`, and what that outcome needs | Records what came of a `"working"` Word Request and answers it as the Owner now sees it. `done` needs a `summary` for the Owner and the `wordId` of the stored Word added or improved, with optional `suggestions` (what to do in Claude Code, such as a merge). `needs_answer` needs a `question` and 2 to 4 `choices`, and clears the Owner's answer to any earlier question. Choices and suggestions are trimmed, and blank suggestions dropped; `done` and `failed` clear an earlier round's `question` and `choices`. `failed` needs a `summary` saying why. Refused for a Word Request that isn't `"working"` |
 
 ### Destructive (`destructiveHint`)
 

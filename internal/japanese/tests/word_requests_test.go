@@ -421,3 +421,17 @@ func TestAnAnsweredWordRequestKeepsTheQuestionForClaude(t *testing.T) {
 		t.Fatalf("answered Word Request = %+v; want it to keep Claude's question and choices", answered)
 	}
 }
+
+func TestAnAnsweredWordRequestGetsFreshTriesLikeARetriedOne(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	// Claude asked on its 3rd claim: the Owner's answer is new to work with.
+	parked := parkedRequest("かける")
+	parked["attempts"] = 3
+	n.store("word_requests", parked)
+
+	answered := act(phone, id(parked), "answer", map[string]any{"answer": "掛ける (to hang)"})
+
+	if answered.Attempts != 0 {
+		t.Fatalf("answered Word Request has %d attempts; want 0, so Claude gets 3 fresh tries", answered.Attempts)
+	}
+}

@@ -311,7 +311,7 @@ For the consent page, which may run in a browser without a Session. `200`: which
 {
   "clientName": "Claude",
   "redirectHost": "claude.ai",
-  "toolsDescriptions": ["search your Words and Kanji, and add, change, merge and delete your Words"]
+  "toolsDescriptions": ["search your Words and Kanji, add, change, merge and delete your Words, and work through your Word Requests"]
 }
 ```
 
