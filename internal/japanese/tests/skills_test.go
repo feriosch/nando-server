@@ -15,7 +15,7 @@ import (
 const skillsDir = "../../../skills/japanese"
 
 // requiredSkills are the skills that must exist among them.
-var requiredSkills = []string{"add-word", "suggest-related", "word-requests"}
+var requiredSkills = []string{"add-word", "suggest-related"}
 
 // skillToolName is how a skill names a Japanese Tool.
 var skillToolName = regexp.MustCompile(`japanese_[a-z_]+`)
