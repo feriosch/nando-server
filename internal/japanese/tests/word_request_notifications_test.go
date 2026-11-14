@@ -154,3 +154,38 @@ func TestASecondQuestionOnTheSameWordRequestNotifiesTheOwnerAgain(t *testing.T) 
 		t.Errorf("received %+v, want %+v", got, want)
 	}
 }
+
+func TestAWordRequestNoRunFinishedNotifiesTheOwnerAtTheNextTick(t *testing.T) {
+	n, _, push := subscribedPhone(t)
+	// Its 3rd claim has run out, and neither the Owner nor a run has listed
+	// Word Requests since: only the tick can tell the Owner.
+	stuck := storedRequest("食べた", "add", "working")
+	stuck["attempts"] = 3
+	stuck["claimedUntil"] = n.clock.Now().Add(-time.Minute)
+	n.store("word_requests", stuck)
+
+	n.tick()
+
+	got := push.Received()
+	if len(got) != 1 || got[0].Title != "Couldn't add a word" {
+		t.Errorf("received %+v; want one Notification that 食べた couldn't be added", got)
+	}
+}
+
+func TestAnImproveClaudeGivesUpOnSaysItCouldntImproveTheWord(t *testing.T) {
+	n, phone, push := subscribedPhone(t)
+	hang := word("掛ける", "かける", "colgar", "jlpt_n2")
+	n.store("words", hang)
+	askFor(phone, map[string]any{"kind": "improve", "wordId": id(hang)}, http.StatusCreated)
+	run, wordRequestID := claimOne(t, phone)
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "failed", "summary": "the Word was deleted meanwhile",
+	})
+
+	n.tick()
+
+	got := push.Received()
+	if len(got) != 1 || got[0].Title != "Couldn't improve a word" {
+		t.Errorf("received %+v; want one Notification that 掛ける couldn't be improved", got)
+	}
+}

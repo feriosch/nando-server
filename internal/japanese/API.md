@@ -314,7 +314,7 @@ These three answer:
 The Module is a Notification provider ([Core's Notifications](../core/API.md#notifications)). At each tick it has Core send one Notification for each Word Request the Owner hasn't dismissed that needs them, opening `/japanese`:
 
 - `"needs_answer"`: `{ "title": "Claude has a question", "body": "「かける」: Which かける: to hang, or to call?", "url": "/japanese" }`, the `text` and Claude's `question`.
-- `"failed"`: `{ "title": "Couldn't add a word", "body": "「たべたべ」: jisho.org has no word たべたべ, and it isn't a conjugation of one", "url": "/japanese" }`, the `text` and the `summary` saying why, which every failed Word Request has.
+- `"failed"`: `{ "title": "Couldn't add a word", "body": "「たべたべ」: jisho.org has no word たべたべ, and it isn't a conjugation of one", "url": "/japanese" }`, the `text` and the `summary` saying why, which every failed Word Request has; for an improve, the title is "Couldn't improve a word". A Word Request whose 3rd claim has run out is failed at the tick too, so the Owner hears of it even if nobody has listed Word Requests since.
 
 A `"done"` Word Request sends none: it shows in the Pending strip. Each Notification is sent once per round: its ID, `japanese:word-request:<id>:<state>:<ms>`, has the time the Word Request entered that state, so it stays the same while the Word Request waits, and a second question, or a second failure after a retry, notifies again. `attempts` can't tell rounds apart, since an answer or a retry sets them back to 0.
 

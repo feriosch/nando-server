@@ -366,6 +366,11 @@ func (s *WordRequestsService) listTool(ctx context.Context, _ json.RawMessage) (
 // answer, or one that failed. Core sends each only once (see
 // wordRequestNotificationID).
 func (s *WordRequestsService) DueNotifications(ctx context.Context, slot time.Time) ([]coremodel.Notification, error) {
+	// A Word Request no run finished fails by the clock, so the tick tells
+	// the Owner even when nobody has listed Word Requests since.
+	if err := s.requests.FailUnfinished(ctx, s.now(), maxClaims); err != nil {
+		return nil, err
+	}
 	requests, err := s.requests.GetListed(ctx, s.now().Add(-finishedListedFor))
 	if err != nil {
 		return nil, err
@@ -378,6 +383,9 @@ func (s *WordRequestsService) DueNotifications(ctx context.Context, slot time.Ti
 			title, body = "Claude has a question", "「"+request.Text+"」: "+request.Question
 		case model.Failed:
 			title, body = "Couldn't add a word", "「"+request.Text+"」: "+request.Summary
+			if request.Kind == model.ImproveWord {
+				title = "Couldn't improve a word"
+			}
 		default:
 			continue
 		}
