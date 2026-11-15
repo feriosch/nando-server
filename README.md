@@ -17,6 +17,7 @@ Go API for Nando. Domain language: [`GLOSSARY.md`](GLOSSARY.md). Decisions: [`do
 - `internal/testconnector`: test helper, a Connector the Owner approves with a Passkey, connected to `/mcp` with the official MCP client, so a Module's tests can call its Tools as Claude does.
 - `skills/`: the skills Claude follows to work with the Owner's data through the Nando Connector, such as adding a Japanese Word (`skills/japanese/add-word`). [`skills/README.md`](skills/README.md) says how to use them in the Claude app and in Claude Code, and how to add the Connector.
 - `scripts/backup.sh`: the weekly backup's dump (see [Backups](#backups)). `scripts/backup_test.go` runs it inside `mongo:8` and restores what it wrote with the commands below.
+- `scripts/career-sync/`: the Career Sync, the script on the Owner's MacBook that reads LinkedIn and hands Nando the new messages, hourly from `launchd` ([ADR 0007](docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). [`scripts/career-sync/README.md`](scripts/career-sync/README.md) says how it works, how to install it and what was learned about the LinkedIn reader it uses. Its tests are Python: `uv run --project scripts/career-sync pytest scripts/career-sync`.
 
 Core and every Module are split into the same three layers:
 
@@ -118,7 +119,7 @@ If the new revision doesn't start (for example, MongoDB is unreachable), the dep
 
 ## Backups
 
-Every Sunday at 03:17 Tokyo time, `.github/workflows/backup.yml` (also runnable by hand from the Actions tab) dumps the `core`, `calories` and `japanese` databases with `scripts/backup.sh` and uploads them as `nando-<UTC date and time>.tar` (one gzipped BSON file per collection) to the private bucket named by the repo variable `GCP_BACKUP_BUCKET` (`gs://nanders-backups`). It signs in through Workload Identity Federation as the backup service account (`GCP_BACKUP_SA`). That account can read the `nandoproject-mongo` secret and create objects in the bucket, but can't read, overwrite or delete them.
+Every Sunday at 03:17 Tokyo time, `.github/workflows/backup.yml` (also runnable by hand from the Actions tab) dumps the `core`, `calories`, `japanese` and `career` databases with `scripts/backup.sh` and uploads them as `nando-<UTC date and time>.tar` (one gzipped BSON file per collection) to the private bucket named by the repo variable `GCP_BACKUP_BUCKET` (`gs://nanders-backups`). It signs in through Workload Identity Federation as the backup service account (`GCP_BACKUP_SA`). That account can read the `nandoproject-mongo` secret and create objects in the bucket, but can't read, overwrite or delete them.
 
 The bucket's lifecycle rule deletes each `nando-` backup when it's 56 days old, which leaves the last 8 weekly ones. It goes by age, not count: if backups stop, the old ones still expire, and after 8 weeks there are none. So watch for failed runs. GitHub emails a failed scheduled run to whoever last changed the workflow's `cron` line, and in a public repository it turns scheduled workflows off after 60 days without activity (re-enable Backup in the Actions tab).
 
