@@ -9,6 +9,7 @@ package career
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 
@@ -26,6 +27,10 @@ type Module struct {
 	settings *service.SettingsService
 	syncs    *service.SyncsService
 	work     *service.WorkService
+	// notifications is the Module's Notification provider.
+	notifications *service.NotificationsService
+	// tickRules apply the rules that need no model at every tick.
+	tickRules *service.TickRulesService
 	// conversations sorts Conversations: ignores or files them.
 	conversations *service.ConversationsService
 	opportunities *service.OpportunitiesService
@@ -66,6 +71,8 @@ func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 	return &Module{
 		settings:      settingsService,
 		syncs:         service.NewSyncs(scheduledTask, syncs, conversations, work, core),
+		notifications: service.NewNotifications(settingsService, conversations, opportunities, companies, syncs, work, core.Now),
+		tickRules:     service.NewTickRules(opportunities, conversations, work, core.Now),
 		work:          service.NewWork(scheduledTask, work, conversations, recruiters, opportunitiesService, settingsService, profile, syncs, core.Now),
 		conversations: service.NewConversations(scheduledTask, conversations, recruiters, work, core.Now),
 		opportunities: opportunitiesService,
@@ -85,10 +92,27 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	m.overview.Routes(mux)
 }
 
-// TickJob is what the Module does at every tick, for Core.AddTickJob: it sets
-// aside the Items no run could do, and wakes Claude for those still waiting.
+// NotificationProvider is the Module's Notification provider, for
+// Core.AddNotificationProvider.
+func (m *Module) NotificationProvider() coremodel.NotificationProvider {
+	return m.notifications
+}
+
+// TickJob is what the Module does at every tick, for Core.AddTickJob: it
+// applies the rules that need no model, such as closing faded Opportunities,
+// sets aside the Items no run could do, and wakes Claude for those still
+// waiting, including any the rules just queued.
 func (m *Module) TickJob() coremodel.TickJob {
-	return m.work
+	return tickJob{m}
+}
+
+// tickJob is the Module's work at every tick.
+type tickJob struct{ m *Module }
+
+// RunAtTick applies the rules first, so the run is woken for what they
+// queue. A rule that fails doesn't stop the run's work, nor it the rules.
+func (j tickJob) RunAtTick(ctx context.Context) error {
+	return errors.Join(j.m.tickRules.Apply(ctx), j.m.work.RunAtTick(ctx))
 }
 
 // ToolProvider gathers the Module's Tools, for Core to serve to Connectors.

@@ -36,8 +36,8 @@ const (
 
 // SyncsRepository reads and writes the syncs collection.
 type SyncsRepository interface {
-	// Insert stores a Sync and returns its id.
-	Insert(ctx context.Context, sync Sync) (bson.ObjectID, error)
+	// Insert stores a Sync, with its id.
+	Insert(ctx context.Context, sync Sync) error
 	// Read returns the Sync with that id if it read LinkedIn, or Core's
 	// utils.ErrNotFound if there's none, or it had a problem.
 	Read(ctx context.Context, id bson.ObjectID) (Sync, error)
@@ -47,6 +47,12 @@ type SyncsRepository interface {
 	// LatestRead returns the newest n Syncs that read LinkedIn, with no
 	// problem, newest first.
 	LatestRead(ctx context.Context, n int64) ([]Sync, error)
+	// AllReadSince returns every Sync that read LinkedIn at or after since,
+	// oldest first.
+	AllReadSince(ctx context.Context, since time.Time) ([]Sync, error)
+	// FirstProblemAfter returns the first Sync after after that reported a
+	// problem of kind, or Core's utils.ErrNotFound if none did.
+	FirstProblemAfter(ctx context.Context, kind string, after time.Time) (Sync, error)
 	// FirstRead returns the first Sync that read LinkedIn, or Core's
 	// utils.ErrNotFound if none has.
 	FirstRead(ctx context.Context) (Sync, error)

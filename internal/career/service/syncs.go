@@ -147,25 +147,30 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 	}
 	// A later batch of a Sync adds to it, so that a Sync sent in batches
 	// counts once towards when the next is due.
-	var id bson.ObjectID
-	if j.Sync != "" {
+	// A new Sync's id is chosen now, so that its messages and Items record
+	// it, and stored after them.
+	id, isNew := bson.NewObjectID(), j.Sync == ""
+	if !isNew {
 		if id, err = s.batchOf(ctx, j.Sync); err != nil {
 			return nil, err
 		}
 	}
 	stored := 0
 	for _, update := range updates {
+		for i := range update.Messages {
+			update.Messages[i].SyncID = id
+		}
 		added, err := s.conversations.AddMessages(ctx, update)
 		if err != nil {
 			return nil, err
 		}
 		stored += added.Stored
-		if err := s.queue(ctx, added); err != nil {
+		if err := s.queue(ctx, added, id); err != nil {
 			return nil, err
 		}
 	}
-	if id.IsZero() {
-		id, err = s.syncs.Insert(ctx, model.Sync{At: s.core.Now(), Threads: len(updates), Problem: problem})
+	if isNew {
+		err = s.syncs.Insert(ctx, model.Sync{ID: id, At: s.core.Now(), Threads: len(updates), Problem: problem})
 	} else {
 		err = s.syncs.AddThreads(ctx, id, len(updates))
 	}
@@ -200,16 +205,16 @@ func (s *SyncsService) batchOf(ctx context.Context, sync string) (bson.ObjectID,
 }
 
 // queue puts what the run has to do about a Conversation's new messages in
-// its work: sort a Conversation not filed yet, or answer its Recruiter's new
-// message.
-func (s *SyncsService) queue(ctx context.Context, added model.Added) error {
+// its work, as queued by the Sync with syncID: sort a Conversation not filed
+// yet, or answer its Recruiter's new message.
+func (s *SyncsService) queue(ctx context.Context, added model.Added, syncID bson.ObjectID) error {
 	switch {
 	case added.Stored == 0 || added.Ignored:
 		return nil
 	case !added.Filed:
-		return s.work.Add(ctx, model.ItemSort, added.ConversationID, s.core.Now())
+		return s.work.Add(ctx, model.ItemSort, added.ConversationID, syncID, s.core.Now())
 	case added.FromOther:
-		return s.work.Add(ctx, model.ItemReply, added.ConversationID, s.core.Now())
+		return s.work.Add(ctx, model.ItemReply, added.ConversationID, syncID, s.core.Now())
 	}
 	return nil
 }

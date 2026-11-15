@@ -194,6 +194,7 @@ func run() error {
 		return err
 	}
 	nandoCore.AddToolProvider(careerModule.ToolProvider())
+	nandoCore.AddNotificationProvider(careerModule.NotificationProvider())
 	nandoCore.AddTickJob(careerModule.TickJob())
 
 	switch args := os.Args[1:]; {

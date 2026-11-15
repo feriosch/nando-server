@@ -24,6 +24,9 @@ type Conversation struct {
 	RecruiterID *bson.ObjectID `bson:"recruiterId,omitempty"`
 	// SuggestedReply is Claude's draft of the Owner's next message, if any.
 	SuggestedReply *SuggestedReply `bson:"suggestedReply,omitempty"`
+	// FollowedUp is when the Owner's message that a follow_up Item was last
+	// queued for was sent, so no message gets two.
+	FollowedUp time.Time `bson:"followedUp,omitempty"`
 }
 
 // SuggestedReply is Claude's draft of the Owner's next message in a
@@ -39,6 +42,9 @@ type SuggestedReply struct {
 	Answers   time.Time      `bson:"answers"`
 	Notes     []LanguageNote `bson:"notes"`
 	WrittenAt time.Time      `bson:"writtenAt"`
+	// SyncID is the Sync that brought the message it answers, so that
+	// Sync's Notification knows it led to a new answer.
+	SyncID bson.ObjectID `bson:"syncId,omitempty"`
 }
 
 // LanguageNote is a mistake in the Owner's last message: what they wrote,
@@ -60,6 +66,10 @@ const (
 	ReplyLate = "late"
 )
 
+// WaitingReplyKinds are the kinds of Suggested Reply a Recruiter waits on:
+// they can also turn late.
+var WaitingReplyKinds = []string{ReplyAnswer, ReplyFollowUp}
+
 // MaxLanguageNotes is the most language notes a Suggested Reply has.
 const MaxLanguageNotes = 3
 
@@ -77,6 +87,8 @@ type Message struct {
 	From   string    `bson:"from"`
 	SentAt time.Time `bson:"sentAt"`
 	Text   string    `bson:"text"`
+	// SyncID is the Sync that brought it.
+	SyncID bson.ObjectID `bson:"syncId,omitempty"`
 }
 
 // Who sent a Message.
@@ -131,6 +143,24 @@ type ConversationsRepository interface {
 	// Threads returns every Conversation's thread id, newest message time and
 	// whether it is ignored, without its messages.
 	Threads(ctx context.Context) ([]Conversation, error)
+	// WithWaitingReplyBefore returns the Conversations whose Suggested Reply
+	// is of one of WaitingReplyKinds and answers a message sent before
+	// before.
+	WithWaitingReplyBefore(ctx context.Context, before time.Time) ([]Conversation, error)
+	// AnyAnswerFromSync reports whether a Conversation's Suggested Reply is
+	// an answer to a message the Sync with syncID brought.
+	AnyAnswerFromSync(ctx context.Context, syncID bson.ObjectID) (bool, error)
+	// WaitingRecruiters counts the Recruiters waiting for the Owner's reply:
+	// those with a Conversation whose Suggested Reply is of one of
+	// WaitingReplyKinds and answers a message sent at or after since. A Late
+	// Reply isn't counted, nor one about to turn late.
+	WaitingRecruiters(ctx context.Context, since time.Time) (int, error)
+	// MarkFollowedUp records that a follow_up Item was queued for the
+	// Owner's message sent at sentAt.
+	MarkFollowedUp(ctx context.Context, id bson.ObjectID, sentAt time.Time) error
+	// MakeReplyLate turns the Conversation's Suggested Reply late, unless it
+	// changed since it was read as reply. It reports whether it did.
+	MakeReplyLate(ctx context.Context, id bson.ObjectID, reply SuggestedReply) (bool, error)
 }
 
 // ConversationJSON is a Conversation as the Tools answer it.

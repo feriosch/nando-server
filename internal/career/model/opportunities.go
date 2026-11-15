@@ -133,8 +133,15 @@ type OpportunitiesRepository interface {
 	// Search returns the Opportunities whose role has query in it, ignoring
 	// case, or that are at one of companyIDs.
 	Search(ctx context.Context, query string, companyIDs []bson.ObjectID) ([]Opportunity, error)
+	// OpenWithStepOn returns the Opportunities that aren't closed and have a
+	// Step on date, YYYY-MM-DD.
+	OpenWithStepOn(ctx context.Context, date string) ([]Opportunity, error)
 	// Open returns every Opportunity that isn't closed.
 	Open(ctx context.Context) ([]Opportunity, error)
+	// Fade closes the Opportunity with Outcome faded, keeping the Stage it
+	// had to reopen it to, unless it changed since it was read as o. It
+	// reports whether it closed it.
+	Fade(ctx context.Context, o Opportunity) (bool, error)
 }
 
 // The JSON shapes below are what the Tools and the API answer with and are

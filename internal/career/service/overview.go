@@ -101,7 +101,7 @@ func (s *OverviewService) listLate(w http.ResponseWriter, r *http.Request) {
 // for an answer or a follow-up, newest first.
 func (s *OverviewService) waiting(ctx context.Context) ([]model.RecruiterReplyJSON, error) {
 	return s.withReplies(ctx, func(a, b model.RecruiterReplyJSON) int { return b.LastMessageAt.Compare(a.LastMessageAt) },
-		model.ReplyAnswer, model.ReplyFollowUp)
+		model.WaitingReplyKinds...)
 }
 
 // late is each Recruiter with a Late Reply, once, by their oldest message
