@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -17,17 +18,87 @@ import (
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
-// OpportunitiesService serves the Tools for Opportunities and their Steps.
+// OpportunitiesService serves the Tools for Opportunities and their Steps,
+// and the app's routes that read them.
 type OpportunitiesService struct {
 	opportunities model.OpportunitiesRepository
 	companies     model.CompaniesRepository
 	recruiters    model.RecruitersRepository
-	now           func() time.Time
+	core          coremodel.CoreService
 }
 
 // NewOpportunities returns the OpportunitiesService.
-func NewOpportunities(opportunities model.OpportunitiesRepository, companies model.CompaniesRepository, recruiters model.RecruitersRepository, now func() time.Time) *OpportunitiesService {
-	return &OpportunitiesService{opportunities: opportunities, companies: companies, recruiters: recruiters, now: now}
+func NewOpportunities(opportunities model.OpportunitiesRepository, companies model.CompaniesRepository, recruiters model.RecruitersRepository, core coremodel.CoreService) *OpportunitiesService {
+	return &OpportunitiesService{opportunities: opportunities, companies: companies, recruiters: recruiters, core: core}
+}
+
+// Routes adds the routes that read Opportunities to mux, under
+// /api/career/opportunities.
+func (s *OpportunitiesService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/career/opportunities", s.listOpen)
+	mux.HandleFunc("GET /api/career/opportunities/{id}", s.getPage)
+}
+
+// listOpen answers every open Opportunity, top first.
+func (s *OpportunitiesService) listOpen(w http.ResponseWriter, r *http.Request) {
+	ranked, err := s.Ranked(r.Context())
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	coreutils.WriteJSON(w, http.StatusOK, ranked)
+}
+
+// Ranked is every open Opportunity, top first, as the app's lists show them,
+// for the Module's other services too.
+func (s *OpportunitiesService) Ranked(ctx context.Context) ([]model.TopOpportunityJSON, error) {
+	open, err := s.opportunities.Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	today, err := s.core.Today(ctx)
+	if err != nil {
+		return nil, err
+	}
+	careerutils.Rank(open, today)
+	ranked := []model.TopOpportunityJSON{}
+	for _, o := range open {
+		company, err := s.companies.GetByID(ctx, o.CompanyID)
+		if err != nil {
+			return nil, err
+		}
+		ranked = append(ranked, careerutils.ToTopOpportunityJSON(o, company, today))
+	}
+	return ranked, nil
+}
+
+// getPage answers everything about an Opportunity, open or closed, with its
+// Recruiter and Company.
+func (s *OpportunitiesService) getPage(w http.ResponseWriter, r *http.Request) {
+	o, ok := careerutils.FromPath(w, r, "Opportunity", s.opportunities.GetByID)
+	if !ok {
+		return
+	}
+	company, err := s.companies.GetByID(r.Context(), o.CompanyID)
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	var recruiter *model.Recruiter
+	if o.RecruiterID != nil {
+		brought, err := s.recruiters.GetByID(r.Context(), *o.RecruiterID)
+		if err != nil {
+			coreutils.ServerError(w, err)
+			return
+		}
+		recruiter = &brought
+	}
+	today, err := s.core.Today(r.Context())
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	coreutils.WriteJSON(w, http.StatusOK, careerutils.ToOpportunityPageJSON(o, company, recruiter, today))
 }
 
 // salarySchema is the JSON Schema of a salary range.
@@ -213,7 +284,7 @@ func sortSteps(steps []model.Step) {
 
 // replace stores o, changed now through the Tools, and answers it.
 func (s *OpportunitiesService) replace(ctx context.Context, o model.Opportunity) (any, error) {
-	o.UpdatedAt = s.now()
+	o.UpdatedAt = s.core.Now()
 	if err := s.opportunities.Replace(ctx, o); err != nil {
 		return nil, err
 	}
@@ -274,7 +345,7 @@ func (s *OpportunitiesService) saveTool(ctx context.Context, arguments json.RawM
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
 	}
-	now := s.now()
+	now := s.core.Now()
 	var o model.Opportunity
 	if args.ID == "" {
 		if args.Company == nil || args.Role == nil || strings.TrimSpace(*args.Role) == "" {
@@ -449,20 +520,15 @@ func (s *OpportunitiesService) fullJSON(ctx context.Context, o model.Opportunity
 		OpportunityJSON: short,
 		FitNote:         o.FitNote,
 		Details:         o.Details,
-		Pay:             model.PayJSON{FirstStated: o.Pay.FirstStated, Offered: o.Pay.Offered, BonusIncluded: o.Pay.BonusIncluded},
-		Conditions: model.ConditionsJSON{
-			Remote:          careerutils.OrNull(o.Conditions.Remote),
-			OfficeDays:      o.Conditions.OfficeDays,
-			OfficeLocation:  o.Conditions.OfficeLocation,
-			WorkingLanguage: careerutils.OrNull(o.Conditions.WorkingLanguage),
-		},
-		Perks:     append([]string{}, o.Perks...),
-		Steps:     []model.StepJSON{},
-		CreatedAt: o.CreatedAt,
-		UpdatedAt: o.UpdatedAt,
+		Pay:             careerutils.ToPayJSON(o.Pay),
+		Conditions:      careerutils.ToConditionsJSON(o.Conditions),
+		Perks:           append([]string{}, o.Perks...),
+		Steps:           []model.StepJSON{},
+		CreatedAt:       o.CreatedAt,
+		UpdatedAt:       o.UpdatedAt,
 	}
 	for _, step := range o.Steps {
-		j.Steps = append(j.Steps, model.StepJSON{ID: step.ID.Hex(), Kind: step.Kind, Date: step.Date, Time: careerutils.OrNull(step.Time), Notes: step.Notes})
+		j.Steps = append(j.Steps, careerutils.ToStepJSON(step))
 	}
 	return j, nil
 }

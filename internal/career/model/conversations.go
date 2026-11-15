@@ -134,6 +134,9 @@ type ConversationsRepository interface {
 	File(ctx context.Context, id, recruiterID bson.ObjectID) (Conversation, error)
 	// ByRecruiter returns the Conversations filed under the Recruiter.
 	ByRecruiter(ctx context.Context, recruiterID bson.ObjectID) ([]Conversation, error)
+	// WithSuggestedReply returns the filed Conversations whose Suggested
+	// Reply is of one of kinds.
+	WithSuggestedReply(ctx context.Context, kinds []string) ([]Conversation, error)
 	// SetSuggestedReply replaces the Conversation's Suggested Reply, unless
 	// it is ignored, and returns it, or Core's utils.ErrNotFound.
 	SetSuggestedReply(ctx context.Context, id bson.ObjectID, reply SuggestedReply) (Conversation, error)
@@ -182,4 +185,23 @@ type SuggestedReplyJSON struct {
 	Answers   time.Time      `json:"answers"`
 	Notes     []LanguageNote `json:"notes"`
 	WrittenAt time.Time      `json:"writtenAt"`
+}
+
+// RecruiterPageConversationJSON is a Conversation as its Recruiter's page
+// shows it: its LinkedIn URL, its last messages, oldest first, and its
+// Suggested Reply.
+type RecruiterPageConversationJSON struct {
+	ID       string        `json:"id"`
+	URL      string        `json:"url"`
+	Messages []MessageJSON `json:"messages"`
+	// SuggestedReply is null when there is none.
+	SuggestedReply *RecruiterPageReplyJSON `json:"suggestedReply"`
+}
+
+// RecruiterPageReplyJSON is a Suggested Reply as a Recruiter's page shows it.
+type RecruiterPageReplyJSON struct {
+	Text     string         `json:"text"`
+	Language string         `json:"language"`
+	Kind     string         `json:"kind"`
+	Notes    []LanguageNote `json:"notes"`
 }

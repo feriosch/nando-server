@@ -37,6 +37,8 @@ type Module struct {
 	companies     *service.CompaniesService
 	search        *service.SearchService
 	profile       *service.ProfileService
+	recruiters    *service.RecruitersService
+	overview      *service.OverviewService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -65,7 +67,7 @@ func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 	scheduledTask := coreutils.NewScheduledTask(repository.NewScheduledTask(db), service.WorkQueue(work),
 		coreutils.Trigger{URL: cfg.SyncTriggerURL, Token: cfg.SyncTriggerToken, Env: "CAREER_SYNC_TRIGGER"}, core.Now)
 	settingsService := service.NewSettings(settings)
-	opportunitiesService := service.NewOpportunities(opportunities, companies, recruiters, core.Now)
+	opportunitiesService := service.NewOpportunities(opportunities, companies, recruiters, core)
 	return &Module{
 		settings:      settingsService,
 		syncs:         service.NewSyncs(scheduledTask, syncs, conversations, work, core),
@@ -77,12 +79,17 @@ func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 		companies:     service.NewCompanies(companies, opportunities, opportunitiesService),
 		search:        service.NewSearch(recruiters, companies, opportunities, opportunitiesService),
 		profile:       service.NewProfile(profile),
+		recruiters:    service.NewRecruiters(recruiters, conversations),
+		overview:      service.NewOverview(conversations, recruiters, opportunitiesService, settingsService),
 	}, nil
 }
 
 // Routes adds the Module's routes to mux, all under /api/career/.
 func (m *Module) Routes(mux *http.ServeMux) {
 	m.settings.Routes(mux)
+	m.opportunities.Routes(mux)
+	m.recruiters.Routes(mux)
+	m.overview.Routes(mux)
 }
 
 // NotificationProvider is the Module's Notification provider, for
