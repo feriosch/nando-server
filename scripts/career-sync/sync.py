@@ -29,11 +29,13 @@ from datetime import date, datetime, time, tzinfo
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import httpx2
 from mcp import Client, StdioServerParameters
 from mcp.client.auth import OAuthClientProvider
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
 from mcp.shared.auth import AuthorizationCodeResult, OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
 
 log = logging.getLogger("nando-career-sync")
@@ -89,7 +91,8 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
         updates = []
         problem = None
         opened = 0
-        for thread_id in inbox_threads(inbox):
+        names = inbox_names(inbox)
+        for thread_id, name in names.items():
             thread = held.get(thread_id)
             if thread and thread["ignored"]:
                 continue
@@ -103,7 +106,11 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
                 problem = reader_problem(e)
                 break
             opened += 1
-            name = inbox_names(inbox)[thread_id]
+            if landed_on(conversation) != thread_id:
+                # The reader doesn't check where LinkedIn took it, and another
+                # thread's messages must never be filed under this one.
+                problem = {"kind": "other", "text": f"LinkedIn opened {conversation.get('url')} for thread {thread_id}"}
+                break
             messages = parse_conversation(
                 conversation.get("sections", {}).get("conversation", ""), other=name, today=now.date(), tz=now.tzinfo
             )
@@ -150,11 +157,6 @@ LINKEDIN = "https://www.linkedin.com"
 THREAD_PATH = re.compile(r"^/messaging/thread/(?P<id>[^/]+)/?$")
 
 
-def inbox_threads(inbox: dict[str, Any]) -> list[str]:
-    """The thread IDs get_inbox listed, most recent first."""
-    return list(inbox_names(inbox))
-
-
 def inbox_names(inbox: dict[str, Any]) -> dict[str, str]:
     """The other person's name in each thread get_inbox listed, by thread ID,
     most recent first."""
@@ -166,10 +168,19 @@ def inbox_names(inbox: dict[str, Any]) -> dict[str, str]:
     return names
 
 
+def landed_on(conversation: dict[str, Any]) -> str | None:
+    """The thread ID of the page get_conversation read, if it is a thread."""
+    path = THREAD_PATH.match(urlparse(conversation.get("url", "")).path)
+    return unquote(path["id"]) if path else None
+
+
 def person(conversation: dict[str, Any], name: str) -> dict[str, str]:
     """The other person in a conversation: their name, and their profile if
     the page links to it under their name."""
     found = {"name": name}
+    if not name:
+        # Every reference would match, the Owner's own profile first.
+        return found
     for ref in conversation.get("references", {}).get("conversation", []):
         if ref.get("kind") == "person" and ref.get("text", "").startswith(name):
             found["profileUrl"] = urljoin(LINKEDIN, ref["url"])
@@ -211,7 +222,12 @@ class Reader:
     async def call(self, tool: str, arguments: dict[str, Any] | None = None) -> Any:
         if tool not in READER_TOOLS:
             raise ReaderToolRefused(f"a Sync never calls the reader's {tool}")
-        return await call(self._client, tool, arguments)
+        try:
+            return await call(self._client, tool, arguments)
+        except MCPError as e:
+            # The reader stopped answering, or answered out of turn: to a
+            # Sync, the same as its Tool failing.
+            raise ToolError(tool, e.message) from e
 
 
 # A message group's heading, which LinkedIn writes for screen readers before
@@ -227,6 +243,10 @@ def parse_conversation(text: str, *, other: str, today: date, tz: tzinfo) -> lis
     which are in the Mac's time zone.
     """
     lines = [line.strip() for line in text.splitlines()]
+    # following[i] is the first non-empty line after line i.
+    following = [""] * len(lines)
+    for i in range(len(lines) - 2, -1, -1):
+        following[i] = lines[i + 1] or following[i + 1]
     messages: list[dict[str, Any]] = []
     day: date | None = None
     current: dict[str, Any] | None = None
@@ -246,14 +266,16 @@ def parse_conversation(text: str, *, other: str, today: date, tz: tzinfo) -> lis
         # A day heading comes only between groups, right before a group's
         # heading, and never as a group's first line: a group always has its
         # text. So a message saying just "Monday" stays a message.
-        following = next((later for later in lines[i + 1 :] if later), "")
-        if line and (current is None or current["lines"]) and GROUP_HEADING.match(following):
+        if line and (current is None or current["lines"]) and GROUP_HEADING.match(following[i]):
             heading_day = parse_day(line, today)
             if heading_day:
                 day = heading_day
                 continue
         if current is not None:
-            if line in current["skip"] or (line.startswith("View ") and line.endswith("profile")):
+            # The sender's profile link, name and time come before the text,
+            # so only lines before the text can be them.
+            is_header = line in current["skip"] or (line.startswith("View ") and line.endswith("profile"))
+            if not current["lines"] and (is_header or not line):
                 continue
             current["lines"].append(line)
     return [
@@ -508,9 +530,18 @@ async def connect() -> None:
     print(f"Connected to Nando. A Sync is {'due' if status['due'] else 'not due'} now.")
 
 
+def local_zone() -> tzinfo:
+    """The Mac's time zone, by name, so that a day heading across a change
+    to or from summer time gets its own offset. /etc/localtime links to it."""
+    try:
+        return ZoneInfo(os.path.realpath("/etc/localtime").split("/zoneinfo/", 1)[1])
+    except (IndexError, ValueError, ZoneInfoNotFoundError):
+        return datetime.now().astimezone().tzinfo
+
+
 async def hourly() -> None:
     async with nando_client(interactive=False) as nando:
-        await run_sync(nando, start_reader, now=datetime.now().astimezone(), pause=random_pause)
+        await run_sync(nando, start_reader, now=datetime.now(local_zone()), pause=random_pause)
 
 
 def main() -> int:

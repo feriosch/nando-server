@@ -92,3 +92,17 @@ Jane Recruiter sent the following message at 10:00 AM
 A new one."""
 
     assert [m["text"] for m in parse(text)] == ["A new one."]
+
+
+def test_lines_like_the_groups_header_are_kept_in_its_text():
+    text = """TODAY
+Jane Recruiter sent the following message at 10:42 AM
+View Jane Recruiter’s profile
+Jane Recruiter
+10:42 AM
+The role is on our careers page.
+View the full job profile
+Best,
+Jane Recruiter"""
+
+    assert parse(text)[0]["text"] == "The role is on our careers page.\nView the full job profile\nBest,\nJane Recruiter"

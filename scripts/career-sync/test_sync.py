@@ -208,6 +208,46 @@ async def test_an_inbox_the_reader_cant_read_is_reported():
     ]
 
 
+async def test_a_thread_the_inbox_gives_no_name_for_gets_no_profile():
+    nando = FakeNando(due=True)
+    reader = FakeReader(inbox=[Thread("2-fresh==", "", message("Jane Recruiter", "11:00 AM", "Hi"))])
+
+    await sync(nando, reader)
+
+    assert nando.recorded[0]["threads"][0]["person"] == {"name": ""}
+
+
+async def test_a_reader_that_stops_answering_is_reported_after_what_was_read():
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[
+            Thread("2-fresh==", "Jane Recruiter", message("Jane Recruiter", "11:00 AM", "Hi")),
+            Thread("2-broken==", "Kim Hunter", "", broken=True),
+        ]
+    )
+
+    await sync(nando, reader)
+
+    assert [[t["threadId"] for t in call["threads"]] for call in nando.recorded] == [["2-fresh=="], []]
+    assert nando.recorded[1]["problem"] == {"kind": "other", "text": "get_conversation: the reader stopped answering"}
+
+
+async def test_a_thread_linkedin_opens_another_page_for_is_reported():
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[
+            Thread("2-fresh==", "Jane Recruiter", message("Jane Recruiter", "11:00 AM", "Hi")),
+            Thread("2-gone==", "Kim Hunter", message("Lee Agent", "10:00 AM", "Someone else's thread."), landed="2-other=="),
+        ]
+    )
+
+    await sync(nando, reader)
+
+    assert [[t["threadId"] for t in call["threads"]] for call in nando.recorded] == [["2-fresh=="], []]
+    assert nando.recorded[1]["problem"]["kind"] == "other"
+    assert "2-gone==" in nando.recorded[1]["problem"]["text"]
+
+
 async def test_a_reader_error_is_reported_after_what_was_read():
     nando = FakeNando(due=True)
     reader = FakeReader(

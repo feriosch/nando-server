@@ -11,6 +11,7 @@ from urllib.parse import quote, unquote
 
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
+from mcp.shared.exceptions import MCPError
 from mcp_types import CallToolResult, TextContent
 
 
@@ -81,6 +82,11 @@ class Thread:
     profile: str = "/in/ACoAAOther/"
     # error, if set, is what get_conversation answers instead.
     error: CallToolResult | None = None
+    # landed, if set, is the thread LinkedIn opened instead of this one.
+    landed: str | None = None
+    # broken, if set, makes get_conversation fail as a protocol error, as when
+    # the reader stops answering, instead of as a Tool's error.
+    broken: bool = False
 
 
 class FakeReader:
@@ -122,9 +128,11 @@ class FakeReader:
             thread = next(t for t in self.inbox if t.thread_id == thread_id)
             if thread.error:
                 return thread.error
+            if thread.broken:
+                raise MCPError(code=-32603, message="the reader stopped answering")
             return answer(
                 {
-                    "url": f"https://www.linkedin.com/messaging/thread/{quote(thread_id, safe='')}/",
+                    "url": f"https://www.linkedin.com/messaging/thread/{quote(thread.landed or thread_id, safe='')}/",
                     "sections": {"conversation": thread.text},
                     "references": {
                         "conversation": [

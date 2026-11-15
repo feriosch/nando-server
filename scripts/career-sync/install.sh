@@ -9,11 +9,19 @@ uv="$(command -v uv)" || { echo "uv isn't installed: https://docs.astral.sh/uv/"
 agent="$HOME/Library/LaunchAgents/$label.plist"
 log="$HOME/Library/Logs/nando-career-sync.log"
 
+# A path as XML text in the plist, then as a sed replacement, where \, | and
+# & mean something.
+escape() {
+	printf '%s' "$1" |
+		sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g' |
+		sed -e 's/[\|&]/\\&/g'
+}
+
 mkdir -p "$HOME/Library/LaunchAgents" "$HOME/Library/Logs"
-sed -e "s|@UV@|$uv|" \
-	-e "s|@UV_DIR@|$(dirname "$uv")|" \
-	-e "s|@SCRIPT@|$here/sync.py|" \
-	-e "s|@LOG@|$log|" \
+sed -e "s|@UV@|$(escape "$uv")|" \
+	-e "s|@UV_DIR@|$(escape "$(dirname "$uv")")|" \
+	-e "s|@SCRIPT@|$(escape "$here/sync.py")|" \
+	-e "s|@LOG@|$(escape "$log")|" \
 	"$here/$label.plist" >"$agent"
 plutil -lint "$agent" >/dev/null
 
