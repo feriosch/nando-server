@@ -65,3 +65,119 @@ func TestNoSyncIsDueBefore7InTheOwnerTimeZone(t *testing.T) {
 		t.Errorf("at 07:00: due = false, want true")
 	}
 }
+
+// recordedJSON is what career_record_sync answers.
+type recordedJSON struct {
+	Sync   string `json:"sync"`
+	Stored int    `json:"stored"`
+}
+
+// tanakaThread is a LinkedIn thread with a Recruiter, as the Mac's script
+// sends it: two messages, the Owner's reply the newer.
+func tanakaThread(messages ...map[string]any) map[string]any {
+	return map[string]any{
+		"threadId": "2-tanaka",
+		"url":      "https://www.linkedin.com/messaging/thread/2-tanaka/",
+		"person":   map[string]any{"name": "Tanaka Yui", "profileUrl": "https://www.linkedin.com/in/tanaka-yui/"},
+		"messages": messages,
+	}
+}
+
+func message(id, from string, sentAt time.Time, text string) map[string]any {
+	return map[string]any{"id": id, "from": from, "sentAt": sentAt.Format(time.RFC3339), "text": text}
+}
+
+func TestASyncRecordsEachThreadsNewestMessage(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	mac := phone.macAt(at(0, 8, 0))
+	pitched := at(-3, 10, 15)
+	replied := at(-2, 21, 40)
+
+	got := callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"threads": []any{tanakaThread(
+		message("m1", "other", pitched, "Hello! I have a backend role at a fintech in Tokyo."),
+		message("m2", "owner", replied, "Thank you, could you share the job description?"),
+	)}})
+	if got.Sync == "" || got.Stored != 2 {
+		t.Errorf("career_record_sync = %+v, want a sync id and 2 stored", got)
+	}
+
+	status := callTool[syncStatusJSON](t, mac, "career_sync_status", nil)
+	if status.Since != "2025-01-01" {
+		t.Errorf("since = %q, want 2025-01-01", status.Since)
+	}
+	want := []threadJSON{{ThreadID: "2-tanaka", Newest: replied}}
+	if len(status.Threads) != 1 || status.Threads[0].ThreadID != want[0].ThreadID ||
+		!status.Threads[0].Newest.Equal(replied) || status.Threads[0].Ignored {
+		t.Errorf("threads = %+v, want %+v", status.Threads, want)
+	}
+}
+
+func TestMessagesASyncAlreadySentAreNotStoredAgain(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	mac := phone.macAt(at(0, 8, 0))
+	pitch := message("m1", "other", at(-3, 10, 15), "Hello! I have a backend role at a fintech in Tokyo.")
+	// The reader gave no id for this one, so it is told apart by sender, time and text.
+	reply := message("", "owner", at(-2, 21, 40), "Thank you, could you share the job description?")
+	callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"threads": []any{tanakaThread(pitch, reply)}})
+
+	later := phone.macAt(at(0, 20, 0))
+	jd := message("m3", "other", at(0, 12, 5), "Of course, here it is.")
+	got := callTool[recordedJSON](t, later, "career_record_sync", map[string]any{"threads": []any{tanakaThread(pitch, reply, jd)}})
+
+	if got.Stored != 1 {
+		t.Errorf("stored = %d, want 1: only the new message", got.Stored)
+	}
+}
+
+// recordSyncAt has the Mac record a Sync at that time, with a new message from
+// Tanaka-san sent a minute before.
+func (d *browser) recordSyncAt(now time.Time) {
+	d.nando.t.Helper()
+	sent := message("", "other", now.Add(-time.Minute), "Following up at "+now.Format(time.Kitchen))
+	callTool[recordedJSON](d.nando.t, d.macAt(now), "career_record_sync", map[string]any{"threads": []any{tanakaThread(sent)}})
+}
+
+func TestAtMostTwoSyncsAreDueOnADay(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.recordSyncAt(at(0, 7, 30))
+	phone.recordSyncAt(at(0, 14, 0))
+
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 21, 0)), "career_sync_status", nil); got.Due {
+		t.Errorf("after 2 Syncs today: due = true, want false")
+	}
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(1, 7, 0)), "career_sync_status", nil); !got.Due {
+		t.Errorf("the next Day at 07:00: due = false, want true")
+	}
+}
+
+func TestASyncIsDueOnly6HoursAfterTheLast(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.recordSyncAt(at(0, 8, 0))
+
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 13, 59)), "career_sync_status", nil); got.Due {
+		t.Errorf("5 h 59 m after the last Sync: due = true, want false")
+	}
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 14, 0)), "career_sync_status", nil); !got.Due {
+		t.Errorf("6 h after the last Sync: due = false, want true")
+	}
+}
+
+func TestASyncThatOnlyReportsAProblemDoesNotCount(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+
+	for _, now := range []time.Time{at(0, 8, 0), at(0, 9, 0)} {
+		got := callTool[recordedJSON](t, phone.macAt(now), "career_record_sync", map[string]any{"problem": map[string]any{"kind": "session_expired"}})
+		if got.Sync == "" || got.Stored != 0 {
+			t.Errorf("career_record_sync with a problem = %+v, want a sync id and 0 stored", got)
+		}
+	}
+
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 9, 1)), "career_sync_status", nil); !got.Due {
+		t.Errorf("after Syncs that only reported a problem: due = false, want true")
+	}
+}

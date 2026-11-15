@@ -32,9 +32,13 @@ type Config struct{}
 // NewCareerModule returns the Career Module reading and writing its own data
 // through db and asking Core for Core's data through core.
 func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService, cfg Config) (*Module, error) {
+	conversations, err := repository.NewConversations(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	return &Module{
 		settings: service.NewSettings(repository.NewSettings(db)),
-		syncs:    service.NewSyncs(core),
+		syncs:    service.NewSyncs(repository.NewSyncs(db), conversations, core),
 	}, nil
 }
 
@@ -56,5 +60,5 @@ func (p toolProvider) Tools() []coremodel.Tool {
 }
 
 func (p toolProvider) ToolsDescription() string {
-	return "see whether you are Looking for a new role"
+	return "see whether you are Looking for a new role, and record the LinkedIn messages your Mac's Sync reads"
 }
