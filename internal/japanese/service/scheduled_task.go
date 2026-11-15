@@ -129,10 +129,22 @@ func (s *ScheduledTaskService) WakeAtTick(ctx context.Context) error {
 	return nil
 }
 
-// RunActive records that a run claimed or resolved a Word Request now: its
-// fire is no longer in flight, and it may list the queue again.
-func (s *ScheduledTaskService) RunActive(ctx context.Context) error {
-	return s.scheduledTask.RecordActivity(ctx, s.now())
+// RunWorking records that a run claimed or resolved a Word Request now: its
+// fire is no longer in flight, and it may list the queue again. It only logs
+// an error: recording it never fails what the run did.
+func (s *ScheduledTaskService) RunWorking(ctx context.Context) {
+	if err := s.scheduledTask.RecordWorking(ctx, s.now()); err != nil {
+		log.Printf("record that a run is working: %v", err)
+	}
+}
+
+// RunStopped records that a run found nothing left to claim now, so it stops:
+// its fire is no longer in flight, and no run is between Word Requests. It
+// only logs an error.
+func (s *ScheduledTaskService) RunStopped(ctx context.Context) {
+	if err := s.scheduledTask.RecordStopped(ctx, s.now()); err != nil {
+		log.Printf("record that a run stopped: %v", err)
+	}
 }
 
 // fire calls the trigger, which starts a run, and logs the run's session.

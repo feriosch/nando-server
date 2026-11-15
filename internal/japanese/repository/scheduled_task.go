@@ -18,7 +18,8 @@ func NewScheduledTask(db *mongo.Database) model.ScheduledTaskRepository {
 }
 
 // scheduledTask is the scheduled_task collection, which holds one document:
-// the last fire (firedAt) and the last run activity (activeAt).
+// the last fire (firedAt), when a run last claimed or resolved a Word Request
+// (activeAt), and when one last found nothing left and stopped (endedAt).
 type scheduledTask struct {
 	collection *mongo.Collection
 }
@@ -30,36 +31,43 @@ const lastFireID = "last_fire"
 var never = time.Unix(0, 0).UTC()
 
 func (r scheduledTask) ClaimFire(ctx context.Context, now, startingSince, activeSince time.Time) (bool, error) {
-	// $expr can't be in an upsert's filter, so the one document is made
-	// first if it isn't there; another instance may make it at once.
-	_, err := r.collection.InsertOne(ctx, bson.D{{Key: "_id", Value: lastFireID}, {Key: "firedAt", Value: never}, {Key: "activeAt", Value: never}})
-	if err != nil && !mongo.IsDuplicateKeyError(err) {
-		return false, err
-	}
 	firedAt := bson.D{{Key: "$ifNull", Value: bson.A{"$firedAt", never}}}
 	activeAt := bson.D{{Key: "$ifNull", Value: bson.A{"$activeAt", never}}}
+	endedAt := bson.D{{Key: "$ifNull", Value: bson.A{"$endedAt", never}}}
 	// The filter matches nothing while a fire is in flight or a run was just
 	// active.
 	result, err := r.collection.UpdateOne(ctx,
 		bson.D{
 			{Key: "_id", Value: lastFireID},
 			{Key: "$expr", Value: bson.D{{Key: "$and", Value: bson.A{
-				// No fire in flight: the last one is old, or a run was
-				// active since it.
+				// No fire in flight: the last one is old, or a run worked
+				// or stopped since it.
 				bson.D{{Key: "$or", Value: bson.A{
 					bson.D{{Key: "$lte", Value: bson.A{firedAt, startingSince}}},
 					bson.D{{Key: "$gte", Value: bson.A{activeAt, firedAt}}},
+					bson.D{{Key: "$gte", Value: bson.A{endedAt, firedAt}}},
 				}}},
-				// No run active lately.
-				bson.D{{Key: "$lte", Value: bson.A{activeAt, activeSince}}},
+				// No run between Word Requests: none worked lately, or it
+				// stopped since.
+				bson.D{{Key: "$or", Value: bson.A{
+					bson.D{{Key: "$lte", Value: bson.A{activeAt, activeSince}}},
+					bson.D{{Key: "$gte", Value: bson.A{endedAt, activeAt}}},
+				}}},
 			}}}},
 		},
 		bson.D{{Key: "$set", Value: bson.D{{Key: "firedAt", Value: now}}}},
 	)
-	if err != nil {
-		return false, err
+	if err != nil || result.MatchedCount == 1 {
+		return err == nil, err
 	}
-	return result.MatchedCount == 1, nil
+	// Nothing matched: the one document blocks the fire, or there is none
+	// yet. $expr can't be in an upsert's filter, so it is inserted, and that
+	// claims the fire unless another instance made it first.
+	_, err = r.collection.InsertOne(ctx, bson.D{{Key: "_id", Value: lastFireID}, {Key: "firedAt", Value: now}})
+	if mongo.IsDuplicateKeyError(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func (r scheduledTask) ReleaseFire(ctx context.Context, firedAt time.Time) error {
@@ -70,10 +78,19 @@ func (r scheduledTask) ReleaseFire(ctx context.Context, firedAt time.Time) error
 	return err
 }
 
-func (r scheduledTask) RecordActivity(ctx context.Context, now time.Time) error {
+func (r scheduledTask) RecordWorking(ctx context.Context, now time.Time) error {
+	return r.record(ctx, "activeAt", now)
+}
+
+func (r scheduledTask) RecordStopped(ctx context.Context, now time.Time) error {
+	return r.record(ctx, "endedAt", now)
+}
+
+// record sets the time field to now, unless it holds a later one.
+func (r scheduledTask) record(ctx context.Context, field string, now time.Time) error {
 	_, err := r.collection.UpdateOne(ctx,
 		bson.D{{Key: "_id", Value: lastFireID}},
-		bson.D{{Key: "$max", Value: bson.D{{Key: "activeAt", Value: now}}}},
+		bson.D{{Key: "$max", Value: bson.D{{Key: field, Value: now}}}},
 		options.UpdateOne().SetUpsert(true),
 	)
 	return err

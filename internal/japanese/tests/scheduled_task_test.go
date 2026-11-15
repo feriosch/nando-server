@@ -220,6 +220,30 @@ func TestAnAskJustAfterARunResolvedAWordRequestLeavesItToThatRun(t *testing.T) {
 	}
 }
 
+func TestAnAskJustAfterARunFoundTheQueueEmptyWakesTheScheduledTask(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firedAt := n.clock.Now()
+	askFor(phone, map[string]any{"text": "一", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	n.clock.Set(firedAt.Add(time.Minute))
+	run, wordRequestID := claimOne(t, phone)
+	n.clock.Set(firedAt.Add(5 * time.Minute))
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word 一",
+	})
+	// The run lists again, finds nothing, and stops.
+	if left := callTool[claimedJSON](t, run, "japanese_list_word_requests", nil); len(left.WordRequests) != 0 {
+		t.Fatalf("the run claimed %+v; want nothing left", left.WordRequests)
+	}
+
+	n.clock.Set(firedAt.Add(5*time.Minute + 30*time.Second))
+	askFor(phone, map[string]any{"text": "二", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	if fires := trigger.received(); len(fires) != 2 {
+		t.Fatalf("the trigger was fired %d times; want twice: no run is left to take 二", len(fires))
+	}
+}
+
 func TestTheScheduledTaskIsNotWokenWhileARunHoldsAWordRequest(t *testing.T) {
 	trigger := newFakeTrigger(t)
 	n, phone := signedInBrowserWith(t, trigger.config())
