@@ -16,17 +16,17 @@ type HomeCardJSON struct {
 type CareerScreenJSON struct {
 	// Waiting are the Recruiters with a Suggested Reply that isn't late,
 	// newest first.
-	Waiting []WaitingJSON        `json:"waiting"`
+	Waiting []RecruiterReplyJSON `json:"waiting"`
 	Top     []TopOpportunityJSON `json:"top"`
-	// Active is how many Opportunities are open.
-	Active int `json:"active"`
+	// Open is how many Opportunities are open.
+	Open int `json:"open"`
 	// LateReplies is how many Recruiters have a Late Reply.
 	LateReplies int `json:"lateReplies"`
 }
 
-// WaitingJSON is a Recruiter with a Suggested Reply, as the Career screen and
-// Late Replies list them.
-type WaitingJSON struct {
+// RecruiterReplyJSON is a Recruiter with a Suggested Reply, as the Career
+// screen and Late Replies list them.
+type RecruiterReplyJSON struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
 	Organisation string `json:"organisation"`

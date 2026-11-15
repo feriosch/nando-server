@@ -226,7 +226,7 @@ type nextStepJSON struct {
 // table: its Interest, Stage and Steps, and when it last changed.
 type seededOpportunity struct {
 	role, interest, stage string
-	// steps are the dates of its Steps.
+	// steps are its Steps' dates, each YYYY-MM-DD, or YYYY-MM-DD HH:MM.
 	steps []string
 	// activity is the minute after 09:00 on Monday it last changed.
 	activity int
@@ -244,8 +244,9 @@ func seed(t *testing.T, phone *browser, opportunities ...seededOpportunity) map[
 		saved := callTool[fullOpportunityJSON](t, chat, "career_save_opportunity", map[string]any{
 			"company": map[string]any{"name": o.role + " Inc."}, "role": o.role, "interest": o.interest,
 		})
-		for _, date := range o.steps {
-			callTool[fullOpportunityJSON](t, chat, "career_save_step", map[string]any{"opportunityId": saved.ID, "kind": "Interview", "date": date})
+		for _, when := range o.steps {
+			date, clock, _ := strings.Cut(when, " ")
+			callTool[fullOpportunityJSON](t, chat, "career_save_step", map[string]any{"opportunityId": saved.ID, "kind": "Interview", "date": date, "time": clock})
 		}
 		if o.stage != "introduced" {
 			args := map[string]any{"id": saved.ID, "stage": o.stage}
@@ -269,7 +270,8 @@ func TestOpenOpportunitiesAreRankedByInterestThenHowFarAlongThenActivity(t *test
 		seededOpportunity{role: "Normal introduced, older", interest: "normal", stage: "introduced", activity: 1},
 		seededOpportunity{role: "High in process, no Step left", interest: "high", stage: "in_process", steps: []string{"2026-11-01"}, activity: 40},
 		seededOpportunity{role: "High introduced", interest: "high", stage: "introduced", activity: 45},
-		seededOpportunity{role: "High in process, Step on the 25th", interest: "high", stage: "in_process", steps: []string{"2026-11-10", "2026-11-25"}, activity: 30},
+		seededOpportunity{role: "High in process, the 25th at 18:00", interest: "high", stage: "in_process", steps: []string{"2026-11-10", "2026-11-25 18:00"}, activity: 30},
+		seededOpportunity{role: "High in process, the 25th at 10:00", interest: "high", stage: "in_process", steps: []string{"2026-11-25 10:00"}, activity: 25},
 		seededOpportunity{role: "Closed, high", interest: "high", stage: "closed", activity: 55},
 		seededOpportunity{role: "Normal offer", interest: "normal", stage: "offer", activity: 2},
 		seededOpportunity{role: "High in process, Step today", interest: "high", stage: "in_process", steps: []string{"2026-12-01", "2026-11-16"}, activity: 20},
@@ -284,7 +286,8 @@ func TestOpenOpportunitiesAreRankedByInterestThenHowFarAlongThenActivity(t *test
 	want := []string{
 		"High offer",
 		"High in process, Step today",
-		"High in process, Step on the 25th",
+		"High in process, the 25th at 10:00",
+		"High in process, the 25th at 18:00",
 		"High in process, no Step left",
 		"High introduced",
 		"Normal offer",

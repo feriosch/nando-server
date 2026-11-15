@@ -10,7 +10,7 @@ import (
 type careerScreenJSON struct {
 	Waiting     []waitingJSON        `json:"waiting"`
 	Top         []topOpportunityJSON `json:"top"`
-	Active      int                  `json:"active"`
+	Open        int                  `json:"open"`
 	LateReplies int                  `json:"lateReplies"`
 }
 
@@ -27,8 +27,17 @@ type waitingJSON struct {
 // thread is a LinkedIn thread with the Recruiter name, as the Mac's script
 // sends it.
 func thread(name string, messages ...map[string]any) map[string]any {
+	return threadWithID("2-"+name, name, messages...)
+}
+
+// secondThread is another LinkedIn thread with the Recruiter name.
+func secondThread(name string, messages ...map[string]any) map[string]any {
+	return threadWithID("3-"+name, name, messages...)
+}
+
+func threadWithID(threadID, name string, messages ...map[string]any) map[string]any {
 	return map[string]any{
-		"threadId": "2-" + name,
+		"threadId": threadID,
 		"url":      "https://www.linkedin.com/messaging/thread/2-" + name + "/",
 		"person":   map[string]any{"name": name, "profileUrl": "https://www.linkedin.com/in/" + name + "/"},
 		"messages": messages,
@@ -36,9 +45,9 @@ func thread(name string, messages ...map[string]any) map[string]any {
 }
 
 // fileThreads records, at 08:00 on Monday, a Sync with threads, and has a run
-// file each under a new Recruiter named as its person, of the agency
-// "<name> Agency". It returns each Conversation's id by Recruiter name, and
-// each Recruiter's id.
+// file each under a Recruiter named as its person, of the agency
+// "<name> Agency", new for their first thread. It returns each Conversation's
+// id by thread id, and each Recruiter's id by name.
 func fileThreads(t *testing.T, phone *browser, threads ...map[string]any) (conversations, recruiters map[string]string) {
 	t.Helper()
 	phone.saveTimeZone("Asia/Tokyo")
@@ -52,11 +61,14 @@ func fileThreads(t *testing.T, phone *browser, threads ...map[string]any) (conve
 		}
 		for _, item := range items {
 			name := item.Conversation.Person.Name
-			filed := callTool[filedJSON](t, run, "career_file_conversation", map[string]any{
-				"conversationId": item.Conversation.ID,
-				"recruiter":      map[string]any{"name": name, "kind": "agency", "organisation": name + " Agency"},
-			})
-			conversations[name], recruiters[name] = filed.Conversation.ID, filed.Recruiter.ID
+			args := map[string]any{"conversationId": item.Conversation.ID}
+			if id, ok := recruiters[name]; ok {
+				args["recruiterId"] = id
+			} else {
+				args["recruiter"] = map[string]any{"name": name, "kind": "agency", "organisation": name + " Agency"}
+			}
+			filed := callTool[filedJSON](t, run, "career_file_conversation", args)
+			conversations[item.Conversation.ThreadID], recruiters[name] = filed.Conversation.ID, filed.Recruiter.ID
 		}
 	}
 	return conversations, recruiters
@@ -82,11 +94,13 @@ func TestARecruiterWithAnAnswerOrFollowUpIsWaitingAndALateOneIsNot(t *testing.T)
 		thread("suzuki", message("z1", "other", at(-60, 10, 0), "Are you open to new roles?")),
 		thread("kato", message("k1", "other", at(-2, 10, 0), "Hello!")),
 		thread("ito", message("i1", "other", at(-1, 10, 0), "Would you like a casual chat?")),
+		secondThread("tanaka", message("t2", "other", at(-5, 10, 0), "Another role, in Osaka.")),
 	)
-	suggestReply(t, phone, conversations["sato"], "follow_up", "Hello Sato-san,\nI wanted to follow up.", at(-15, 9, 0))
-	suggestReply(t, phone, conversations["tanaka"], "answer", "Thank you for reaching out!\nCould you share the job description?", at(-3, 10, 15))
-	suggestReply(t, phone, conversations["suzuki"], "late", "My deepest apologies for the late response.", at(-60, 10, 0))
-	suggestReply(t, phone, conversations["ito"], "answer", "Sure, I'd love to.", at(-1, 10, 0))
+	suggestReply(t, phone, conversations["2-sato"], "follow_up", "Hello Sato-san,\nI wanted to follow up.", at(-15, 9, 0))
+	suggestReply(t, phone, conversations["2-tanaka"], "answer", "Thank you for reaching out!\nCould you share the job description?", at(-3, 10, 15))
+	suggestReply(t, phone, conversations["2-suzuki"], "late", "My deepest apologies for the late response.", at(-60, 10, 0))
+	suggestReply(t, phone, conversations["2-ito"], "answer", "Sure, I'd love to.", at(-1, 10, 0))
+	suggestReply(t, phone, conversations["3-tanaka"], "answer", "Thank you, but I'd rather stay in Tokyo.", at(-5, 10, 0))
 
 	screen := get[careerScreenJSON](phone, "/api/career")
 	var waiting []string
@@ -94,11 +108,11 @@ func TestARecruiterWithAnAnswerOrFollowUpIsWaitingAndALateOneIsNot(t *testing.T)
 		waiting = append(waiting, w.Name)
 	}
 	if want := []string{"ito", "tanaka", "sato"}; !slices.Equal(waiting, want) {
-		t.Fatalf("waiting = %q; want the Recruiters with an answer or a follow-up, by their last message, newest first: %q", waiting, want)
+		t.Fatalf("waiting = %q; want the Recruiters with an answer or a follow-up, once each, by their last message, newest first: %q", waiting, want)
 	}
 	if tanaka := screen.Waiting[1]; tanaka.ID != recruiters["tanaka"] || tanaka.Organisation != "tanaka Agency" ||
 		!tanaka.LastMessageAt.Equal(at(-3, 10, 15)) || tanaka.FirstLine != "Thank you for reaching out!" {
-		t.Errorf("Tanaka waits as %+v; want their id, agency, when their pitch came and the reply's first line", tanaka)
+		t.Errorf("Tanaka waits as %+v; want their id, agency, when their newest pitch came and its reply's first line", tanaka)
 	}
 	if sato := screen.Waiting[2]; !sato.LastMessageAt.Equal(at(-20, 10, 0)) {
 		t.Errorf("Sato's last message came at %v; want %v, their own, not the Owner's after it", sato.LastMessageAt, at(-20, 10, 0))
@@ -108,7 +122,7 @@ func TestARecruiterWithAnAnswerOrFollowUpIsWaitingAndALateOneIsNot(t *testing.T)
 	}
 }
 
-func TestTheCareerScreenShowsTheTop5AndCountsEveryActiveOpportunity(t *testing.T) {
+func TestTheCareerScreenShowsTheTop5AndCountsEveryOpenOpportunity(t *testing.T) {
 	_, phone := signedInBrowser(t)
 	seed(t, phone,
 		seededOpportunity{role: "Low introduced", interest: "low", stage: "introduced", activity: 1},
@@ -129,8 +143,8 @@ func TestTheCareerScreenShowsTheTop5AndCountsEveryActiveOpportunity(t *testing.T
 	if want := []string{"High offer", "High in process", "High introduced", "Normal offer", "Normal introduced"}; !slices.Equal(top, want) {
 		t.Errorf("top = %q; want the top 5, %q", top, want)
 	}
-	if screen.Active != 7 || screen.LateReplies != 0 || len(screen.Waiting) != 0 {
-		t.Errorf("active = %d, lateReplies = %d, waiting = %+v; want the 7 open Opportunities, and nothing waiting", screen.Active, screen.LateReplies, screen.Waiting)
+	if screen.Open != 7 || screen.LateReplies != 0 || len(screen.Waiting) != 0 {
+		t.Errorf("open = %d, lateReplies = %d, waiting = %+v; want the 7 open Opportunities, and nothing waiting", screen.Open, screen.LateReplies, screen.Waiting)
 	}
 	if next := screen.Top[1].NextStep; next == nil || next.Kind != "Interview" || next.Date != "2026-11-20" || next.Time != nil {
 		t.Errorf("the in-process Opportunity's next Step = %+v; want the interview on 2026-11-20, with no time", next)

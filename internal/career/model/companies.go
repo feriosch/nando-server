@@ -55,9 +55,9 @@ type CompanyJSON struct {
 	Opportunities []OpportunityJSON `json:"opportunities"`
 }
 
-// CompanyBriefJSON is a Company, with its Company Brief, as an Opportunity's
-// page shows it.
-type CompanyBriefJSON struct {
+// OpportunityPageCompanyJSON is a Company, with its Company Brief, as an
+// Opportunity's page shows it.
+type OpportunityPageCompanyJSON struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
 	LinkedInURL string `json:"linkedInUrl"`

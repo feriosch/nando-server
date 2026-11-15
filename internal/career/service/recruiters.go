@@ -1,10 +1,9 @@
 package service
 
 import (
-	"errors"
 	"net/http"
-
-	"go.mongodb.org/mongo-driver/v2/bson"
+	"slices"
+	"strings"
 
 	"github.com/feriosch/nando-server/internal/career/model"
 	careerutils "github.com/feriosch/nando-server/internal/career/utils"
@@ -32,30 +31,27 @@ func (s *RecruitersService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/career/recruiters/{id}", s.getPage)
 }
 
-// getPage answers the Recruiter with each of their Conversations.
+// getPage answers the Recruiter with each of their Conversations, the one
+// with the newest message first.
 func (s *RecruitersService) getPage(w http.ResponseWriter, r *http.Request) {
-	id, err := bson.ObjectIDFromHex(r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "there's no such Recruiter", http.StatusNotFound)
+	recruiter, ok := careerutils.FromPath(w, r, "Recruiter", s.recruiters.GetByID)
+	if !ok {
 		return
 	}
-	recruiter, err := s.recruiters.GetByID(r.Context(), id)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		http.Error(w, "there's no such Recruiter", http.StatusNotFound)
-		return
-	}
+	conversations, err := s.conversations.ByRecruiter(r.Context(), recruiter.ID)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	conversations, err := s.conversations.ByRecruiter(r.Context(), id)
-	if err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	page := model.RecruiterPageJSON{RecruiterJSON: careerutils.ToRecruiterJSON(recruiter), Conversations: []model.PageConversationJSON{}}
+	slices.SortFunc(conversations, func(a, b model.Conversation) int {
+		if c := b.Newest.Compare(a.Newest); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID.Hex(), b.ID.Hex())
+	})
+	page := model.RecruiterPageJSON{RecruiterJSON: careerutils.ToRecruiterJSON(recruiter), Conversations: []model.RecruiterPageConversationJSON{}}
 	for _, c := range conversations {
-		page.Conversations = append(page.Conversations, careerutils.ToPageConversationJSON(c, pageMessages))
+		page.Conversations = append(page.Conversations, careerutils.ToRecruiterPageConversationJSON(c, pageMessages))
 	}
 	coreutils.WriteJSON(w, http.StatusOK, page)
 }

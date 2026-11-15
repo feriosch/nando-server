@@ -20,9 +20,9 @@ func TestTheHomeCardShowsLookingHowManyRecruitersWaitAndTheTop3(t *testing.T) {
 		thread("sato", message("s1", "other", at(-2, 10, 0), "Hello!"), message("s2", "other", at(-2, 10, 5), "Any interest?")),
 		thread("suzuki", message("z1", "other", at(-60, 10, 0), "Are you open to new roles?")),
 	)
-	suggestReply(t, phone, conversations["tanaka"], "answer", "Thank you!", at(-3, 10, 15))
-	suggestReply(t, phone, conversations["sato"], "answer", "Hello Sato-san!", at(-2, 10, 5))
-	suggestReply(t, phone, conversations["suzuki"], "late", "My deepest apologies.", at(-60, 10, 0))
+	suggestReply(t, phone, conversations["2-tanaka"], "answer", "Thank you!", at(-3, 10, 15))
+	suggestReply(t, phone, conversations["2-sato"], "answer", "Hello Sato-san!", at(-2, 10, 5))
+	suggestReply(t, phone, conversations["2-suzuki"], "late", "My deepest apologies.", at(-60, 10, 0))
 	ids := seed(t, phone,
 		seededOpportunity{role: "Normal offer", interest: "normal", stage: "offer", activity: 1},
 		seededOpportunity{role: "High in process", interest: "high", stage: "in_process", steps: []string{"2026-11-10", "2026-11-19"}, activity: 2},

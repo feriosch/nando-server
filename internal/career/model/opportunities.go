@@ -227,14 +227,15 @@ type OpportunityPageJSON struct {
 	Conditions ConditionsJSON `json:"conditions"`
 	Perks      []string       `json:"perks"`
 	// Steps are by date, then time.
-	Steps []PageStepJSON `json:"steps"`
+	Steps []OpportunityPageStepJSON `json:"steps"`
 	// Recruiter is who brought it, or null.
-	Recruiter *RecruiterRefJSON `json:"recruiter"`
-	Company   CompanyBriefJSON  `json:"company"`
+	Recruiter *RecruiterRefJSON          `json:"recruiter"`
+	Company   OpportunityPageCompanyJSON `json:"company"`
 }
 
-// PageStepJSON is a Step on an Opportunity's page, marked if it is the next.
-type PageStepJSON struct {
+// OpportunityPageStepJSON is a Step on an Opportunity's page, marked if it is
+// the next.
+type OpportunityPageStepJSON struct {
 	StepJSON
 	Next bool `json:"next"`
 }

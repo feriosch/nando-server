@@ -71,3 +71,20 @@ func TestAnUnknownRecruiterIsNotFound(t *testing.T) {
 		phone.must(http.MethodGet, path, nil, http.StatusNotFound)
 	}
 }
+
+func TestARecruitersConversationsAreNewestFirst(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	conversations, recruiters := fileThreads(t, phone,
+		thread("tanaka", message("t1", "other", at(-30, 10, 0), "A role at a fintech.")),
+		secondThread("tanaka", message("t2", "other", at(-2, 10, 0), "A role in Osaka.")),
+	)
+
+	page := get[recruiterPageJSON](phone, "/api/career/recruiters/"+recruiters["tanaka"])
+	var ids []string
+	for _, c := range page.Conversations {
+		ids = append(ids, c.ID)
+	}
+	if want := []string{conversations["3-tanaka"], conversations["2-tanaka"]}; !slices.Equal(ids, want) {
+		t.Errorf("Tanaka's Conversations are %q; want the one with the newest message first, %q", ids, want)
+	}
+}

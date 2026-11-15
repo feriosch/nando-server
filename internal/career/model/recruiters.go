@@ -65,5 +65,6 @@ type RecruiterRefJSON struct {
 // each of their Conversations.
 type RecruiterPageJSON struct {
 	RecruiterJSON
-	Conversations []PageConversationJSON `json:"conversations"`
+	// Conversations are newest first.
+	Conversations []RecruiterPageConversationJSON `json:"conversations"`
 }

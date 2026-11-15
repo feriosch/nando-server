@@ -4,8 +4,10 @@ package utils
 import (
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	coremodel "github.com/feriosch/nando-server/internal/core/model"
 )
 
 // OrNull is s, or nil if s is "": an optional string as the Tools write it.
@@ -75,9 +77,29 @@ func ToOpportunityJSON(o model.Opportunity, company model.Company) model.Opportu
 	return j
 }
 
+// ToPayJSON returns pay as the Tools and the API answer it.
+func ToPayJSON(pay model.Pay) model.PayJSON {
+	return model.PayJSON{FirstStated: pay.FirstStated, Offered: pay.Offered, BonusIncluded: pay.BonusIncluded}
+}
+
+// ToConditionsJSON returns c as the Tools and the API answer them.
+func ToConditionsJSON(c model.Conditions) model.ConditionsJSON {
+	return model.ConditionsJSON{
+		Remote:          OrNull(c.Remote),
+		OfficeDays:      c.OfficeDays,
+		OfficeLocation:  c.OfficeLocation,
+		WorkingLanguage: OrNull(c.WorkingLanguage),
+	}
+}
+
+// ToStepJSON returns step as the Tools and the API answer it.
+func ToStepJSON(step model.Step) model.StepJSON {
+	return model.StepJSON{ID: step.ID.Hex(), Kind: step.Kind, Date: step.Date, Time: OrNull(step.Time), Notes: step.Notes}
+}
+
 // ToTopOpportunityJSON returns the open Opportunity o, at company, as the
-// app's lists show it, with its next Step from today (YYYY-MM-DD).
-func ToTopOpportunityJSON(o model.Opportunity, company model.Company, today string) model.TopOpportunityJSON {
+// app's lists show it, with its next Step from today.
+func ToTopOpportunityJSON(o model.Opportunity, company model.Company, today coremodel.Day) model.TopOpportunityJSON {
 	j := model.TopOpportunityJSON{
 		ID:       o.ID.Hex(),
 		Company:  model.CompanyRefJSON{ID: company.ID.Hex(), Name: company.Name},
@@ -91,20 +113,74 @@ func ToTopOpportunityJSON(o model.Opportunity, company model.Company, today stri
 	return j
 }
 
-// ToPageConversationJSON returns c as its Recruiter's page shows it, with its
-// last n messages by when they were sent, oldest first.
-func ToPageConversationJSON(c model.Conversation, n int) model.PageConversationJSON {
+// ToOpportunityPageJSON returns o, at company and brought by recruiter, if
+// any, as its page shows it, with its next Step from today marked.
+func ToOpportunityPageJSON(o model.Opportunity, company model.Company, recruiter *model.Recruiter, today coremodel.Day) model.OpportunityPageJSON {
+	j := model.OpportunityPageJSON{
+		ID:         o.ID.Hex(),
+		Role:       o.Role,
+		Stage:      o.Stage,
+		Outcome:    OrNull(o.Outcome),
+		Interest:   o.Interest,
+		FitNote:    o.FitNote,
+		Details:    o.Details,
+		Pay:        ToPayJSON(o.Pay),
+		Conditions: ToConditionsJSON(o.Conditions),
+		Perks:      append([]string{}, o.Perks...),
+		Steps:      []model.OpportunityPageStepJSON{},
+		Company: model.OpportunityPageCompanyJSON{
+			ID: company.ID.Hex(), Name: company.Name, LinkedInURL: company.LinkedInURL, WebsiteURL: company.WebsiteURL, Brief: company.Brief,
+		},
+	}
+	next := NextStep(o, today)
+	for _, step := range o.Steps {
+		j.Steps = append(j.Steps, model.OpportunityPageStepJSON{StepJSON: ToStepJSON(step), Next: next != nil && step.ID == next.ID})
+	}
+	if recruiter != nil {
+		j.Recruiter = &model.RecruiterRefJSON{ID: recruiter.ID.Hex(), Name: recruiter.Name}
+	}
+	return j
+}
+
+// ToRecruiterPageConversationJSON returns c as its Recruiter's page shows it,
+// with its last n messages by when they were sent, oldest first.
+func ToRecruiterPageConversationJSON(c model.Conversation, n int) model.RecruiterPageConversationJSON {
 	messages := slices.Clone(c.Messages)
 	slices.SortStableFunc(messages, func(a, b model.Message) int { return a.SentAt.Compare(b.SentAt) })
 	if len(messages) > n {
 		messages = messages[len(messages)-n:]
 	}
-	j := model.PageConversationJSON{ID: c.ID.Hex(), URL: c.URL, Messages: []model.MessageJSON{}}
+	j := model.RecruiterPageConversationJSON{ID: c.ID.Hex(), URL: c.URL, Messages: []model.MessageJSON{}}
 	for _, m := range messages {
 		j.Messages = append(j.Messages, model.MessageJSON{ID: m.LinkedInID, From: m.From, SentAt: m.SentAt, Text: m.Text})
 	}
 	if r := c.SuggestedReply; r != nil {
-		j.SuggestedReply = &model.PageReplyJSON{Text: r.Text, Language: r.Language, Kind: r.Kind, Notes: append([]model.LanguageNote{}, r.Notes...)}
+		j.SuggestedReply = &model.RecruiterPageReplyJSON{Text: r.Text, Language: r.Language, Kind: r.Kind, Notes: append([]model.LanguageNote{}, r.Notes...)}
 	}
 	return j
+}
+
+// ToRecruiterReplyJSON returns recruiter with c's Suggested Reply, as the
+// Career screen and Late Replies list them.
+func ToRecruiterReplyJSON(recruiter model.Recruiter, c model.Conversation) model.RecruiterReplyJSON {
+	firstLine, _, _ := strings.Cut(c.SuggestedReply.Text, "\n")
+	return model.RecruiterReplyJSON{
+		ID: recruiter.ID.Hex(), Name: recruiter.Name, Organisation: recruiter.Organisation,
+		LastMessageAt: lastFromRecruiter(c), FirstLine: strings.TrimSpace(firstLine),
+	}
+}
+
+// lastFromRecruiter is when c's newest message from its Recruiter was sent,
+// or its newest message, if they sent none.
+func lastFromRecruiter(c model.Conversation) time.Time {
+	var last time.Time
+	for _, m := range c.Messages {
+		if m.From == model.MessageFromOther && m.SentAt.After(last) {
+			last = m.SentAt
+		}
+	}
+	if last.IsZero() {
+		return c.Newest
+	}
+	return last
 }

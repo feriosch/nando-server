@@ -5,19 +5,19 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	careerutils "github.com/feriosch/nando-server/internal/career/utils"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
-// screenTop is how many top Opportunities the Career screen shows.
-const screenTop = 5
-
-// homeCardTop is how many top Opportunities the Home Card shows.
-const homeCardTop = 3
+// How many top Opportunities the Home Card and the Career screen show.
+const (
+	homeCardTop = 3
+	screenTop   = 5
+)
 
 // OverviewService answers the app's overviews of the Module: the Home Card,
 // the Career screen and Late Replies. A Recruiter is waiting when one of
@@ -42,18 +42,6 @@ func (s *OverviewService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/career/late-replies", s.listLate)
 }
 
-// listLate answers the Recruiters with a Late Reply, by how old their
-// message is, oldest first.
-func (s *OverviewService) listLate(w http.ResponseWriter, r *http.Request) {
-	late, err := s.withReplies(r.Context(), model.ReplyLate)
-	if err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	slices.SortStableFunc(late, func(a, b model.WaitingJSON) int { return a.LastMessageAt.Compare(b.LastMessageAt) })
-	coreutils.WriteJSON(w, http.StatusOK, late)
-}
-
 // getHomeCard answers the Career Home Card.
 func (s *OverviewService) getHomeCard(w http.ResponseWriter, r *http.Request) {
 	settings, err := s.settings.Settings(r.Context())
@@ -61,84 +49,104 @@ func (s *OverviewService) getHomeCard(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	waiting, err := s.withReplies(r.Context(), model.ReplyAnswer, model.ReplyFollowUp)
+	waiting, err := s.waiting(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	top, err := s.opportunities.Top(r.Context(), homeCardTop)
+	ranked, err := s.opportunities.Ranked(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	coreutils.WriteJSON(w, http.StatusOK, model.HomeCardJSON{Looking: settings.Looking, Waiting: len(waiting), Top: top})
+	coreutils.WriteJSON(w, http.StatusOK, model.HomeCardJSON{Looking: settings.Looking, Waiting: len(waiting), Top: ranked[:min(len(ranked), homeCardTop)]})
 }
 
 // getScreen answers the Career screen.
 func (s *OverviewService) getScreen(w http.ResponseWriter, r *http.Request) {
-	waiting, err := s.withReplies(r.Context(), model.ReplyAnswer, model.ReplyFollowUp)
+	waiting, err := s.waiting(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	slices.SortStableFunc(waiting, func(a, b model.WaitingJSON) int { return b.LastMessageAt.Compare(a.LastMessageAt) })
-	late, err := s.withReplies(r.Context(), model.ReplyLate)
+	late, err := s.late(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	open, err := s.opportunities.Top(r.Context(), -1)
+	ranked, err := s.opportunities.Ranked(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
 	coreutils.WriteJSON(w, http.StatusOK, model.CareerScreenJSON{
 		Waiting:     waiting,
-		Top:         open[:min(len(open), screenTop)],
-		Active:      len(open),
+		Top:         ranked[:min(len(ranked), screenTop)],
+		Open:        len(ranked),
 		LateReplies: len(late),
 	})
 }
 
-// withReplies returns each Recruiter with a Suggested Reply of one of kinds,
-// once, from their Conversation with the newest message of theirs.
-func (s *OverviewService) withReplies(ctx context.Context, kinds ...string) ([]model.WaitingJSON, error) {
+// listLate answers Late Replies.
+func (s *OverviewService) listLate(w http.ResponseWriter, r *http.Request) {
+	late, err := s.late(r.Context())
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	coreutils.WriteJSON(w, http.StatusOK, late)
+}
+
+// waiting is each Recruiter waiting, once, by their newest message waiting
+// for an answer or a follow-up, newest first.
+func (s *OverviewService) waiting(ctx context.Context) ([]model.RecruiterReplyJSON, error) {
+	return s.withReplies(ctx, func(a, b model.RecruiterReplyJSON) int { return b.LastMessageAt.Compare(a.LastMessageAt) },
+		model.ReplyAnswer, model.ReplyFollowUp)
+}
+
+// late is each Recruiter with a Late Reply, once, by their oldest message
+// waiting for one, oldest first.
+func (s *OverviewService) late(ctx context.Context) ([]model.RecruiterReplyJSON, error) {
+	return s.withReplies(ctx, func(a, b model.RecruiterReplyJSON) int { return a.LastMessageAt.Compare(b.LastMessageAt) },
+		model.ReplyLate)
+}
+
+// withReplies lists each Recruiter with a Suggested Reply of one of kinds,
+// once, from whichever of their Conversations comes first in order, and in
+// that order. Ties fall back to the Recruiter's id, then the reply, so the
+// list is the same on every request.
+func (s *OverviewService) withReplies(ctx context.Context, order func(a, b model.RecruiterReplyJSON) int, kinds ...string) ([]model.RecruiterReplyJSON, error) {
 	conversations, err := s.conversations.WithSuggestedReply(ctx, kinds)
 	if err != nil {
 		return nil, err
 	}
-	newest := map[bson.ObjectID]model.Conversation{}
+	recruiters := map[bson.ObjectID]model.Recruiter{}
+	listed := []model.RecruiterReplyJSON{}
 	for _, c := range conversations {
-		if held, ok := newest[*c.RecruiterID]; !ok || lastFromRecruiter(c).After(lastFromRecruiter(held)) {
-			newest[*c.RecruiterID] = c
+		recruiter, ok := recruiters[*c.RecruiterID]
+		if !ok {
+			if recruiter, err = s.recruiters.GetByID(ctx, *c.RecruiterID); err != nil {
+				return nil, err
+			}
+			recruiters[recruiter.ID] = recruiter
+		}
+		listed = append(listed, careerutils.ToRecruiterReplyJSON(recruiter, c))
+	}
+	slices.SortFunc(listed, func(a, b model.RecruiterReplyJSON) int {
+		if c := order(a, b); c != 0 {
+			return c
+		}
+		if c := strings.Compare(a.ID, b.ID); c != 0 {
+			return c
+		}
+		return strings.Compare(a.FirstLine, b.FirstLine)
+	})
+	once, seen := []model.RecruiterReplyJSON{}, map[string]bool{}
+	for _, j := range listed {
+		if !seen[j.ID] {
+			seen[j.ID] = true
+			once = append(once, j)
 		}
 	}
-	listed := []model.WaitingJSON{}
-	for recruiterID, c := range newest {
-		recruiter, err := s.recruiters.GetByID(ctx, recruiterID)
-		if err != nil {
-			return nil, err
-		}
-		firstLine, _, _ := strings.Cut(c.SuggestedReply.Text, "\n")
-		listed = append(listed, model.WaitingJSON{
-			ID: recruiter.ID.Hex(), Name: recruiter.Name, Organisation: recruiter.Organisation,
-			LastMessageAt: lastFromRecruiter(c), FirstLine: strings.TrimSpace(firstLine),
-		})
-	}
-	return listed, nil
-}
-
-// lastFromRecruiter is when c's newest message from its Recruiter was sent,
-// or its newest message, if they sent none.
-func lastFromRecruiter(c model.Conversation) time.Time {
-	var last time.Time
-	for _, m := range c.Messages {
-		if m.From == model.MessageFromOther && m.SentAt.After(last) {
-			last = m.SentAt
-		}
-	}
-	if last.IsZero() {
-		return c.Newest
-	}
-	return last
+	return once, nil
 }

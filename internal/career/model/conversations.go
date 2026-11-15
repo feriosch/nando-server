@@ -157,18 +157,19 @@ type SuggestedReplyJSON struct {
 	WrittenAt time.Time      `json:"writtenAt"`
 }
 
-// PageConversationJSON is a Conversation as its Recruiter's page shows it:
-// its LinkedIn URL, its last messages, oldest first, and its Suggested Reply.
-type PageConversationJSON struct {
+// RecruiterPageConversationJSON is a Conversation as its Recruiter's page
+// shows it: its LinkedIn URL, its last messages, oldest first, and its
+// Suggested Reply.
+type RecruiterPageConversationJSON struct {
 	ID       string        `json:"id"`
 	URL      string        `json:"url"`
 	Messages []MessageJSON `json:"messages"`
 	// SuggestedReply is null when there is none.
-	SuggestedReply *PageReplyJSON `json:"suggestedReply"`
+	SuggestedReply *RecruiterPageReplyJSON `json:"suggestedReply"`
 }
 
-// PageReplyJSON is a Suggested Reply as a Recruiter's page shows it.
-type PageReplyJSON struct {
+// RecruiterPageReplyJSON is a Suggested Reply as a Recruiter's page shows it.
+type RecruiterPageReplyJSON struct {
 	Text     string         `json:"text"`
 	Language string         `json:"language"`
 	Kind     string         `json:"kind"`

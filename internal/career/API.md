@@ -27,7 +27,7 @@ The Home Card, the Career screen and its pages, all read-only. None of them list
 Lists show open Opportunities only, top first:
 
 1. by Interest: `high`, then `normal`, then `low`;
-2. within the same Interest, by Stage: `offer`, then `in_process` by the date of its next Step (one with none left after the others), then `introduced`;
+2. within the same Interest, by Stage: `offer`, then `in_process` by when its next Step is, by date then time (one with none left after the others), then `introduced`;
 3. then the one that changed most recently through the Tools first.
 
 The fit note is never used to rank. An Opportunity's **next Step** is its first Step, by date then time, dated today or later in the Owner Time Zone. Past Steps are never next. The rule is `Rank` in `utils/ranking.go`.
@@ -49,7 +49,7 @@ Each list shows an Opportunity as:
 
 ### Waiting and Late Replies
 
-A Recruiter is **waiting** when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up`. One whose Suggested Reply is `late` is in Late Replies instead. A Lead is listed like any other Recruiter. Both lists show each Recruiter once, from their Conversation with their newest message:
+A Recruiter is **waiting** when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up`. One whose Suggested Reply is `late` is in Late Replies instead. A Lead is listed like any other Recruiter. Each list shows a Recruiter once: waiting from their newest message waiting for an answer or a follow-up, Late Replies from their oldest message waiting for a Late Reply. Ties are listed in the same order on every request:
 
 ```json
 {
@@ -81,12 +81,12 @@ A Recruiter is **waiting** when one of their Conversations has a Suggested Reply
 `200`: the Career screen.
 
 ```json
-{ "waiting": [], "top": [], "active": 7, "lateReplies": 1 }
+{ "waiting": [], "top": [], "open": 7, "lateReplies": 1 }
 ```
 
 - `waiting`: the Recruiters waiting, by `lastMessageAt`, newest first.
 - `top`: the top 5 open Opportunities.
-- `active`: how many Opportunities are open.
+- `open`: how many Opportunities are open.
 - `lateReplies`: how many Recruiters are in Late Replies.
 
 ### `GET /api/career/opportunities`
@@ -126,7 +126,7 @@ A Recruiter is **waiting** when one of their Conversations has a Suggested Reply
 
 ### `GET /api/career/recruiters/{id}`
 
-`200`: the Recruiter and each of their Conversations. `404` when no Recruiter has the id.
+`200`: the Recruiter and each of their Conversations, the one with the newest message first. `404` when no Recruiter has the id.
 
 ```json
 {
