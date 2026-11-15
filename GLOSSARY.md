@@ -140,6 +140,46 @@ _Avoid_: Result, prediction, match, suggestion
 What Nando finds out about a kanji the Owner hasn't stored, from kanjiapi.dev and jisho.org: its English meanings, readings, strokes, grade and JLPT level, and some common words with it. It is read when asked for, never stored, and never made for a stored Kanji.
 _Avoid_: Preview, external Kanji, unstored Kanji page
 
+## Career
+
+The Module for keeping up with the Opportunities that Recruiters bring the Owner, from the first message until each one closes. Claude reads the Owner's messages and suggests replies; the Owner always sends them.
+
+**Opportunity**:
+One role at one Company put to the Owner, from the first message about it until it closes. A Recruiter who pitches three Companies brings three Opportunities, two roles at the same Company are two Opportunities, and a Company that comes back after an Opportunity closed starts a new one. It has at most one Recruiter, the one who brought it; one the Owner finds themselves has none.
+_Avoid_: Application, process, job, deal
+
+**Stage**:
+Where an Opportunity stands overall: Introduced, In Process, Offer, or Closed with an outcome. It can skip ahead but never goes back.
+_Avoid_: Status, phase, step
+
+**Step**:
+One dated event inside an Opportunity's process, of any kind, such as a casual interview, a take-home assignment or a final interview. An Opportunity has any number of Steps, in any order, and none are required.
+_Avoid_: Round, phase, interview (for any Step), stage
+
+**Perk**:
+Something an Opportunity offers beyond its pay and working conditions, written freely, such as a housing allowance or side jobs being allowed.
+_Avoid_: Benefit, extra
+
+**Company**:
+An employer that has been put to the Owner in at least one Opportunity. It keeps what Nando knows about the employer across all of its Opportunities.
+_Avoid_: Employer, firm, client
+
+**Recruiter**:
+A person who contacts the Owner about roles, either from an agency or from the hiring Company itself. One Recruiter can bring many Opportunities.
+_Avoid_: Headhunter, agent, contact, HR
+
+**Lead**:
+A Recruiter who has never brought the Owner an Opportunity. It is worked out from the Recruiter's Opportunities, never set by hand, and a Recruiter who brings one stops being a Lead for good.
+_Avoid_: Prospect, cold contact, inactive recruiter
+
+**Conversation**:
+One message thread between the Owner and exactly one Recruiter, such as a LinkedIn conversation, of which Nando keeps a copy.
+_Avoid_: Thread, chat, inbox, message (for the whole thread)
+
+**Suggested Reply**:
+Claude's draft of the Owner's next message in a Conversation whose last message is the Recruiter's, written to sound like the Owner. Only the Owner ever sends it; Claude never sends anything.
+_Avoid_: Draft, auto-reply, response, answer
+
 ## Body
 
 Measurements of the Owner, kept in Core so that any Module can read them.
