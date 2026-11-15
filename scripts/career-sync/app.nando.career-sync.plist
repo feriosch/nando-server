@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The Career Sync's LaunchAgent. install.sh fills in the @...@ paths and
+  copies it to ~/Library/LaunchAgents/. launchd runs sync.py at minute 0 of
+  every hour, once at login (RunAtLoad), and once on wake for the hours the
+  Mac slept through (launchd coalesces missed StartCalendarInterval runs).
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>app.nando.career-sync</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>@UV@</string>
+		<string>run</string>
+		<string>--quiet</string>
+		<string>--script</string>
+		<string>@SCRIPT@</string>
+	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<!-- launchd's PATH lacks uv's folder; sync.py starts the reader with uvx from it. -->
+		<key>PATH</key>
+		<string>@UV_DIR@:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>ProcessType</key>
+	<string>Background</string>
+	<key>StandardOutPath</key>
+	<string>@LOG@</string>
+	<key>StandardErrorPath</key>
+	<string>@LOG@</string>
+</dict>
+</plist>
