@@ -258,9 +258,9 @@ Core's own Notification is the Weigh-in reminder: `{ "title": "Weigh-in", "body"
 
 ### `POST /internal/tick`
 
-Called only by Cloud Scheduler, every 30 minutes at :00 and :30. It needs no Session, but its `Authorization: Bearer` token must be a Google-signed OIDC token for `TICK_AUDIENCE` issued to `SCHEDULER_SERVICE_ACCOUNT`.
+Called only by Cloud Scheduler, every 5 minutes. It needs no Session, but its `Authorization: Bearer` token must be a Google-signed OIDC token for `TICK_AUDIENCE` issued to `SCHEDULER_SERVICE_ACCOUNT`.
 
-At each tick Core asks every Notification provider (Core's own and every Module's) which Notifications are due in the current half hour, the one starting at :00 or :30 in the Owner Time Zone, and sends each one that hasn't been sent before. Every Notification has an ID, such as `calories:evening-summary:2026-10-20`, that Core remembers for 30 days in `sent_notifications`. Then Core runs every Module's tick job, its work to do every half hour, such as the Japanese Module waking Claude for Word Requests still waiting.
+At each tick Core asks every Notification provider (Core's own and every Module's) which Notifications are due in the current half hour, the one starting at :00 or :30 in the Owner Time Zone, and sends each one that hasn't been sent before. So the six ticks of a half hour send each of its Notifications once, at the first tick that runs. Every Notification has an ID, such as `calories:evening-summary:2026-10-20`, that Core remembers for 30 days in `sent_notifications`. Then Core runs every Module's tick job, its work to do at every tick, such as the Japanese Module waking Claude for Word Requests still waiting.
 
 - `204`: done. A push service that failed to take a message doesn't fail the tick; that Notification isn't retried.
 - `401`: no token, or not the scheduler's.

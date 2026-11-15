@@ -118,21 +118,129 @@ func TestAnAnsweredOrRetriedWordRequestWakesTheScheduledTask(t *testing.T) {
 	}
 }
 
-func TestTheScheduledTaskIsWokenAtMostOnceEveryTwoMinutes(t *testing.T) {
+func TestAnAskWhileAWokenRunIsStartingDoesNotWakeASecondRun(t *testing.T) {
 	trigger := newFakeTrigger(t)
 	n, phone := signedInBrowserWith(t, trigger.config())
-	firstAt := n.clock.Now()
-	askFor(phone, map[string]any{"text": "一", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	firedAt := n.clock.Now()
+	askFor(phone, map[string]any{"text": "食べた", "kind": "add", "group": "gaming"}, http.StatusCreated)
 
-	n.clock.Set(firstAt.Add(2*time.Minute - time.Second))
-	askFor(phone, map[string]any{"text": "二", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	// The run it woke is still starting: it hasn't claimed 食べた yet.
+	n.clock.Set(firedAt.Add(3 * time.Minute))
+	askFor(phone, map[string]any{"text": "飲んだ", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	if fires := trigger.received(); len(fires) != 1 {
+		t.Fatalf("the trigger was fired %d times; want once: the run starting lists 飲んだ too", len(fires))
+	}
+}
+
+func TestTheTickWakesTheScheduledTaskAgainOnlyTenMinutesAfterAFire(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firedAt := n.clock.Now()
+	// The run it wakes is still starting: it hasn't claimed the Word Request yet.
+	askFor(phone, map[string]any{"text": "食べた", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	n.clock.Set(firedAt.Add(5 * time.Minute))
+	n.tick()
 	early := len(trigger.received())
-	n.clock.Set(firstAt.Add(2 * time.Minute))
-	askFor(phone, map[string]any{"text": "三", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	n.clock.Set(firedAt.Add(10 * time.Minute))
+	n.tick()
 	late := len(trigger.received())
 
 	if early != 1 || late != 2 {
-		t.Fatalf("fired %d times by a second short of 2 minutes and %d by 2 minutes; want 1, then 2", early, late)
+		t.Fatalf("fired %d times by the tick 5 minutes after the Owner's ask and %d by the one 10 minutes after; want 1, then 2", early, late)
+	}
+}
+
+func TestTheOwnersAskWakesTheScheduledTaskThreeMinutesAfterAFire(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firedAt := n.clock.Now()
+	askFor(phone, map[string]any{"text": "一", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	// That run finished 一 quickly and stopped, so no run holds a claim.
+	run, wordRequestID := claimOne(t, phone)
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word 一",
+	})
+
+	n.clock.Set(firedAt.Add(3 * time.Minute))
+	askFor(phone, map[string]any{"text": "二", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	if fires := trigger.received(); len(fires) != 2 {
+		t.Fatalf("the trigger was fired %d times; want twice: the Owner's second ask doesn't wait for the tick's 10 minutes", len(fires))
+	}
+}
+
+func TestTheTickWakesTheScheduledTaskForWhatAQuickRunLeft(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firedAt := n.clock.Now() // 10:00
+	askFor(phone, map[string]any{"text": "一", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	askFor(phone, map[string]any{"text": "二", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	n.clock.Set(firedAt.Add(time.Minute))
+	run, wordRequestID := claimOne(t, phone)
+	n.clock.Set(firedAt.Add(2 * time.Minute))
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word 一",
+	})
+	// The run stops there, say as the Owner's usage ran out, and leaves 二.
+
+	n.clock.Set(firedAt.Add(5 * time.Minute))
+	n.tick()
+
+	if fires := trigger.received(); len(fires) != 2 {
+		t.Fatalf("the trigger was fired %d times; want twice: for 一, and at the 10:05 tick for 二", len(fires))
+	}
+}
+
+func TestAnAskJustAfterARunResolvedAWordRequestLeavesItToThatRun(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firedAt := n.clock.Now()
+	askFor(phone, map[string]any{"text": "一", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	n.clock.Set(firedAt.Add(time.Minute))
+	run, wordRequestID := claimOne(t, phone)
+	n.clock.Set(firedAt.Add(5 * time.Minute))
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word 一",
+	})
+
+	// The run lists the queue again right after resolving, so it takes 二.
+	n.clock.Set(firedAt.Add(6 * time.Minute))
+	askFor(phone, map[string]any{"text": "二", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	justAfter := len(trigger.received())
+	// It didn't: it stopped, and no run holds a claim.
+	n.clock.Set(firedAt.Add(8 * time.Minute))
+	askFor(phone, map[string]any{"text": "三", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	later := len(trigger.received())
+
+	if justAfter != 1 || later != 2 {
+		t.Fatalf("fired %d times by an ask a minute after the run resolved 一 and %d by one 3 minutes after; want 1, then 2", justAfter, later)
+	}
+}
+
+func TestAnAskJustAfterARunFoundTheQueueEmptyWakesTheScheduledTask(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firedAt := n.clock.Now()
+	askFor(phone, map[string]any{"text": "一", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	n.clock.Set(firedAt.Add(time.Minute))
+	run, wordRequestID := claimOne(t, phone)
+	n.clock.Set(firedAt.Add(5 * time.Minute))
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word 一",
+	})
+	// The run lists again, finds nothing, and stops.
+	if left := callTool[claimedJSON](t, run, "japanese_list_word_requests", nil); len(left.WordRequests) != 0 {
+		t.Fatalf("the run claimed %+v; want nothing left", left.WordRequests)
+	}
+
+	n.clock.Set(firedAt.Add(5*time.Minute + 30*time.Second))
+	askFor(phone, map[string]any{"text": "二", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	if fires := trigger.received(); len(fires) != 2 {
+		t.Fatalf("the trigger was fired %d times; want twice: no run is left to take 二", len(fires))
 	}
 }
 
@@ -312,6 +420,23 @@ func (b *lockedBuffer) String() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.buf.String()
+}
+
+func TestTheNextTickWakesTheScheduledTaskWhenAWakeFailed(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	trigger.answer(http.StatusTooManyRequests) // the trigger's limit, 30 fires an hour
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firedAt := n.clock.Now()
+	askFor(phone, map[string]any{"text": "度重なる", "kind": "add", "group": "literature"}, http.StatusCreated)
+	trigger.answer(http.StatusOK)
+
+	// No run is starting, so the tick doesn't wait for one.
+	n.clock.Set(firedAt.Add(5 * time.Minute))
+	n.tick()
+
+	if fires := trigger.received(); len(fires) != 2 {
+		t.Fatalf("the trigger was fired %d times; want twice: the failed wake, then at the next tick", len(fires))
+	}
 }
 
 func TestATriggerPastedBadlyIsCleanedOrSaidAtStartup(t *testing.T) {

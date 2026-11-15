@@ -71,18 +71,27 @@ func checkTrigger(triggerURL, triggerToken string) (string, string) {
 	return triggerURL, triggerToken
 }
 
-// quietFor is how long after a fire Nando doesn't fire again: a run just
-// woken re-lists the queue until it is empty, so it takes what came since.
-const quietFor = 2 * time.Minute
+// startingFor is how long a fire is in flight while its run hasn't claimed or
+// resolved a Word Request yet: a run takes a while to start, and it lists the
+// queue when it does, so a second fire meanwhile would only start a second
+// run to share it. A run that never starts, such as when the Owner's usage
+// has run out, stops blocking after it.
+const startingFor = 10 * time.Minute
+
+// betweenWordRequestsFor is how long after a run claimed or resolved a Word
+// Request it may still be working: it lists the queue again after resolving
+// one, so it takes a word added meanwhile.
+const betweenWordRequestsFor = 2 * time.Minute
 
 // Wake fires the trigger if a Word Request is waiting for a run: Pending,
 // or Working with its claim run out and claims left. It doesn't while a run
-// holds a Word Request, as that run lists the rest before it stops, nor if
-// the trigger was fired in the last 2 minutes. Any error is only logged:
-// waking Claude never fails what the Owner asked for.
+// holds a Word Request, as that run lists the rest before it stops, nor while
+// a fire is in flight (startingFor) or a run was active in the last 2 minutes
+// (betweenWordRequestsFor). Any error is only logged: waking Claude never
+// fails what the Owner asked for.
 func (s *ScheduledTaskService) Wake(ctx context.Context) {
 	// The Owner may leave Nando the moment they've asked: their request's
-	// context ending must not cancel a fire whose 2-minute slot is already
+	// context ending must not cancel a fire whose claim is already
 	// taken. The client's timeout still bounds it.
 	ctx = context.WithoutCancel(ctx)
 	if err := s.WakeAtTick(ctx); err != nil {
@@ -100,19 +109,42 @@ func (s *ScheduledTaskService) WakeAtTick(ctx context.Context) error {
 		return nil
 	}
 	now := s.now()
-	if claimed, err := s.requests.AnyClaimed(ctx, now); err != nil || claimed {
-		return err
-	}
+	// Nothing waiting is the usual answer at a tick, so it is asked first.
 	if waiting, err := s.requests.AnyClaimable(ctx, now, maxClaims); err != nil || !waiting {
 		return err
 	}
-	if claimed, err := s.scheduledTask.ClaimFire(ctx, now, now.Add(-quietFor)); err != nil || !claimed {
+	if claimed, err := s.requests.AnyClaimed(ctx, now); err != nil || claimed {
+		return err
+	}
+	claimed, err := s.scheduledTask.ClaimFire(ctx, now, now.Add(-startingFor), now.Add(-betweenWordRequestsFor))
+	if err != nil || !claimed {
 		return err
 	}
 	if err := s.fire(ctx); err != nil {
 		log.Printf("fire the scheduled task's trigger: %v", err)
+		// No run is coming, so the fire isn't in flight: the next ask or
+		// tick tries again.
+		return s.scheduledTask.ReleaseFire(ctx, now)
 	}
 	return nil
+}
+
+// RunWorking records that a run claimed or resolved a Word Request now: its
+// fire is no longer in flight, and it may list the queue again. It only logs
+// an error: recording it never fails what the run did.
+func (s *ScheduledTaskService) RunWorking(ctx context.Context) {
+	if err := s.scheduledTask.RecordWorking(ctx, s.now()); err != nil {
+		log.Printf("record that a run is working: %v", err)
+	}
+}
+
+// RunStopped records that a run found nothing left to claim now, so it stops:
+// its fire is no longer in flight, and no run is between Word Requests. It
+// only logs an error.
+func (s *ScheduledTaskService) RunStopped(ctx context.Context) {
+	if err := s.scheduledTask.RecordStopped(ctx, s.now()); err != nil {
+		log.Printf("record that a run stopped: %v", err)
+	}
 }
 
 // fire calls the trigger, which starts a run, and logs the run's session.
