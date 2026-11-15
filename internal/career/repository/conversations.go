@@ -174,6 +174,18 @@ func (r conversations) ByRecruiter(ctx context.Context, recruiterID bson.ObjectI
 	return filed, cursor.All(ctx, &filed)
 }
 
+func (r conversations) WithSuggestedReply(ctx context.Context, kinds []string) ([]model.Conversation, error) {
+	cursor, err := r.collection.Find(ctx, bson.D{
+		{Key: "recruiterId", Value: bson.D{{Key: "$exists", Value: true}}},
+		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: kinds}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	found := []model.Conversation{}
+	return found, cursor.All(ctx, &found)
+}
+
 func (r conversations) SetSuggestedReply(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply) (model.Conversation, error) {
 	var c model.Conversation
 	err := r.collection.FindOneAndUpdate(ctx,
