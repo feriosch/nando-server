@@ -68,7 +68,7 @@ func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 		conversations: service.NewConversations(scheduledTask, conversations, recruiters, work, core.Now),
 		opportunities: opportunitiesService,
 		companies:     service.NewCompanies(companies, opportunities, opportunitiesService),
-		search:        service.NewSearch(recruiters, companies, opportunities, opportunitiesService),
+		search:        service.NewSearch(recruiters, conversations, companies, opportunities, opportunitiesService),
 		profile:       service.NewProfile(profile),
 	}, nil
 }
