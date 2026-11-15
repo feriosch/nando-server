@@ -20,6 +20,7 @@ import (
 	"github.com/golobby/container/v3"
 
 	"github.com/feriosch/nando-server/internal/calories"
+	"github.com/feriosch/nando-server/internal/career"
 	"github.com/feriosch/nando-server/internal/core"
 	"github.com/feriosch/nando-server/internal/japanese"
 	"github.com/feriosch/nando-server/internal/server"
@@ -178,6 +179,11 @@ func run() error {
 	nandoCore.AddToolProvider(japaneseModule.ToolProvider())
 	nandoCore.AddNotificationProvider(japaneseModule.NotificationProvider())
 	nandoCore.AddTickJob(japaneseModule.TickJob())
+	careerModule, err := career.NewCareerModule(connectCtx, dbs.Career, nandoCore.Service(), career.Config{})
+	if err != nil {
+		return err
+	}
+	nandoCore.AddToolProvider(careerModule.ToolProvider())
 
 	switch args := os.Args[1:]; {
 	case len(args) == 1 && args[0] == "enroll":
@@ -199,7 +205,7 @@ func run() error {
 		Handler: server.New(server.Config{
 			AllowedOrigins: cfg.allowedOrigins,
 			Core:           nandoCore,
-			Modules:        []server.Module{caloriesModule, japaneseModule},
+			Modules:        []server.Module{caloriesModule, japaneseModule, careerModule},
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
