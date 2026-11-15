@@ -83,7 +83,7 @@ func (s *NotificationsService) AddTickJob(j model.TickJob) {
 	s.tickJobs = append(s.tickJobs, j)
 }
 
-// tick is called by Cloud Scheduler every half hour. Only the scheduler may
+// tick is called by Cloud Scheduler every 5 minutes. Only the scheduler may
 // call it.
 func (s *NotificationsService) tick(w http.ResponseWriter, r *http.Request) {
 	token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")

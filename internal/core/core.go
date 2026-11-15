@@ -208,7 +208,7 @@ func (c *Core) AddNotificationProvider(p model.NotificationProvider) {
 }
 
 // AddTickJob has Core run j at every tick, after sending the due
-// Notifications. Each Module with work to do every half hour adds its job
+// Notifications. Each Module with work to do at every tick adds its job
 // once, at startup, before serving.
 func (c *Core) AddTickJob(j model.TickJob) {
 	c.notifications.AddTickJob(j)

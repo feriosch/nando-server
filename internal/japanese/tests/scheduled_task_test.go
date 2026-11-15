@@ -136,6 +136,44 @@ func TestTheScheduledTaskIsWokenAtMostOnceEveryTwoMinutes(t *testing.T) {
 	}
 }
 
+func TestTheTickWakesTheScheduledTaskAgainOnlyTenMinutesAfterAFire(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firedAt := n.clock.Now()
+	// The run it wakes is still starting: it hasn't claimed the Word Request yet.
+	askFor(phone, map[string]any{"text": "食べた", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	n.clock.Set(firedAt.Add(5 * time.Minute))
+	n.tick()
+	early := len(trigger.received())
+	n.clock.Set(firedAt.Add(10 * time.Minute))
+	n.tick()
+	late := len(trigger.received())
+
+	if early != 1 || late != 2 {
+		t.Fatalf("fired %d times by the tick 5 minutes after the Owner's ask and %d by the one 10 minutes after; want 1, then 2", early, late)
+	}
+}
+
+func TestTheOwnersAskWakesTheScheduledTaskThreeMinutesAfterAFire(t *testing.T) {
+	trigger := newFakeTrigger(t)
+	n, phone := signedInBrowserWith(t, trigger.config())
+	firedAt := n.clock.Now()
+	askFor(phone, map[string]any{"text": "一", "kind": "add", "group": "gaming"}, http.StatusCreated)
+	// That run finished 一 quickly and stopped, so no run holds a claim.
+	run, wordRequestID := claimOne(t, phone)
+	callTool[map[string]any](t, run, "japanese_resolve_word_request", map[string]any{
+		"id": wordRequestID, "outcome": "failed", "summary": "jisho.org has no word 一",
+	})
+
+	n.clock.Set(firedAt.Add(3 * time.Minute))
+	askFor(phone, map[string]any{"text": "二", "kind": "add", "group": "gaming"}, http.StatusCreated)
+
+	if fires := trigger.received(); len(fires) != 2 {
+		t.Fatalf("the trigger was fired %d times; want twice: the Owner's second ask doesn't wait for the tick's 10 minutes", len(fires))
+	}
+}
+
 func TestTheScheduledTaskIsNotWokenWhileARunHoldsAWordRequest(t *testing.T) {
 	trigger := newFakeTrigger(t)
 	n, phone := signedInBrowserWith(t, trigger.config())
