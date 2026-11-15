@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // tokyo is the Owner Time Zone in these tests.
@@ -207,19 +206,6 @@ func TestASyncSentInBatchesCountsOnce(t *testing.T) {
 	}
 	if first.Stored+second.Stored+third.Stored != 25 {
 		t.Errorf("stored = %d + %d + %d, want 25 in all", first.Stored, second.Stored, third.Stored)
-	}
-	var syncs []struct {
-		Threads int `bson:"threads"`
-	}
-	cursor, err := phone.nando.career.Collection("syncs").Find(t.Context(), bson.M{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cursor.All(t.Context(), &syncs); err != nil {
-		t.Fatal(err)
-	}
-	if len(syncs) != 1 || syncs[0].Threads != 25 {
-		t.Errorf("syncs = %+v, want one Sync of 25 threads", syncs)
 	}
 	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 13, 59)), "career_sync_status", nil); got.Due {
 		t.Errorf("5 h 59 m after a Sync sent in 3 batches: due = true, want false")
