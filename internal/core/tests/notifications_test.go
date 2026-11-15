@@ -790,3 +790,32 @@ func TestATickLogsAPushServiceThatRedirectsNowhereWithoutAnyEndpoint(t *testing.
 		t.Errorf("log = %q; gives away an endpoint", got)
 	}
 }
+
+func TestTicksEveryFiveMinutesSendTheWeighInReminderOnceAtItsHalfHour(t *testing.T) {
+	tokyo, _ := time.LoadLocation("Asia/Tokyo")
+	mondayMorning := time.Date(2026, 10, 26, 8, 0, 0, 0, tokyo)
+	for _, c := range []struct {
+		name  string
+		first time.Duration // after 08:00, the first tick that runs
+	}{
+		{name: "the 08:00 tick ran", first: 0},
+		{name: "the 08:00 tick never ran", first: 5 * time.Minute},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			n, phone := signedInBrowser(t, mondayMorning.Add(-30*time.Minute))
+			push := testpush.New(t)
+			phone.subscribe(push)
+			phone.saveTimeZone("Asia/Tokyo")
+			phone.saveWeighInReminder(reminderJSON{Enabled: true, Weekday: "monday", Time: "08:00"})
+
+			for at := c.first; at < 30*time.Minute; at += 5 * time.Minute {
+				n.clock.Set(mondayMorning.Add(at))
+				n.mustTick()
+			}
+
+			if got := push.Received(); !slices.Equal(got, []testpush.Notification{weighInReminder}) {
+				t.Errorf("by 08:25 received %+v, want the Weigh-in reminder once", got)
+			}
+		})
+	}
+}

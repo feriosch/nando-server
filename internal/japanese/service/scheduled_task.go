@@ -71,21 +71,29 @@ func checkTrigger(triggerURL, triggerToken string) (string, string) {
 	return triggerURL, triggerToken
 }
 
-// quietFor is how long after a fire Nando doesn't fire again: a run just
-// woken re-lists the queue until it is empty, so it takes what came since.
+// quietFor is how long after a fire the Owner's ask doesn't fire again: a run
+// just woken re-lists the queue until it is empty, so it takes what came since.
 const quietFor = 2 * time.Minute
+
+// quietAtTickFor is how long after a fire the tick doesn't fire again. A run
+// takes a while to start and claim its first Word Request, and the tick runs
+// every 5 minutes: with only quietFor, a tick in that while would start a
+// second run to share the queue. It also spaces the tick's retries while the
+// Owner's usage has run out. The Owner's asks keep quietFor, since a word
+// added after a quick run stopped shouldn't wait for nothing.
+const quietAtTickFor = 10 * time.Minute
 
 // Wake fires the trigger if a Word Request is waiting for a run: Pending,
 // or Working with its claim run out and claims left. It doesn't while a run
 // holds a Word Request, as that run lists the rest before it stops, nor if
-// the trigger was fired in the last 2 minutes. Any error is only logged:
-// waking Claude never fails what the Owner asked for.
+// the trigger was fired in the last 2 minutes (quietFor). Any error is only
+// logged: waking Claude never fails what the Owner asked for.
 func (s *ScheduledTaskService) Wake(ctx context.Context) {
 	// The Owner may leave Nando the moment they've asked: their request's
 	// context ending must not cancel a fire whose 2-minute slot is already
 	// taken. The client's timeout still bounds it.
 	ctx = context.WithoutCancel(ctx)
-	if err := s.WakeAtTick(ctx); err != nil {
+	if err := s.wake(ctx, quietFor); err != nil {
 		log.Printf("wake the scheduled task: %v", err)
 	}
 }
@@ -94,19 +102,27 @@ func (s *ScheduledTaskService) Wake(ctx context.Context) {
 // Word Requests whose run stopped, such as when the Owner's usage ran out. It
 // returns the error of reading the Word Requests or recording the fire, so
 // that the tick is retried; a trigger that fails is only logged, as the next
-// tick fires again.
+// tick fires again. It doesn't fire within 10 minutes of the last fire
+// (quietAtTickFor).
 func (s *ScheduledTaskService) WakeAtTick(ctx context.Context) error {
+	return s.wake(ctx, quietAtTickFor)
+}
+
+// wake fires the trigger if a Word Request is waiting for a run, no run holds
+// one, and it wasn't fired in the last quiet.
+func (s *ScheduledTaskService) wake(ctx context.Context, quiet time.Duration) error {
 	if s.triggerURL == "" || s.triggerToken == "" {
 		return nil
 	}
 	now := s.now()
-	if claimed, err := s.requests.AnyClaimed(ctx, now); err != nil || claimed {
-		return err
-	}
+	// Nothing waiting is the usual answer at a tick, so it is asked first.
 	if waiting, err := s.requests.AnyClaimable(ctx, now, maxClaims); err != nil || !waiting {
 		return err
 	}
-	if claimed, err := s.scheduledTask.ClaimFire(ctx, now, now.Add(-quietFor)); err != nil || !claimed {
+	if claimed, err := s.requests.AnyClaimed(ctx, now); err != nil || claimed {
+		return err
+	}
+	if claimed, err := s.scheduledTask.ClaimFire(ctx, now, now.Add(-quiet)); err != nil || !claimed {
 		return err
 	}
 	if err := s.fire(ctx); err != nil {
