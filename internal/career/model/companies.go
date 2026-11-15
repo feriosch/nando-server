@@ -34,7 +34,8 @@ type CompaniesRepository interface {
 	Search(ctx context.Context, query string) ([]Company, error)
 }
 
-// The JSON shapes below are what the Tools answer with and are sent.
+// The JSON shapes below are what the Tools and the API answer with and are
+// sent.
 
 // CompanyRefJSON names a Company: an existing one by id, or, when sent, a
 // new one by name.
@@ -52,4 +53,14 @@ type CompanyJSON struct {
 	Brief         string            `json:"brief"`
 	Notes         string            `json:"notes"`
 	Opportunities []OpportunityJSON `json:"opportunities"`
+}
+
+// CompanyBriefJSON is a Company, with its Company Brief, as an Opportunity's
+// page shows it.
+type CompanyBriefJSON struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	LinkedInURL string `json:"linkedInUrl"`
+	WebsiteURL  string `json:"websiteUrl"`
+	Brief       string `json:"brief"`
 }

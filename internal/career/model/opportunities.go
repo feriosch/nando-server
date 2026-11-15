@@ -133,9 +133,12 @@ type OpportunitiesRepository interface {
 	// Search returns the Opportunities whose role has query in it, ignoring
 	// case, or that are at one of companyIDs.
 	Search(ctx context.Context, query string, companyIDs []bson.ObjectID) ([]Opportunity, error)
+	// Open returns every Opportunity that isn't closed.
+	Open(ctx context.Context) ([]Opportunity, error)
 }
 
-// The JSON shapes below are what the Tools answer with and are sent.
+// The JSON shapes below are what the Tools and the API answer with and are
+// sent.
 
 // OpportunityJSON is an Opportunity in short, as lists show it.
 type OpportunityJSON struct {
@@ -189,4 +192,49 @@ type StepJSON struct {
 	Date  string  `json:"date"`
 	Time  *string `json:"time"`
 	Notes string  `json:"notes"`
+}
+
+// TopOpportunityJSON is an open Opportunity as the app's lists show it, top
+// first.
+type TopOpportunityJSON struct {
+	ID       string         `json:"id"`
+	Company  CompanyRefJSON `json:"company"`
+	Role     string         `json:"role"`
+	Stage    string         `json:"stage"`
+	Interest string         `json:"interest"`
+	// NextStep is its next Step, or null when none is left.
+	NextStep *NextStepJSON `json:"nextStep"`
+}
+
+// NextStepJSON is an Opportunity's next Step, as the app's lists show it.
+type NextStepJSON struct {
+	Kind string  `json:"kind"`
+	Date string  `json:"date"`
+	Time *string `json:"time"`
+}
+
+// OpportunityPageJSON is everything about an Opportunity, open or closed, as
+// its page in the app shows it.
+type OpportunityPageJSON struct {
+	ID         string         `json:"id"`
+	Role       string         `json:"role"`
+	Stage      string         `json:"stage"`
+	Outcome    *string        `json:"outcome"`
+	Interest   string         `json:"interest"`
+	FitNote    string         `json:"fitNote"`
+	Details    string         `json:"details"`
+	Pay        PayJSON        `json:"pay"`
+	Conditions ConditionsJSON `json:"conditions"`
+	Perks      []string       `json:"perks"`
+	// Steps are by date, then time.
+	Steps []PageStepJSON `json:"steps"`
+	// Recruiter is who brought it, or null.
+	Recruiter *RecruiterRefJSON `json:"recruiter"`
+	Company   CompanyBriefJSON  `json:"company"`
+}
+
+// PageStepJSON is a Step on an Opportunity's page, marked if it is the next.
+type PageStepJSON struct {
+	StepJSON
+	Next bool `json:"next"`
 }

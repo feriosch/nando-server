@@ -58,6 +58,10 @@ func (r opportunities) Search(ctx context.Context, query string, companyIDs []bs
 	}}})
 }
 
+func (r opportunities) Open(ctx context.Context) ([]model.Opportunity, error) {
+	return r.find(ctx, bson.D{{Key: "stage", Value: bson.D{{Key: "$ne", Value: model.StageClosed}}}})
+}
+
 // find returns the Opportunities matching filter, oldest first.
 func (r opportunities) find(ctx context.Context, filter bson.D) ([]model.Opportunity, error) {
 	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}, {Key: "_id", Value: 1}}))

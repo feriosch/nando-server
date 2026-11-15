@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -17,17 +18,121 @@ import (
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
-// OpportunitiesService serves the Tools for Opportunities and their Steps.
+// OpportunitiesService serves the Tools for Opportunities and their Steps,
+// and the app's routes that read them.
 type OpportunitiesService struct {
 	opportunities model.OpportunitiesRepository
 	companies     model.CompaniesRepository
 	recruiters    model.RecruitersRepository
+	core          coremodel.CoreService
 	now           func() time.Time
 }
 
 // NewOpportunities returns the OpportunitiesService.
-func NewOpportunities(opportunities model.OpportunitiesRepository, companies model.CompaniesRepository, recruiters model.RecruitersRepository, now func() time.Time) *OpportunitiesService {
-	return &OpportunitiesService{opportunities: opportunities, companies: companies, recruiters: recruiters, now: now}
+func NewOpportunities(opportunities model.OpportunitiesRepository, companies model.CompaniesRepository, recruiters model.RecruitersRepository, core coremodel.CoreService) *OpportunitiesService {
+	return &OpportunitiesService{opportunities: opportunities, companies: companies, recruiters: recruiters, core: core, now: core.Now}
+}
+
+// Routes adds the routes that read Opportunities to mux, under
+// /api/career/opportunities.
+func (s *OpportunitiesService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/career/opportunities", s.listOpen)
+	mux.HandleFunc("GET /api/career/opportunities/{id}", s.getPage)
+}
+
+// getPage answers everything about an Opportunity, open or closed.
+func (s *OpportunitiesService) getPage(w http.ResponseWriter, r *http.Request) {
+	id, err := bson.ObjectIDFromHex(r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "there's no such Opportunity", http.StatusNotFound)
+		return
+	}
+	o, err := s.opportunities.GetByID(r.Context(), id)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		http.Error(w, "there's no such Opportunity", http.StatusNotFound)
+		return
+	}
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	page, err := s.page(r.Context(), o)
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	coreutils.WriteJSON(w, http.StatusOK, page)
+}
+
+// page is everything about o, with its Recruiter and Company, and its next
+// Step marked.
+func (s *OpportunitiesService) page(ctx context.Context, o model.Opportunity) (model.OpportunityPageJSON, error) {
+	full, err := s.fullJSON(ctx, o)
+	if err != nil {
+		return model.OpportunityPageJSON{}, err
+	}
+	company, err := s.companies.GetByID(ctx, o.CompanyID)
+	if err != nil {
+		return model.OpportunityPageJSON{}, err
+	}
+	today, err := s.core.Today(ctx)
+	if err != nil {
+		return model.OpportunityPageJSON{}, err
+	}
+	j := model.OpportunityPageJSON{
+		ID: full.ID, Role: full.Role, Stage: full.Stage, Outcome: full.Outcome, Interest: full.Interest,
+		FitNote: full.FitNote, Details: full.Details, Pay: full.Pay, Conditions: full.Conditions, Perks: full.Perks,
+		Steps:   []model.PageStepJSON{},
+		Company: model.CompanyBriefJSON{ID: company.ID.Hex(), Name: company.Name, LinkedInURL: company.LinkedInURL, WebsiteURL: company.WebsiteURL, Brief: company.Brief},
+	}
+	next := careerutils.NextStep(o, string(today))
+	for i, step := range full.Steps {
+		j.Steps = append(j.Steps, model.PageStepJSON{StepJSON: step, Next: next != nil && o.Steps[i].ID == next.ID})
+	}
+	if o.RecruiterID != nil {
+		recruiter, err := s.recruiters.GetByID(ctx, *o.RecruiterID)
+		if err != nil {
+			return model.OpportunityPageJSON{}, err
+		}
+		j.Recruiter = &model.RecruiterRefJSON{ID: recruiter.ID.Hex(), Name: recruiter.Name}
+	}
+	return j, nil
+}
+
+// listOpen answers every open Opportunity, top first.
+func (s *OpportunitiesService) listOpen(w http.ResponseWriter, r *http.Request) {
+	top, err := s.Top(r.Context(), -1)
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	coreutils.WriteJSON(w, http.StatusOK, top)
+}
+
+// Top is the n top open Opportunities, or all of them for n < 0, top first,
+// as the app's lists show them, for the Module's other services too.
+func (s *OpportunitiesService) Top(ctx context.Context, n int) ([]model.TopOpportunityJSON, error) {
+	open, err := s.opportunities.Open(ctx)
+	if err != nil {
+		return nil, err
+	}
+	today, err := s.core.Today(ctx)
+	if err != nil {
+		return nil, err
+	}
+	careerutils.Rank(open, string(today))
+	if n >= 0 && len(open) > n {
+		open = open[:n]
+	}
+	top := []model.TopOpportunityJSON{}
+	for _, o := range open {
+		company, err := s.companies.GetByID(ctx, o.CompanyID)
+		if err != nil {
+			return nil, err
+		}
+		top = append(top, careerutils.ToTopOpportunityJSON(o, company, string(today)))
+	}
+	return top, nil
 }
 
 // salarySchema is the JSON Schema of a salary range.

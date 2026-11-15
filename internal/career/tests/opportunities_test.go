@@ -2,11 +2,14 @@ package tests
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // fullOpportunityJSON is what career_save_opportunity and
@@ -196,5 +199,199 @@ func TestAClosedOpportunityIsNotMadeFadedToReopenIt(t *testing.T) {
 	corrected := callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{"id": o.ID, "outcome": "withdrawn"})
 	if corrected.Outcome == nil || *corrected.Outcome != "withdrawn" {
 		t.Errorf("correcting the outcome answered %v; want withdrawn", corrected.Outcome)
+	}
+}
+
+// topOpportunityJSON is an open Opportunity as the app's lists show it.
+type topOpportunityJSON struct {
+	ID      string `json:"id"`
+	Company struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"company"`
+	Role     string        `json:"role"`
+	Stage    string        `json:"stage"`
+	Interest string        `json:"interest"`
+	NextStep *nextStepJSON `json:"nextStep"`
+}
+
+// nextStepJSON is an Opportunity's next Step, as the app's lists show it.
+type nextStepJSON struct {
+	Kind string  `json:"kind"`
+	Date string  `json:"date"`
+	Time *string `json:"time"`
+}
+
+// seededOpportunity is an Opportunity the Owner's chat saves, in a ranking
+// table: its Interest, Stage and Steps, and when it last changed.
+type seededOpportunity struct {
+	role, interest, stage string
+	// steps are the dates of its Steps.
+	steps []string
+	// activity is the minute after 09:00 on Monday it last changed.
+	activity int
+}
+
+// seed has the Owner's chat save each Opportunity, at its own minute, and
+// returns their ids by role. It leaves the clock at 09:59 on Monday.
+func seed(t *testing.T, phone *browser, opportunities ...seededOpportunity) map[string]string {
+	t.Helper()
+	phone.saveTimeZone("Asia/Tokyo")
+	chat := phone.macAt(at(0, 9, 0))
+	ids := map[string]string{}
+	for _, o := range opportunities {
+		phone.nando.clock.Set(at(0, 9, o.activity))
+		saved := callTool[fullOpportunityJSON](t, chat, "career_save_opportunity", map[string]any{
+			"company": map[string]any{"name": o.role + " Inc."}, "role": o.role, "interest": o.interest,
+		})
+		for _, date := range o.steps {
+			callTool[fullOpportunityJSON](t, chat, "career_save_step", map[string]any{"opportunityId": saved.ID, "kind": "Interview", "date": date})
+		}
+		if o.stage != "introduced" {
+			args := map[string]any{"id": saved.ID, "stage": o.stage}
+			if o.stage == "closed" {
+				args["outcome"] = "rejected"
+			}
+			callTool[fullOpportunityJSON](t, chat, "career_save_opportunity", args)
+		}
+		ids[o.role] = saved.ID
+	}
+	phone.nando.clock.Set(at(0, 9, 59))
+	return ids
+}
+
+func TestOpenOpportunitiesAreRankedByInterestThenHowFarAlongThenActivity(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	// Today is Monday 2026-11-16. Saved out of order, so that neither when
+	// they were saved nor when they last changed gives the ranking.
+	seed(t, phone,
+		seededOpportunity{role: "Low offer", interest: "low", stage: "offer", activity: 50},
+		seededOpportunity{role: "Normal introduced, older", interest: "normal", stage: "introduced", activity: 1},
+		seededOpportunity{role: "High in process, no Step left", interest: "high", stage: "in_process", steps: []string{"2026-11-01"}, activity: 40},
+		seededOpportunity{role: "High introduced", interest: "high", stage: "introduced", activity: 45},
+		seededOpportunity{role: "High in process, Step on the 25th", interest: "high", stage: "in_process", steps: []string{"2026-11-10", "2026-11-25"}, activity: 30},
+		seededOpportunity{role: "Closed, high", interest: "high", stage: "closed", activity: 55},
+		seededOpportunity{role: "Normal offer", interest: "normal", stage: "offer", activity: 2},
+		seededOpportunity{role: "High in process, Step today", interest: "high", stage: "in_process", steps: []string{"2026-12-01", "2026-11-16"}, activity: 20},
+		seededOpportunity{role: "Normal introduced, newer", interest: "normal", stage: "introduced", activity: 3},
+		seededOpportunity{role: "High offer", interest: "high", stage: "offer", activity: 10},
+	)
+
+	var ranked []string
+	for _, o := range get[[]topOpportunityJSON](phone, "/api/career/opportunities") {
+		ranked = append(ranked, o.Role)
+	}
+	want := []string{
+		"High offer",
+		"High in process, Step today",
+		"High in process, Step on the 25th",
+		"High in process, no Step left",
+		"High introduced",
+		"Normal offer",
+		"Normal introduced, newer",
+		"Normal introduced, older",
+		"Low offer",
+	}
+	if !slices.Equal(ranked, want) {
+		t.Errorf("GET /api/career/opportunities ranked\n%q\nwant\n%q", ranked, want)
+	}
+}
+
+// opportunityPageJSON is everything about an Opportunity, as its page in the
+// app shows it.
+type opportunityPageJSON struct {
+	ID         string         `json:"id"`
+	Role       string         `json:"role"`
+	Stage      string         `json:"stage"`
+	Outcome    *string        `json:"outcome"`
+	Interest   string         `json:"interest"`
+	FitNote    string         `json:"fitNote"`
+	Details    string         `json:"details"`
+	Pay        payJSON        `json:"pay"`
+	Conditions conditionsJSON `json:"conditions"`
+	Perks      []string       `json:"perks"`
+	Steps      []struct {
+		stepJSON
+		Next bool `json:"next"`
+	} `json:"steps"`
+	Recruiter *struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	} `json:"recruiter"`
+	Company struct {
+		ID          string `json:"id"`
+		Name        string `json:"name"`
+		LinkedInURL string `json:"linkedInUrl"`
+		WebsiteURL  string `json:"websiteUrl"`
+		Brief       string `json:"brief"`
+	} `json:"company"`
+}
+
+func TestTheOpportunityPageShowsEverythingAboutIt(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run, tanaka := fileTanaka(t, phone)
+	o := newOpportunity(t, run, tanaka)
+	callTool[companyJSON](t, run, "career_save_company", map[string]any{
+		"id": o.Company.ID, "websiteUrl": "https://kumopay.example.com", "brief": "Payments for small shops in Japan, about 200 people.",
+	})
+	// Today is Monday 2026-11-16.
+	for _, step := range []map[string]any{
+		{"kind": "Casual interview", "date": "2026-11-10", "time": "18:00"},
+		{"kind": "Final interview", "date": "2026-11-27"},
+		{"kind": "Take-home assignment", "date": "2026-11-16", "time": "10:00", "notes": "Due by noon."},
+	} {
+		step["opportunityId"] = o.ID
+		callTool[fullOpportunityJSON](t, run, "career_save_step", step)
+	}
+	callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{"id": o.ID, "stage": "in_process", "interest": "high", "details": "Ledger team."})
+
+	page := get[opportunityPageJSON](phone, "/api/career/opportunities/"+o.ID)
+	if page.ID != o.ID || page.Role != "Backend Engineer" || page.Stage != "in_process" || page.Outcome != nil || page.Interest != "high" ||
+		page.FitNote != "Go and payments: close to what the Owner does now." || page.Details != "Ledger team." ||
+		page.Pay.FirstStated == nil || page.Pay.FirstStated.Min != 9000000 || page.Pay.BonusIncluded == nil || !*page.Pay.BonusIncluded ||
+		page.Conditions.Remote == nil || *page.Conditions.Remote != "hybrid" || page.Conditions.OfficeLocation != "Shibuya" ||
+		!slices.Equal(page.Perks, []string{"Housing allowance"}) {
+		t.Errorf("the Opportunity page = %+v; want Tanaka's in-process Backend Engineer role with its pay, conditions, Perks and fit note", page)
+	}
+	if page.Recruiter == nil || page.Recruiter.ID != tanaka.ID || page.Recruiter.Name != "Tanaka Yui" {
+		t.Errorf("its Recruiter = %+v; want Tanaka Yui, %s", page.Recruiter, tanaka.ID)
+	}
+	if page.Company.ID != o.Company.ID || page.Company.Name != "Kumo Pay" || page.Company.WebsiteURL != "https://kumopay.example.com" ||
+		page.Company.Brief != "Payments for small shops in Japan, about 200 people." {
+		t.Errorf("its Company = %+v; want Kumo Pay with its Company Brief", page.Company)
+	}
+	var steps []string
+	for _, step := range page.Steps {
+		steps = append(steps, fmt.Sprintf("%s %s next=%t", step.Date, step.Kind, step.Next))
+	}
+	if want := []string{
+		"2026-11-10 Casual interview next=false",
+		"2026-11-16 Take-home assignment next=true",
+		"2026-11-27 Final interview next=false",
+	}; !slices.Equal(steps, want) {
+		t.Errorf("its Steps =\n%q\nwant, by date, with today's marked next,\n%q", steps, want)
+	}
+
+	// A closed one is shown too, with how it ended.
+	callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{"id": o.ID, "stage": "closed", "outcome": "declined"})
+	if closed := get[opportunityPageJSON](phone, "/api/career/opportunities/"+o.ID); closed.Stage != "closed" || closed.Outcome == nil || *closed.Outcome != "declined" {
+		t.Errorf("the closed Opportunity's page shows stage %q, outcome %v; want closed and declined", closed.Stage, closed.Outcome)
+	}
+}
+
+func TestAnOpportunityWithNoRecruiterOrStepsLeftHasNone(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	ids := seed(t, phone, seededOpportunity{role: "Found myself", interest: "normal", stage: "in_process", steps: []string{"2026-11-01"}})
+
+	page := get[opportunityPageJSON](phone, "/api/career/opportunities/"+ids["Found myself"])
+	if page.Recruiter != nil || len(page.Steps) != 1 || page.Steps[0].Next {
+		t.Errorf("an Opportunity the Owner found, with only a past Step, shows recruiter %+v and steps %+v; want none and none next", page.Recruiter, page.Steps)
+	}
+}
+
+func TestAnUnknownOpportunityIsNotFound(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	for _, path := range []string{"/api/career/opportunities/" + bson.NewObjectID().Hex(), "/api/career/opportunities/not-an-id"} {
+		phone.must(http.MethodGet, path, nil, http.StatusNotFound)
 	}
 }

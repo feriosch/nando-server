@@ -1,6 +1,6 @@
 # Career API
 
-The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Opportunities they bring, and whether the Owner is Looking. The script on the Owner's MacBook reads LinkedIn and hands each Sync to Nando through the Tools below ([ADR 0007](../../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). A cloud Claude run then sorts what it brought, and the Owner's chat skills keep the rest, through the same Tools. Every route is under `/api/career/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
+The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Opportunities they bring, and whether the Owner is Looking. The app reads them through the routes below and changes only Looking. Everything else is changed through the Tools. The script on the Owner's MacBook reads LinkedIn and hands each Sync to Nando through the Tools below ([ADR 0007](../../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). A cloud Claude run then sorts what it brought, and the Owner's chat skills keep the rest, through the same Tools. Every route is under `/api/career/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
 
 ## Settings
 
@@ -17,6 +17,159 @@ The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Oppor
 ### `PUT /api/career/settings`
 
 Replaces the settings. `204`. `400` when `looking` is missing or isn't `true` or `false`.
+
+## What the app reads
+
+The Home Card, the Career screen and its pages, all read-only. None of them lists Leads as such, closed Opportunities, or the Career Profile, which only the Tools read. Times are RFC 3339. Step dates are `YYYY-MM-DD` and times `HH:MM` (or `null`), in the Owner Time Zone.
+
+### The top Opportunities
+
+Lists show open Opportunities only, top first:
+
+1. by Interest: `high`, then `normal`, then `low`;
+2. within the same Interest, by Stage: `offer`, then `in_process` by the date of its next Step (one with none left after the others), then `introduced`;
+3. then the one that changed most recently through the Tools first.
+
+The fit note is never used to rank. An Opportunity's **next Step** is its first Step, by date then time, dated today or later in the Owner Time Zone. Past Steps are never next. The rule is `Rank` in `utils/ranking.go`.
+
+Each list shows an Opportunity as:
+
+```json
+{
+  "id": "6740…",
+  "company": { "id": "6741…", "name": "Kumo Pay" },
+  "role": "Backend Engineer",
+  "stage": "in_process",
+  "interest": "high",
+  "nextStep": { "kind": "Final interview", "date": "2026-11-27", "time": "18:00" }
+}
+```
+
+`nextStep` is `null` when no Step is left.
+
+### Waiting and Late Replies
+
+A Recruiter is **waiting** when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up`. One whose Suggested Reply is `late` is in Late Replies instead. A Lead is listed like any other Recruiter. Both lists show each Recruiter once, from their Conversation with their newest message:
+
+```json
+{
+  "id": "6742…",
+  "name": "Tanaka Yui",
+  "organisation": "Hays Japan",
+  "lastMessageAt": "2026-11-13T01:15:00Z",
+  "firstLine": "Thank you for reaching out!"
+}
+```
+
+- `lastMessageAt`: when the Recruiter's last message in that Conversation came, not the Owner's after it.
+- `firstLine`: the first line of the Suggested Reply.
+
+### `GET /api/career/home-card`
+
+`200`: the Career Home Card.
+
+```json
+{ "looking": false, "waiting": 2, "top": [] }
+```
+
+- `looking`: whether the Owner is Looking, as in the settings.
+- `waiting`: how many Recruiters are waiting.
+- `top`: the top 3 open Opportunities.
+
+### `GET /api/career`
+
+`200`: the Career screen.
+
+```json
+{ "waiting": [], "top": [], "active": 7, "lateReplies": 1 }
+```
+
+- `waiting`: the Recruiters waiting, by `lastMessageAt`, newest first.
+- `top`: the top 5 open Opportunities.
+- `active`: how many Opportunities are open.
+- `lateReplies`: how many Recruiters are in Late Replies.
+
+### `GET /api/career/opportunities`
+
+`200`: every open Opportunity, top first, as the lists show them.
+
+### `GET /api/career/opportunities/{id}`
+
+`200`: everything about the Opportunity, open or closed. `404` when no Opportunity has the id.
+
+```json
+{
+  "id": "6740…",
+  "role": "Backend Engineer",
+  "stage": "in_process",
+  "outcome": null,
+  "interest": "high",
+  "fitNote": "Go and payments: close to what the Owner does now.",
+  "details": "Ledger team.",
+  "pay": { "firstStated": { "min": 9000000, "max": 12000000 }, "offered": null, "bonusIncluded": true },
+  "conditions": { "remote": "hybrid", "officeDays": 2, "officeLocation": "Shibuya", "workingLanguage": "en" },
+  "perks": ["Housing allowance"],
+  "steps": [
+    { "id": "6743…", "kind": "Casual interview", "date": "2026-11-10", "time": "18:00", "notes": "", "next": false },
+    { "id": "6744…", "kind": "Final interview", "date": "2026-11-27", "time": null, "notes": "", "next": true }
+  ],
+  "recruiter": { "id": "6742…", "name": "Tanaka Yui" },
+  "company": { "id": "6741…", "name": "Kumo Pay", "linkedInUrl": "", "websiteUrl": "https://kumopay.example.com", "brief": "Payments for small shops in Japan, about 200 people." }
+}
+```
+
+- `outcome`: how a closed one ended, otherwise `null`.
+- `pay`, `conditions`: as the Tools answer them (below).
+- `steps`: by date, then time. `next` marks the next Step, if one is left.
+- `recruiter`: who brought it, or `null`.
+- `company`: its Company, with the Company Brief as `brief`.
+
+### `GET /api/career/recruiters/{id}`
+
+`200`: the Recruiter and each of their Conversations. `404` when no Recruiter has the id.
+
+```json
+{
+  "id": "6742…",
+  "name": "Tanaka Yui",
+  "profileUrl": "https://www.linkedin.com/in/tanaka-yui/",
+  "kind": "agency",
+  "organisation": "Hays Japan",
+  "conversations": [
+    {
+      "id": "6745…",
+      "url": "https://www.linkedin.com/messaging/thread/2-tanaka/",
+      "messages": [{ "id": "m7", "from": "other", "sentAt": "2026-11-16T05:00:00Z", "text": "Are you free for a call this week?" }],
+      "suggestedReply": {
+        "text": "Yes! Thursday evening works for me.",
+        "language": "en",
+        "kind": "answer",
+        "notes": [{ "wrote": "Sounds interesting.", "natural": "That sounds interesting!", "why": "warmer" }]
+      }
+    }
+  ]
+}
+```
+
+- `url`: the Conversation on LinkedIn.
+- `messages`: its last 5, by when they were sent, oldest first. `from` is `owner` or `other`.
+- `suggestedReply`: `null`, or its text, language (`ja` / `en`), kind (`answer` / `follow_up` / `late`) and its language notes on the Owner's last message.
+
+### `GET /api/career/late-replies`
+
+`200`: the Recruiters in Late Replies, by `lastMessageAt`, oldest first.
+
+### Paths the web app uses
+
+These are the web app's own paths, for Notifications to open (#91) and nando-web to serve:
+
+| Path | Shows |
+| --- | --- |
+| `/career` | the Career screen |
+| `/career/recruiters/{id}` | a Recruiter's page |
+| `/career/opportunities` | every open Opportunity |
+| `/career/opportunities/{id}` | an Opportunity's page |
+| `/career/late` | Late Replies |
 
 ## Syncs
 
