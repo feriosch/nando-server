@@ -40,13 +40,16 @@ type SyncsRepository interface {
 	Insert(ctx context.Context, sync Sync) (bson.ObjectID, error)
 	// Read returns the Sync with that id if it read LinkedIn, or Core's
 	// utils.ErrNotFound if there's none, or it had a problem.
-	Read(ctx context.Context, id string) (Sync, error)
+	Read(ctx context.Context, id bson.ObjectID) (Sync, error)
 	// AddThreads counts n more threads in the Sync with that id, or returns
 	// Core's utils.ErrNotFound.
 	AddThreads(ctx context.Context, id bson.ObjectID, n int) error
 	// LatestRead returns the newest n Syncs that read LinkedIn, with no
 	// problem, newest first.
 	LatestRead(ctx context.Context, n int64) ([]Sync, error)
+	// FirstRead returns the first Sync that read LinkedIn, or Core's
+	// utils.ErrNotFound if none has.
+	FirstRead(ctx context.Context) (Sync, error)
 }
 
 // The JSON shapes below are what the Sync Tools answer with and are sent.

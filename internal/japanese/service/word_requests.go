@@ -22,15 +22,35 @@ type WordRequestsService struct {
 	requests model.WordRequestsRepository
 	words    model.WordsRepository
 	// scheduledTask wakes Claude when a Word Request is waiting for it.
-	scheduledTask *ScheduledTaskService
+	scheduledTask *coreutils.ScheduledTask
 	now           func() time.Time
 }
 
 // NewWordRequests returns the WordRequestsService, which reads the Words to
 // improve from words, wakes Claude with scheduledTask and reads the time
 // from now.
-func NewWordRequests(requests model.WordRequestsRepository, words model.WordsRepository, scheduledTask *ScheduledTaskService, now func() time.Time) *WordRequestsService {
+func NewWordRequests(requests model.WordRequestsRepository, words model.WordsRepository, scheduledTask *coreutils.ScheduledTask, now func() time.Time) *WordRequestsService {
 	return &WordRequestsService{requests: requests, words: words, scheduledTask: scheduledTask, now: now}
+}
+
+// WordRequestsQueue is the Word Requests as the queue the scheduled task
+// works through, for Core's utils.NewScheduledTask.
+func WordRequestsQueue(requests model.WordRequestsRepository) coreutils.Queue {
+	return wordRequestsQueue{requests}
+}
+
+// wordRequestsQueue is the Word Requests waiting for, or held by, a Claude
+// run.
+type wordRequestsQueue struct {
+	requests model.WordRequestsRepository
+}
+
+func (q wordRequestsQueue) AnyClaimable(ctx context.Context, now time.Time) (bool, error) {
+	return q.requests.AnyClaimable(ctx, now, maxClaims)
+}
+
+func (q wordRequestsQueue) AnyClaimed(ctx context.Context, now time.Time) (bool, error) {
+	return q.requests.AnyClaimed(ctx, now)
 }
 
 // finishedListedFor is how long a Done or Failed Word Request the Owner

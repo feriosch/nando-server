@@ -49,6 +49,11 @@ type config struct {
 	// the API trigger of the cloud scheduled task that works through Word
 	// Requests, and its bearer token. Without both, Claude is never woken.
 	wordRequestsTriggerURL, wordRequestsTriggerToken string
+	// CAREER_SYNC_TRIGGER_URL and CAREER_SYNC_TRIGGER_TOKEN, optional: the
+	// API trigger of the cloud scheduled task that works through what
+	// LinkedIn Syncs bring, and its bearer token. Without both, Claude is
+	// never woken for them.
+	careerSyncTriggerURL, careerSyncTriggerToken string
 }
 
 func loadConfig() (config, error) {
@@ -66,6 +71,8 @@ func loadConfig() (config, error) {
 		schedulerServiceAccount:  os.Getenv("SCHEDULER_SERVICE_ACCOUNT"),
 		wordRequestsTriggerURL:   os.Getenv("WORD_REQUESTS_TRIGGER_URL"),
 		wordRequestsTriggerToken: os.Getenv("WORD_REQUESTS_TRIGGER_TOKEN"),
+		careerSyncTriggerURL:     os.Getenv("CAREER_SYNC_TRIGGER_URL"),
+		careerSyncTriggerToken:   os.Getenv("CAREER_SYNC_TRIGGER_TOKEN"),
 	}
 	if cfg.mongoURI == "" {
 		return config{}, errors.New("MONGO_URI is required")
@@ -179,11 +186,15 @@ func run() error {
 	nandoCore.AddToolProvider(japaneseModule.ToolProvider())
 	nandoCore.AddNotificationProvider(japaneseModule.NotificationProvider())
 	nandoCore.AddTickJob(japaneseModule.TickJob())
-	careerModule, err := career.NewCareerModule(connectCtx, dbs.Career, nandoCore.Service(), career.Config{})
+	careerModule, err := career.NewCareerModule(connectCtx, dbs.Career, nandoCore.Service(), career.Config{
+		SyncTriggerURL:   cfg.careerSyncTriggerURL,
+		SyncTriggerToken: cfg.careerSyncTriggerToken,
+	})
 	if err != nil {
 		return err
 	}
 	nandoCore.AddToolProvider(careerModule.ToolProvider())
+	nandoCore.AddTickJob(careerModule.TickJob())
 
 	switch args := os.Args[1:]; {
 	case len(args) == 1 && args[0] == "enroll":

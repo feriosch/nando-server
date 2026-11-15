@@ -33,12 +33,15 @@ type conversations struct {
 	collection *mongo.Collection
 }
 
-func (r conversations) AddMessages(ctx context.Context, update model.ThreadUpdate) (int, error) {
+func (r conversations) AddMessages(ctx context.Context, update model.ThreadUpdate) (model.Added, error) {
 	var held model.Conversation
-	err := utils.NotFound(r.collection.FindOne(ctx, bson.D{{Key: "threadId", Value: update.ThreadID}},
-		options.FindOne().SetProjection(bson.D{{Key: "messages", Value: 1}})).Decode(&held))
+	err := utils.NotFound(r.collection.FindOne(ctx, bson.D{{Key: "threadId", Value: update.ThreadID}}).Decode(&held))
 	if err != nil && !errors.Is(err, utils.ErrNotFound) {
-		return 0, err
+		return model.Added{}, err
+	}
+	// An ignored thread isn't about a role: its messages are dropped.
+	if held.Ignored {
+		return model.Added{ConversationID: held.ID, Ignored: true}, nil
 	}
 	// Keep only messages Nando doesn't hold, and each of them once, even if
 	// the Sync sent it twice.
@@ -74,11 +77,44 @@ func (r conversations) AddMessages(ctx context.Context, update model.ThreadUpdat
 			bson.E{Key: "$max", Value: bson.D{{Key: "newest", Value: newest}}},
 		)
 	}
-	_, err = r.collection.UpdateOne(ctx, bson.D{{Key: "threadId", Value: update.ThreadID}}, change, options.UpdateOne().SetUpsert(true))
+	var after model.Conversation
+	err = r.collection.FindOneAndUpdate(ctx, bson.D{{Key: "threadId", Value: update.ThreadID}}, change,
+		options.FindOneAndUpdate().SetUpsert(true).SetReturnDocument(options.After).
+			SetProjection(bson.D{{Key: "messages", Value: 0}})).Decode(&after)
 	if err != nil {
-		return 0, err
+		return model.Added{}, err
 	}
-	return len(added), nil
+	if err := r.removeAnsweredReply(ctx, after.ID, added); err != nil {
+		return model.Added{}, err
+	}
+	fromOther := slices.ContainsFunc(added, func(m model.Message) bool { return m.From == model.MessageFromOther })
+	return model.Added{ConversationID: after.ID, Stored: len(added), Filed: after.RecruiterID != nil, FromOther: fromOther}, nil
+}
+
+// removeAnsweredReply removes the Conversation's Suggested Reply if one of
+// the added messages is the Owner's and newer than the message it answers:
+// the Owner has replied themselves.
+func (r conversations) removeAnsweredReply(ctx context.Context, id bson.ObjectID, added []model.Message) error {
+	var ownerNewest time.Time
+	for _, m := range added {
+		if m.From == model.MessageFromOwner && m.SentAt.After(ownerNewest) {
+			ownerNewest = m.SentAt
+		}
+	}
+	if ownerNewest.IsZero() {
+		return nil
+	}
+	_, err := r.collection.UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: id}, {Key: "suggestedReply.answers", Value: bson.D{{Key: "$lt", Value: ownerNewest}}}},
+		bson.D{{Key: "$unset", Value: bson.D{{Key: "suggestedReply", Value: ""}}}},
+	)
+	return err
+}
+
+func (r conversations) GetByID(ctx context.Context, id bson.ObjectID) (model.Conversation, error) {
+	var c model.Conversation
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&c)
+	return c, utils.NotFound(err)
 }
 
 func (r conversations) Threads(ctx context.Context) ([]model.Conversation, error) {
@@ -99,4 +135,51 @@ func sameMessage(held, m model.Message) bool {
 	}
 	return held.From == m.From && held.Text == m.Text &&
 		held.SentAt.Truncate(time.Millisecond).Equal(m.SentAt.Truncate(time.Millisecond))
+}
+
+func (r conversations) Ignore(ctx context.Context, id bson.ObjectID) (model.Conversation, error) {
+	var c model.Conversation
+	err := r.collection.FindOneAndUpdate(ctx,
+		bson.D{{Key: "_id", Value: id}},
+		bson.D{
+			{Key: "$set", Value: bson.D{{Key: "ignored", Value: true}, {Key: "messages", Value: bson.A{}}}},
+			{Key: "$unset", Value: bson.D{
+				{Key: "url", Value: ""},
+				{Key: "person", Value: ""},
+				{Key: "recruiterId", Value: ""},
+				{Key: "suggestedReply", Value: ""},
+			}},
+		},
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&c)
+	return c, utils.NotFound(err)
+}
+
+func (r conversations) File(ctx context.Context, id, recruiterID bson.ObjectID) (model.Conversation, error) {
+	var c model.Conversation
+	err := r.collection.FindOneAndUpdate(ctx,
+		bson.D{{Key: "_id", Value: id}, {Key: "ignored", Value: false}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "recruiterId", Value: recruiterID}}}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&c)
+	return c, utils.NotFound(err)
+}
+
+func (r conversations) ByRecruiter(ctx context.Context, recruiterID bson.ObjectID) ([]model.Conversation, error) {
+	cursor, err := r.collection.Find(ctx, bson.D{{Key: "recruiterId", Value: recruiterID}})
+	if err != nil {
+		return nil, err
+	}
+	filed := []model.Conversation{}
+	return filed, cursor.All(ctx, &filed)
+}
+
+func (r conversations) SetSuggestedReply(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply) (model.Conversation, error) {
+	var c model.Conversation
+	err := r.collection.FindOneAndUpdate(ctx,
+		bson.D{{Key: "_id", Value: id}, {Key: "ignored", Value: false}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "suggestedReply", Value: reply}}}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&c)
+	return c, utils.NotFound(err)
 }

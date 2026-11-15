@@ -27,13 +27,9 @@ func (r syncs) Insert(ctx context.Context, sync model.Sync) (bson.ObjectID, erro
 	return sync.ID, err
 }
 
-func (r syncs) Read(ctx context.Context, id string) (model.Sync, error) {
-	oid, err := bson.ObjectIDFromHex(id)
-	if err != nil {
-		return model.Sync{}, utils.ErrNotFound
-	}
+func (r syncs) Read(ctx context.Context, id bson.ObjectID) (model.Sync, error) {
 	var sync model.Sync
-	err = r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: oid}, read}).Decode(&sync)
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}, read}).Decode(&sync)
 	return sync, utils.NotFound(err)
 }
 
@@ -51,4 +47,10 @@ func (r syncs) LatestRead(ctx context.Context, n int64) ([]model.Sync, error) {
 	}
 	syncs := []model.Sync{}
 	return syncs, cursor.All(ctx, &syncs)
+}
+
+func (r syncs) FirstRead(ctx context.Context) (model.Sync, error) {
+	var sync model.Sync
+	err := r.collection.FindOne(ctx, bson.D{read}, options.FindOne().SetSort(bson.D{{Key: "at", Value: 1}})).Decode(&sync)
+	return sync, utils.NotFound(err)
 }
