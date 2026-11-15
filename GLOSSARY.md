@@ -164,6 +164,10 @@ _Avoid_: Round, phase, interview (for any Step), stage
 Something an Opportunity offers beyond its pay and working conditions, written freely, such as a housing allowance or side jobs being allowed.
 _Avoid_: Benefit, extra
 
+**Interest**:
+How much the Owner wants an Opportunity: High, Normal or Low, Normal until the Owner says otherwise. The Owner's most relevant Opportunities are ranked by Interest first, then by how far along they are.
+_Avoid_: Priority, rating, score, fit
+
 **Company**:
 An employer that has been put to the Owner in at least one Opportunity. It keeps what Nando knows about the employer across all of its Opportunities.
 _Avoid_: Employer, firm, client
