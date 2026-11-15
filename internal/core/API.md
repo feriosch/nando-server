@@ -200,8 +200,9 @@ Registers this copy of Nando for Notifications. Body: the `PushSubscription` fro
 
 - `204`: registered. Registering the same `endpoint` again replaces its keys, so it is safe to send on every launch.
 - `400`: the body isn't a `PushSubscription`: `endpoint` isn't an absolute URL, `keys.p256dh` isn't a P-256 public key, or `keys.auth` isn't 16 bytes (both base64url). The message says which.
+- `410`: this `endpoint`'s push service no longer knows it, so Core won't register it. The browser still holds it, though: call `subscription.unsubscribe()`, subscribe afresh with the VAPID public key (the permission is still granted, so no prompt) and register the new one. The message never quotes the endpoint.
 
-When a push service says it no longer knows a Push Subscription (`404` or `410`, for example after the Owner turned Notifications off or removed the app), Core deletes it. Registering again brings it back.
+When a push service says it no longer knows a Push Subscription (`404` or `410`, for example after the Owner turned Notifications off or removed the app), Core deletes it, at the tick or for the test Notification. It also remembers that endpoint for 30 days, by its SHA-256 alone, in `forgotten_push_subscriptions`, and answers `410` to registering it again. After that it can be registered again. One the Owner unregistered, or whose push service merely failed, can be registered again at once.
 
 ### `DELETE /api/push-subscriptions?endpoint={endpoint}`
 
@@ -275,6 +276,8 @@ Each tick logs, to Cloud Logging, one line saying what it sent:
 Whenever Core sends, at the tick or for the test Notification, it also logs:
 
 - `removed Push Subscription at web.push.apple.com: 410 Gone`: the push service no longer knew it (`404` or `410`), so Core deleted it.
+
+When a device registers a Push Subscription its push service no longer knows, Core logs `refused Push Subscription at web.push.apple.com: its push service no longer knows it`, and the web app subscribes afresh.
 - `send Notification calories:evening-summary:2026-10-20: …`: a push service failed to take it, with the error.
 
 Logs name a push service by its host and never hold an endpoint, which is a secret capability URL, nor where a push service redirected to, nor what a Notification says: only its ID.
