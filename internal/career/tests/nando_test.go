@@ -41,6 +41,12 @@ type nando struct {
 
 func newNando(t *testing.T) *nando {
 	t.Helper()
+	return newNandoWith(t, career.Config{})
+}
+
+// newNandoWith is newNando with the Career Module's cfg.
+func newNandoWith(t *testing.T, cfg career.Config) *nando {
+	t.Helper()
 	client, err := mongo.Connect(options.Client().ApplyURI(testmongo.URI(t)))
 	if err != nil {
 		t.Fatalf("connect MongoDB: %v", err)
@@ -67,11 +73,12 @@ func newNando(t *testing.T) *nando {
 	if err != nil {
 		t.Fatalf("core.New: %v", err)
 	}
-	module, err := career.NewCareerModule(context.Background(), client.Database("career"), c.Service(), career.Config{})
+	module, err := career.NewCareerModule(context.Background(), client.Database("career"), c.Service(), cfg)
 	if err != nil {
 		t.Fatalf("NewCareerModule: %v", err)
 	}
 	c.AddToolProvider(module.ToolProvider())
+	c.AddTickJob(module.TickJob())
 	return &nando{
 		t:     t,
 		core:  c,
@@ -96,7 +103,13 @@ type browser struct {
 // enrolled a Passkey and has a Session.
 func signedInBrowser(t *testing.T) (*nando, *browser) {
 	t.Helper()
-	n := newNando(t)
+	return signedInBrowserWith(t, career.Config{})
+}
+
+// signedInBrowserWith is signedInBrowser with the Career Module's cfg.
+func signedInBrowserWith(t *testing.T, cfg career.Config) (*nando, *browser) {
+	t.Helper()
+	n := newNandoWith(t, cfg)
 	phone := &browser{nando: n, passkey: testpasskey.New()}
 	code, err := n.core.IssueEnrollmentCode(context.Background())
 	if err != nil {

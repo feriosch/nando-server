@@ -17,6 +17,7 @@ import (
 	"github.com/feriosch/nando-server/internal/career/repository"
 	"github.com/feriosch/nando-server/internal/career/service"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // Module is the Career Module. Its only access to data is its own database
@@ -24,10 +25,22 @@ import (
 type Module struct {
 	settings *service.SettingsService
 	syncs    *service.SyncsService
+	work     *service.WorkService
+	// conversations sorts Conversations: ignores or files them.
+	conversations *service.ConversationsService
+	opportunities *service.OpportunitiesService
+	search        *service.SearchService
+	profile       *service.ProfileService
 }
 
 // Config is what the Module needs besides its database and Core.
-type Config struct{}
+type Config struct {
+	// SyncTriggerURL and SyncTriggerToken are the API trigger of the
+	// scheduled task whose runs work through what Syncs bring, and its
+	// bearer token. An empty one means none: Claude is never woken.
+	SyncTriggerURL   string
+	SyncTriggerToken string
+}
 
 // NewCareerModule returns the Career Module reading and writing its own data
 // through db and asking Core for Core's data through core.
@@ -36,15 +49,35 @@ func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 	if err != nil {
 		return nil, err
 	}
+	work, err := repository.NewWork(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	settings, syncs, recruiters := repository.NewSettings(db), repository.NewSyncs(db), repository.NewRecruiters(db)
+	opportunities, companies := repository.NewOpportunities(db), repository.NewCompanies(db)
+	profile := repository.NewProfile(db)
+	scheduledTask := coreutils.NewScheduledTask(repository.NewScheduledTask(db), service.WorkQueue(work),
+		coreutils.Trigger{URL: cfg.SyncTriggerURL, Token: cfg.SyncTriggerToken, Env: "CAREER_SYNC_TRIGGER"}, core.Now)
 	return &Module{
-		settings: service.NewSettings(repository.NewSettings(db)),
-		syncs:    service.NewSyncs(repository.NewSyncs(db), conversations, core),
+		settings:      service.NewSettings(settings),
+		syncs:         service.NewSyncs(scheduledTask, syncs, conversations, work, core),
+		work:          service.NewWork(scheduledTask, work, conversations, recruiters, opportunities, companies, settings, profile, syncs, core.Now),
+		conversations: service.NewConversations(scheduledTask, conversations, recruiters, work, core.Now),
+		opportunities: service.NewOpportunities(opportunities, companies, recruiters, core.Now),
+		search:        service.NewSearch(recruiters, companies, opportunities),
+		profile:       service.NewProfile(profile),
 	}, nil
 }
 
 // Routes adds the Module's routes to mux, all under /api/career/.
 func (m *Module) Routes(mux *http.ServeMux) {
 	m.settings.Routes(mux)
+}
+
+// TickJob is what the Module does at every tick, for Core.AddTickJob: it sets
+// aside the Items no run could do, and wakes Claude for those still waiting.
+func (m *Module) TickJob() coremodel.TickJob {
+	return m.work
 }
 
 // ToolProvider gathers the Module's Tools, for Core to serve to Connectors.
@@ -56,9 +89,11 @@ func (m *Module) ToolProvider() coremodel.ToolProvider {
 type toolProvider struct{ m *Module }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.settings.Tools(), p.m.syncs.Tools())
+	return slices.Concat(p.m.settings.Tools(), p.m.syncs.Tools(), p.m.work.Tools(), p.m.conversations.Tools(), p.m.opportunities.Tools(), p.m.search.Tools(), p.m.profile.Tools())
 }
 
 func (p toolProvider) ToolsDescription() string {
-	return "see whether you are Looking for a new role, and record the LinkedIn messages your Mac's Sync reads"
+	return "see whether you are Looking for a new role, record the LinkedIn messages your Mac's Sync reads, " +
+		"sort your Conversations under Recruiters, keep your Opportunities, their Steps and Companies, " +
+		"write Suggested Replies, read and change your Career Profile, and delete Steps and Opportunities, which can't be undone"
 }

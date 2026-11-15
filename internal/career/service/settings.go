@@ -30,7 +30,13 @@ func (s *SettingsService) Routes(mux *http.ServeMux) {
 
 // savedOrDefault returns the saved settings, or the defaults if none were saved.
 func (s *SettingsService) savedOrDefault(ctx context.Context) (model.Settings, error) {
-	settings, err := s.settings.Find(ctx)
+	return savedOrDefault(ctx, s.settings)
+}
+
+// savedOrDefault returns the settings saved in repo, or the defaults if none
+// were saved.
+func savedOrDefault(ctx context.Context, repo model.SettingsRepository) (model.Settings, error) {
+	settings, err := repo.Find(ctx)
 	if errors.Is(err, coreutils.ErrNotFound) {
 		return model.DefaultSettings, nil
 	}

@@ -41,6 +41,9 @@ type SyncsRepository interface {
 	// LatestRead returns the newest n Syncs that read LinkedIn, with no
 	// problem, newest first.
 	LatestRead(ctx context.Context, n int64) ([]Sync, error)
+	// FirstRead returns the first Sync that read LinkedIn, or Core's
+	// utils.ErrNotFound if none has.
+	FirstRead(ctx context.Context) (Sync, error)
 }
 
 // The JSON shapes below are what the Sync Tools answer with and are sent.

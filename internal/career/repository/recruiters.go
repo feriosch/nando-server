@@ -1,0 +1,46 @@
+package repository
+
+import (
+	"context"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+
+	"github.com/feriosch/nando-server/internal/career/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
+)
+
+// NewRecruiters returns the RecruitersRepository over the recruiters
+// collection in db.
+func NewRecruiters(db *mongo.Database) model.RecruitersRepository {
+	return recruiters{collection: db.Collection("recruiters")}
+}
+
+// recruiters is the recruiters collection.
+type recruiters struct {
+	collection *mongo.Collection
+}
+
+func (r recruiters) Insert(ctx context.Context, recruiter model.Recruiter) (model.Recruiter, error) {
+	recruiter.ID = bson.NewObjectID()
+	_, err := r.collection.InsertOne(ctx, recruiter)
+	return recruiter, err
+}
+
+func (r recruiters) GetByID(ctx context.Context, id bson.ObjectID) (model.Recruiter, error) {
+	var recruiter model.Recruiter
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&recruiter)
+	return recruiter, utils.NotFound(err)
+}
+
+func (r recruiters) Search(ctx context.Context, query string) ([]model.Recruiter, error) {
+	cursor, err := r.collection.Find(ctx, bson.D{{Key: "$or", Value: bson.A{
+		bson.D{{Key: "name", Value: containing(query)}},
+		bson.D{{Key: "organisation", Value: containing(query)}},
+	}}}, byName)
+	if err != nil {
+		return nil, err
+	}
+	found := []model.Recruiter{}
+	return found, cursor.All(ctx, &found)
+}
