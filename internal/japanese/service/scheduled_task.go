@@ -115,10 +115,11 @@ func (s *ScheduledTaskService) wake(ctx context.Context, quiet time.Duration) er
 		return nil
 	}
 	now := s.now()
-	if claimed, err := s.requests.AnyClaimed(ctx, now); err != nil || claimed {
+	// Nothing waiting is the usual answer at a tick, so it is asked first.
+	if waiting, err := s.requests.AnyClaimable(ctx, now, maxClaims); err != nil || !waiting {
 		return err
 	}
-	if waiting, err := s.requests.AnyClaimable(ctx, now, maxClaims); err != nil || !waiting {
+	if claimed, err := s.requests.AnyClaimed(ctx, now); err != nil || claimed {
 		return err
 	}
 	if claimed, err := s.scheduledTask.ClaimFire(ctx, now, now.Add(-quiet)); err != nil || !claimed {
