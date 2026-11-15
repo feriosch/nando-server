@@ -28,12 +28,17 @@ class FakeNando:
             return {"due": self.due, "since": "2025-01-01", "threads": self.threads}
 
         @self.server.tool()
-        def career_record_sync(threads: list[dict[str, Any]] | None = None, problem: dict[str, Any] | None = None) -> dict[str, Any]:
+        def career_record_sync(
+            threads: list[dict[str, Any]] | None = None, problem: dict[str, Any] | None = None, sync: str | None = None
+        ) -> dict[str, Any]:
             call: dict[str, Any] = {"threads": threads or []}
             if problem is not None:
                 call["problem"] = problem
+            if sync is not None:
+                call["sync"] = sync
             self.recorded.append(call)
-            return {"sync": f"sync{len(self.recorded)}", "stored": 0}
+            # A later batch is added to the Sync its first batch started.
+            return {"sync": sync or f"sync{len(self.recorded)}", "stored": 0}
 
     def client(self) -> Client:
         return Client(self.server)

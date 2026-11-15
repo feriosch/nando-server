@@ -159,6 +159,17 @@ async def test_new_messages_are_sent_in_batches_of_10_threads():
     ]
 
 
+async def test_later_batches_name_the_sync_the_first_started():
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(25)]
+    )
+
+    await sync(nando, reader)
+
+    assert [call.get("sync") for call in nando.recorded] == [None, "sync1", "sync1"]
+
+
 async def test_a_sync_with_nothing_new_is_still_recorded():
     nando = FakeNando(due=True, threads=[{"threadId": "2-old==", "newest": "2026-11-15T09:00:00+09:00", "ignored": False}])
     reader = FakeReader(inbox=[Thread("2-old==", "Kim Hunter", message("Kim Hunter", "9:00 AM", "Already in Nando."))])

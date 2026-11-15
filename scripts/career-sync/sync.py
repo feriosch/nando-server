@@ -127,8 +127,15 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
                     "messages": new,
                 }
             )
+        sync_id = None
         for start in range(0, len(updates), BATCH):
-            recorded = await call(nando, "career_record_sync", {"threads": updates[start : start + BATCH]})
+            batch: dict[str, Any] = {"threads": updates[start : start + BATCH]}
+            # Every batch after the first names the Sync the first started,
+            # so that Nando counts them as one Sync.
+            if sync_id:
+                batch["sync"] = sync_id
+            recorded = await call(nando, "career_record_sync", batch)
+            sync_id = recorded["sync"]
             log.info("Sent %d threads; Nando stored %d new messages.", len(updates[start : start + BATCH]), recorded["stored"])
         log.info("Opened %d threads, %d with new messages.", opened, len(updates))
         if problem:

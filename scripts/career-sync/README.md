@@ -11,7 +11,7 @@ The script on the Owner's MacBook that hands their new LinkedIn messages to Nand
 3. Starts the reader over stdio and calls `get_session_status`. With no LinkedIn session saved, it tells Nando `session_expired` and stops.
 4. Calls `get_inbox` for the 50 most recent threads. If LinkedIn turns the session away, it tells Nando `session_expired` and stops.
 5. Opens the threads with `get_conversation`, most recent first, at most 30, waiting 3–10 s between them. It skips threads Nando marked ignored, and stops at the first thread with nothing newer than what Nando holds: the inbox is in order of activity, so no later thread has anything new either. It keeps only messages since 2025-01-01.
-6. Sends the new messages with `career_record_sync`, 10 threads at a time. A Sync with nothing new is recorded too, so that it counts.
+6. Sends the new messages with `career_record_sync`, 10 threads at a time. Every batch after the first names, as `sync`, the Sync the first batch started, so that Nando counts them as one. A Sync with nothing new is recorded too, so that it counts.
 
 If the reader fails, or a thread's page can't be read, the script tells Nando with `problem: other` and the reason, after sending what it had read. Such a Sync doesn't count, so the next hour tries again.
 
