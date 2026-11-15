@@ -58,6 +58,33 @@ func (r opportunities) Search(ctx context.Context, query string, companyIDs []bs
 	}}})
 }
 
+func (r opportunities) OpenWithStepOn(ctx context.Context, date string) ([]model.Opportunity, error) {
+	return r.find(ctx, bson.D{
+		{Key: "stage", Value: bson.D{{Key: "$ne", Value: model.StageClosed}}},
+		{Key: "steps.date", Value: date},
+	})
+}
+
+func (r opportunities) Open(ctx context.Context) ([]model.Opportunity, error) {
+	return r.find(ctx, bson.D{{Key: "stage", Value: bson.D{{Key: "$ne", Value: model.StageClosed}}}})
+}
+
+func (r opportunities) Fade(ctx context.Context, o model.Opportunity) (bool, error) {
+	// Only as it was read: a Tool that changed it since restarts its 30 days.
+	result, err := r.collection.UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: o.ID}, {Key: "stage", Value: o.Stage}, {Key: "updatedAt", Value: o.UpdatedAt}},
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "stage", Value: model.StageClosed},
+			{Key: "outcome", Value: model.OutcomeFaded},
+			{Key: "closedFrom", Value: o.Stage},
+		}}},
+	)
+	if err != nil {
+		return false, err
+	}
+	return result.ModifiedCount == 1, nil
+}
+
 // find returns the Opportunities matching filter, oldest first.
 func (r opportunities) find(ctx context.Context, filter bson.D) ([]model.Opportunity, error) {
 	cursor, err := r.collection.Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "createdAt", Value: 1}, {Key: "_id", Value: 1}}))

@@ -1,6 +1,6 @@
 # Career API
 
-The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Opportunities they bring, and whether the Owner is Looking. The script on the Owner's MacBook reads LinkedIn and hands each Sync to Nando through the Tools below ([ADR 0007](../../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). A cloud Claude run then sorts what it brought, and the Owner's chat skills keep the rest, through the same Tools. Every route is under `/api/career/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
+The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Opportunities they bring, and whether the Owner is Looking. The app reads them through the routes below and changes only Looking. Everything else is changed through the Tools. The script on the Owner's MacBook reads LinkedIn and hands each Sync to Nando through the Tools below ([ADR 0007](../../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). A cloud Claude run then sorts what it brought, and the Owner's chat skills keep the rest, through the same Tools. Every route is under `/api/career/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
 
 ## Settings
 
@@ -17,6 +17,159 @@ The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Oppor
 ### `PUT /api/career/settings`
 
 Replaces the settings. `204`. `400` when `looking` is missing or isn't `true` or `false`.
+
+## What the app reads
+
+The Home Card, the Career screen and its pages, all read-only. None of them lists Leads as such, closed Opportunities, or the Career Profile, which only the Tools read. Times are RFC 3339. Step dates are `YYYY-MM-DD` and times `HH:MM` (or `null`), in the Owner Time Zone.
+
+### The top Opportunities
+
+Lists show open Opportunities only, top first:
+
+1. by Interest: `high`, then `normal`, then `low`;
+2. within the same Interest, by Stage: `offer`, then `in_process` by when its next Step is, by date then time (one with none left after the others), then `introduced`;
+3. then the one that changed most recently through the Tools first.
+
+The fit note is never used to rank. An Opportunity's **next Step** is its first Step, by date then time, dated today or later in the Owner Time Zone. Past Steps are never next. The rule is `Rank` in `utils/ranking.go`.
+
+Each list shows an Opportunity as:
+
+```json
+{
+  "id": "6740…",
+  "company": { "id": "6741…", "name": "Kumo Pay" },
+  "role": "Backend Engineer",
+  "stage": "in_process",
+  "interest": "high",
+  "nextStep": { "kind": "Final interview", "date": "2026-11-27", "time": "18:00" }
+}
+```
+
+`nextStep` is `null` when no Step is left.
+
+### Waiting and Late Replies
+
+A Recruiter is **waiting** when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up`. One whose Suggested Reply is `late` is in Late Replies instead. A Lead is listed like any other Recruiter. Each list shows a Recruiter once: waiting from their newest message waiting for an answer or a follow-up, Late Replies from their oldest message waiting for a Late Reply. Ties are listed in the same order on every request:
+
+```json
+{
+  "id": "6742…",
+  "name": "Tanaka Yui",
+  "organisation": "Hays Japan",
+  "lastMessageAt": "2026-11-13T01:15:00Z",
+  "firstLine": "Thank you for reaching out!"
+}
+```
+
+- `lastMessageAt`: when the Recruiter's last message in that Conversation came, not the Owner's after it.
+- `firstLine`: the first line of the Suggested Reply.
+
+### `GET /api/career/home-card`
+
+`200`: the Career Home Card.
+
+```json
+{ "looking": false, "waiting": 2, "top": [] }
+```
+
+- `looking`: whether the Owner is Looking, as in the settings.
+- `waiting`: how many Recruiters are waiting.
+- `top`: the top 3 open Opportunities.
+
+### `GET /api/career`
+
+`200`: the Career screen.
+
+```json
+{ "waiting": [], "top": [], "open": 7, "lateReplies": 1 }
+```
+
+- `waiting`: the Recruiters waiting, by `lastMessageAt`, newest first.
+- `top`: the top 5 open Opportunities.
+- `open`: how many Opportunities are open.
+- `lateReplies`: how many Recruiters are in Late Replies.
+
+### `GET /api/career/opportunities`
+
+`200`: every open Opportunity, top first, as the lists show them.
+
+### `GET /api/career/opportunities/{id}`
+
+`200`: everything about the Opportunity, open or closed. `404` when no Opportunity has the id.
+
+```json
+{
+  "id": "6740…",
+  "role": "Backend Engineer",
+  "stage": "in_process",
+  "outcome": null,
+  "interest": "high",
+  "fitNote": "Go and payments: close to what the Owner does now.",
+  "details": "Ledger team.",
+  "pay": { "firstStated": { "min": 9000000, "max": 12000000 }, "offered": null, "bonusIncluded": true },
+  "conditions": { "remote": "hybrid", "officeDays": 2, "officeLocation": "Shibuya", "workingLanguage": "en" },
+  "perks": ["Housing allowance"],
+  "steps": [
+    { "id": "6743…", "kind": "Casual interview", "date": "2026-11-10", "time": "18:00", "notes": "", "next": false },
+    { "id": "6744…", "kind": "Final interview", "date": "2026-11-27", "time": null, "notes": "", "next": true }
+  ],
+  "recruiter": { "id": "6742…", "name": "Tanaka Yui" },
+  "company": { "id": "6741…", "name": "Kumo Pay", "linkedInUrl": "", "websiteUrl": "https://kumopay.example.com", "brief": "Payments for small shops in Japan, about 200 people." }
+}
+```
+
+- `outcome`: how a closed one ended, otherwise `null`.
+- `pay`, `conditions`: as the Tools answer them (below).
+- `steps`: by date, then time. `next` marks the next Step, if one is left.
+- `recruiter`: who brought it, or `null`.
+- `company`: its Company, with the Company Brief as `brief`.
+
+### `GET /api/career/recruiters/{id}`
+
+`200`: the Recruiter and each of their Conversations, the one with the newest message first. `404` when no Recruiter has the id.
+
+```json
+{
+  "id": "6742…",
+  "name": "Tanaka Yui",
+  "profileUrl": "https://www.linkedin.com/in/tanaka-yui/",
+  "kind": "agency",
+  "organisation": "Hays Japan",
+  "conversations": [
+    {
+      "id": "6745…",
+      "url": "https://www.linkedin.com/messaging/thread/2-tanaka/",
+      "messages": [{ "id": "m7", "from": "other", "sentAt": "2026-11-16T05:00:00Z", "text": "Are you free for a call this week?" }],
+      "suggestedReply": {
+        "text": "Yes! Thursday evening works for me.",
+        "language": "en",
+        "kind": "answer",
+        "notes": [{ "wrote": "Sounds interesting.", "natural": "That sounds interesting!", "why": "warmer" }]
+      }
+    }
+  ]
+}
+```
+
+- `url`: the Conversation on LinkedIn.
+- `messages`: its last 5, by when they were sent, oldest first. `from` is `owner` or `other`.
+- `suggestedReply`: `null`, or its text, language (`ja` / `en`), kind (`answer` / `follow_up` / `late`) and its language notes on the Owner's last message.
+
+### `GET /api/career/late-replies`
+
+`200`: the Recruiters in Late Replies, by `lastMessageAt`, oldest first.
+
+### Paths the web app uses
+
+These are the web app's own paths, for Notifications to open (#91) and nando-web to serve:
+
+| Path | Shows |
+| --- | --- |
+| `/career` | the Career screen |
+| `/career/recruiters/{id}` | a Recruiter's page |
+| `/career/opportunities` | every open Opportunity |
+| `/career/opportunities/{id}` | an Opportunity's page |
+| `/career/late` | Late Replies |
 
 ## Syncs
 
@@ -40,7 +193,8 @@ What a Sync brings waits as Items (collection `work`) for a cloud Claude run, wh
 | --- | --- | --- |
 | `sort` | a Sync stores messages in a Conversation not filed yet | `career_ignore_thread` or `career_file_conversation` |
 | `reply` | a Sync stores a message from the Recruiter in a filed Conversation | `career_set_suggested_reply` |
-| `late_reply`, `follow_up` | the tick's rules (#91) | `career_set_suggested_reply` |
+| `late_reply` | an `answer` or `follow_up` Suggested Reply turns `late` (see The tick's rules) | `career_set_suggested_reply` |
+| `follow_up` | an Opportunity waits on its Recruiter for 14 days (see The tick's rules) | `career_set_suggested_reply` |
 
 `career_list_work` claims up to 5 Items at a time, oldest first, each for 15 minutes. A claim that lapses lets another run take the Item. After 3 claims with no outcome, the Item is set aside as failed, and that is logged.
 
@@ -54,6 +208,28 @@ Nando wakes the run by calling the `/fire` API trigger of a cloud scheduled task
 - A trigger that fails is logged and fails nothing. The next Sync or tick tries again.
 
 Without both variables, Nando never wakes the run. The last fire and the run's activity are kept in `scheduled_task`, one document.
+
+## The tick's rules
+
+At every tick (Core's `/internal/tick`, every 5 minutes), before it sets aside failed Items and wakes the run, the Module applies these rules by the clock. None needs a model. What they queue wakes the run under the rules above, at the same tick.
+
+- **Faded.** An open Opportunity closes with Outcome `faded` once 30 days have passed with no new message (from either side) in its Recruiter's Conversations and no change to it through the Tools. One with no Recruiter counts only changes through the Tools. It keeps the Stage it had, for `career_reopen_opportunity`, which counts as a change.
+- **Late Reply.** A Suggested Reply of kind `answer` or `follow_up` that answers a message more than 30 days old becomes kind `late`, and a `late_reply` Item is queued for the run to rewrite it from the late templates. A reply the run rewrote in the meantime is left alone.
+- **Follow-up.** For an Opportunity in `in_process` or `offer`, each of its Recruiter's Conversations whose last message is the Owner's, at least 14 days old, with no Suggested Reply, gets a `follow_up` Item. A message gets one at most, ever: not again if no run writes it and it is set aside.
+
+## Notifications
+
+Core asks the Module at every tick (see [Core's API](../core/API.md)), and sends each ID once.
+
+| When | Title / body | Opens | ID |
+| --- | --- | --- | --- |
+| **Looking**, every Item a Sync queued is done or set aside, and an `answer` Suggested Reply now answers a message it brought, within 48 hours of the Sync | "Recruiters waiting" / "N Recruiters are waiting for your reply" | `/career` | `career:replies:<sync id>` |
+| **Not Looking**, Monday and Thursday in the 19:00 slot, when any Recruiter is waiting | the same | `/career` | `career:replies:<YYYY-MM-DD>` |
+| The 20:00 slot, for each Step on the next Day in an open Opportunity | "Tomorrow: \<Step kind\>" / "\<Company\>, \<HH:MM\>", or only the Company with no time | `/career/opportunities/{id}` | `career:step:<opportunity id>:<step id>:<YYYY-MM-DD>` |
+| A Sync reported `session_expired`: once for the first such report since the last Sync that read LinkedIn, as the Mac reports it again every hour, and only within 7 days of it | "Log in to LinkedIn again" / "Open the Mac and run the Sync's login" | `/career` | `career:sync-problem:<sync id>` |
+| No Sync has read LinkedIn for 36 hours, sent within the 7 days after that (a Sync that reported a problem doesn't count) | "No LinkedIn Sync since \<weekday\>" / "Check that the Mac is on and its Sync job is loaded" | `/career` | `career:no-sync:<last sync id>` |
+
+A Recruiter is waiting when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up` to a message at most 30 days old. Late Replies never cause a Notification, nor a reply about to turn late: Core sends the tick's Notifications before the rules run. The Sync Notifications stop after 7 days, well within the 30 days Core remembers a sent ID, so none is sent twice. Once a Sync reads LinkedIn, the "no Sync" Notification can fire again only after a later 36-hour gap. Before the first Sync, there is none.
 
 ## Tools
 
@@ -84,7 +260,7 @@ Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)
 | Tool | Arguments | What it does |
 | --- | --- | --- |
 | `career_record_sync` | `threads`; `sync` on every batch after a Sync's first; `problem` only when the script couldn't read LinkedIn | Records a Sync. Each thread is `{"threadId", "url", "person": {"name", "profileUrl"}, "messages": [{"id", "from", "sentAt", "text"}]}`, where `from` is `"owner"` or `"other"` and `id` is LinkedIn's message id, if the reader gave one. Each thread's new messages are added to its Conversation, which is made if new, and queue the run's work. An ignored thread's messages are dropped. A message Nando already holds is skipped: the same `id`, or when either has none, the same `from`, `sentAt` and `text`. `problem` is `{"kind": "session_expired"}` when LinkedIn wants the Owner to log in again on the Mac, or `{"kind": "other", "text"}`. When it stores new messages, it wakes the run. A Sync sent in batches is one Sync: the first batch is sent without `sync`, and every later one with `sync` set to the id the first was answered with, which adds its threads to that Sync and answers the same id. `sync` is refused when Nando holds no such Sync, when that Sync reported a problem, when it started more than 10 minutes ago (a new run starts a Sync of its own), or together with `problem`, which is always a Sync of its own. Answers `{"sync": id, "stored": how many new messages were stored}` |
-| `career_list_work` | none | For the run: claims up to 5 Items for 15 minutes. Answers `{"items": [{"id", "kind", "conversation", "recruiter"}], "looking", "profile", "liveSince"}`. `recruiter` is `null` for an unfiled Conversation, or the Recruiter with their other `conversations` and their `opportunities` (in short). `profile` is the Career Profile. `liveSince` is the time of the first Sync that read LinkedIn: nothing before it becomes an Opportunity |
+| `career_list_work` | none | For the run: claims up to 5 Items for 15 minutes, of the kinds under The run's work. Answers `{"items": [{"id", "kind", "conversation", "recruiter"}], "looking", "profile", "liveSince"}`. `recruiter` is `null` for an unfiled Conversation, or the Recruiter with their other `conversations` and their `opportunities` (in short). `profile` is the Career Profile. `liveSince` is the time of the first Sync that read LinkedIn: nothing before it becomes an Opportunity |
 | `career_ignore_thread` | `conversationId` | The thread isn't about a role: its messages, person, URL, Recruiter and Suggested Reply are deleted, and only its thread ID stays, marked ignored. Does all its open Items. Answers the Conversation |
 | `career_file_conversation` | `conversationId`, and `recruiterId` or `recruiter`: `{"name", "profileUrl", "kind", "organisation"}` | Files the Conversation under an existing Recruiter, or a new one. An ignored Conversation can't be filed. Does its `sort` Item. Answers `{"conversation", "recruiter"}` |
 | `career_set_suggested_reply` | `conversationId`, `text`, `language` (`ja` / `en`), `kind` (`answer` / `follow_up` / `late`), `answers`, `notes` (up to 3 `{"wrote", "natural", "why"}`) | Replaces the Conversation's Suggested Reply. `answers` is the `sentAt` of one of its messages: for an `answer` or a `late` one, the Recruiter's newest. Does its `reply`, `late_reply` or `follow_up` Item. Answers the Conversation |

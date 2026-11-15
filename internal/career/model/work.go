@@ -20,6 +20,8 @@ type Item struct {
 	// at most one open item of each kind.
 	Open         bool      `bson:"open"`
 	ClaimedUntil time.Time `bson:"claimedUntil,omitempty"`
+	// SyncID is the Sync that queued it, if one did.
+	SyncID bson.ObjectID `bson:"syncId,omitempty"`
 	// Claims is how many times a run claimed it.
 	Claims    int       `bson:"claims"`
 	CreatedAt time.Time `bson:"createdAt"`
@@ -58,8 +60,12 @@ const (
 // WorkRepository reads and writes the work collection: the run's Items.
 type WorkRepository interface {
 	// Add puts an Item of kind for the Conversation in the work at now,
-	// unless one is open already.
-	Add(ctx context.Context, kind string, conversationID bson.ObjectID, now time.Time) error
+	// queued by the Sync with syncID (the zero id for none), unless one is
+	// open already.
+	Add(ctx context.Context, kind string, conversationID, syncID bson.ObjectID, now time.Time) error
+	// AnyOpenFromSync reports whether an Item the Sync with syncID queued is
+	// still open.
+	AnyOpenFromSync(ctx context.Context, syncID bson.ObjectID) (bool, error)
 	// ClaimNext claims the oldest claimable Item until claimedUntil, or
 	// returns Core's utils.ErrNotFound if there is none. An Item is
 	// claimable while it waits, or when its claim lapsed by now after fewer

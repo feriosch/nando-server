@@ -140,6 +140,13 @@ func (s *ConversationsService) setSuggestedReplyTool(ctx context.Context, argume
 	case len(args.Notes) > model.MaxLanguageNotes:
 		return nil, fmt.Errorf("a Suggested Reply has at most %d language notes", model.MaxLanguageNotes)
 	}
+	// The Sync that brought the message it answers learns it led to an
+	// answer, for its Notification.
+	for _, m := range held.Messages {
+		if sameTime(m.SentAt, args.Answers) && m.From == model.MessageFromOther {
+			reply.SyncID = m.SyncID
+		}
+	}
 	for _, n := range args.Notes {
 		n = model.LanguageNote{Wrote: strings.TrimSpace(n.Wrote), Natural: strings.TrimSpace(n.Natural), Why: strings.TrimSpace(n.Why)}
 		if n.Wrote == "" || n.Natural == "" || n.Why == "" {

@@ -33,15 +33,19 @@ type work struct {
 	collection *mongo.Collection
 }
 
-func (r work) Add(ctx context.Context, kind string, conversationID bson.ObjectID, now time.Time) error {
+func (r work) Add(ctx context.Context, kind string, conversationID, syncID bson.ObjectID, now time.Time) error {
+	insert := bson.D{
+		{Key: "state", Value: model.ItemWaiting},
+		{Key: "claims", Value: 0},
+		{Key: "createdAt", Value: now},
+		{Key: "updatedAt", Value: now},
+	}
+	if !syncID.IsZero() {
+		insert = append(insert, bson.E{Key: "syncId", Value: syncID})
+	}
 	_, err := r.collection.UpdateOne(ctx,
 		bson.D{{Key: "conversationId", Value: conversationID}, {Key: "kind", Value: kind}, {Key: "open", Value: true}},
-		bson.D{{Key: "$setOnInsert", Value: bson.D{
-			{Key: "state", Value: model.ItemWaiting},
-			{Key: "claims", Value: 0},
-			{Key: "createdAt", Value: now},
-			{Key: "updatedAt", Value: now},
-		}}},
+		bson.D{{Key: "$setOnInsert", Value: insert}},
 		options.UpdateOne().SetUpsert(true),
 	)
 	// Another instance added the same Item at once.
@@ -135,6 +139,10 @@ func (r work) AnyClaimed(ctx context.Context, now time.Time) (bool, error) {
 		{Key: "state", Value: model.ItemClaimed},
 		{Key: "claimedUntil", Value: bson.D{{Key: "$gt", Value: now}}},
 	})
+}
+
+func (r work) AnyOpenFromSync(ctx context.Context, syncID bson.ObjectID) (bool, error) {
+	return r.any(ctx, bson.D{{Key: "syncId", Value: syncID}, {Key: "open", Value: true}})
 }
 
 // any reports whether an Item matches filter.

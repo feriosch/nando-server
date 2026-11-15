@@ -9,6 +9,7 @@ package career
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 
@@ -26,12 +27,18 @@ type Module struct {
 	settings *service.SettingsService
 	syncs    *service.SyncsService
 	work     *service.WorkService
+	// notifications is the Module's Notification provider.
+	notifications *service.NotificationsService
+	// tickRules apply the rules that need no model at every tick.
+	tickRules *service.TickRulesService
 	// conversations sorts Conversations: ignores or files them.
 	conversations *service.ConversationsService
 	opportunities *service.OpportunitiesService
 	companies     *service.CompaniesService
 	search        *service.SearchService
 	profile       *service.ProfileService
+	recruiters    *service.RecruitersService
+	overview      *service.OverviewService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -60,28 +67,52 @@ func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 	scheduledTask := coreutils.NewScheduledTask(repository.NewScheduledTask(db), service.WorkQueue(work),
 		coreutils.Trigger{URL: cfg.SyncTriggerURL, Token: cfg.SyncTriggerToken, Env: "CAREER_SYNC_TRIGGER"}, core.Now)
 	settingsService := service.NewSettings(settings)
-	opportunitiesService := service.NewOpportunities(opportunities, companies, recruiters, core.Now)
+	opportunitiesService := service.NewOpportunities(opportunities, companies, recruiters, core)
 	return &Module{
 		settings:      settingsService,
 		syncs:         service.NewSyncs(scheduledTask, syncs, conversations, work, core),
+		notifications: service.NewNotifications(settingsService, conversations, opportunities, companies, syncs, work, core.Now),
+		tickRules:     service.NewTickRules(opportunities, conversations, work, core.Now),
 		work:          service.NewWork(scheduledTask, work, conversations, recruiters, opportunitiesService, settingsService, profile, syncs, core.Now),
 		conversations: service.NewConversations(scheduledTask, conversations, recruiters, work, core.Now),
 		opportunities: opportunitiesService,
 		companies:     service.NewCompanies(companies, opportunities, opportunitiesService),
 		search:        service.NewSearch(recruiters, conversations, companies, opportunities, opportunitiesService),
 		profile:       service.NewProfile(profile),
+		recruiters:    service.NewRecruiters(recruiters, conversations),
+		overview:      service.NewOverview(conversations, recruiters, opportunitiesService, settingsService),
 	}, nil
 }
 
 // Routes adds the Module's routes to mux, all under /api/career/.
 func (m *Module) Routes(mux *http.ServeMux) {
 	m.settings.Routes(mux)
+	m.opportunities.Routes(mux)
+	m.recruiters.Routes(mux)
+	m.overview.Routes(mux)
 }
 
-// TickJob is what the Module does at every tick, for Core.AddTickJob: it sets
-// aside the Items no run could do, and wakes Claude for those still waiting.
+// NotificationProvider is the Module's Notification provider, for
+// Core.AddNotificationProvider.
+func (m *Module) NotificationProvider() coremodel.NotificationProvider {
+	return m.notifications
+}
+
+// TickJob is what the Module does at every tick, for Core.AddTickJob: it
+// applies the rules that need no model, such as closing faded Opportunities,
+// sets aside the Items no run could do, and wakes Claude for those still
+// waiting, including any the rules just queued.
 func (m *Module) TickJob() coremodel.TickJob {
-	return m.work
+	return tickJob{m}
+}
+
+// tickJob is the Module's work at every tick.
+type tickJob struct{ m *Module }
+
+// RunAtTick applies the rules first, so the run is woken for what they
+// queue. A rule that fails doesn't stop the run's work, nor it the rules.
+func (j tickJob) RunAtTick(ctx context.Context) error {
+	return errors.Join(j.m.tickRules.Apply(ctx), j.m.work.RunAtTick(ctx))
 }
 
 // ToolProvider gathers the Module's Tools, for Core to serve to Connectors.

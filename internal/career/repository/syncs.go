@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -21,10 +22,9 @@ type syncs struct {
 	collection *mongo.Collection
 }
 
-func (r syncs) Insert(ctx context.Context, sync model.Sync) (bson.ObjectID, error) {
-	sync.ID = bson.NewObjectID()
+func (r syncs) Insert(ctx context.Context, sync model.Sync) error {
 	_, err := r.collection.InsertOne(ctx, sync)
-	return sync.ID, err
+	return err
 }
 
 func (r syncs) Read(ctx context.Context, id bson.ObjectID) (model.Sync, error) {
@@ -47,6 +47,25 @@ func (r syncs) LatestRead(ctx context.Context, n int64) ([]model.Sync, error) {
 	}
 	syncs := []model.Sync{}
 	return syncs, cursor.All(ctx, &syncs)
+}
+
+func (r syncs) AllReadSince(ctx context.Context, since time.Time) ([]model.Sync, error) {
+	cursor, err := r.collection.Find(ctx, bson.D{read, {Key: "at", Value: bson.D{{Key: "$gte", Value: since}}}},
+		options.Find().SetSort(bson.D{{Key: "at", Value: 1}}))
+	if err != nil {
+		return nil, err
+	}
+	syncs := []model.Sync{}
+	return syncs, cursor.All(ctx, &syncs)
+}
+
+func (r syncs) FirstProblemAfter(ctx context.Context, kind string, after time.Time) (model.Sync, error) {
+	var sync model.Sync
+	err := r.collection.FindOne(ctx,
+		bson.D{{Key: "problem.kind", Value: kind}, {Key: "at", Value: bson.D{{Key: "$gt", Value: after}}}},
+		options.FindOne().SetSort(bson.D{{Key: "at", Value: 1}}),
+	).Decode(&sync)
+	return sync, utils.NotFound(err)
 }
 
 func (r syncs) FirstRead(ctx context.Context) (model.Sync, error) {

@@ -36,7 +36,8 @@ type RecruitersRepository interface {
 	Search(ctx context.Context, query string) ([]Recruiter, error)
 }
 
-// The JSON shapes below are what the Tools answer with and are sent.
+// The JSON shapes below are what the Tools and the API answer with and are
+// sent.
 
 // RecruiterJSON is a Recruiter as the Tools answer it.
 type RecruiterJSON struct {
@@ -52,4 +53,18 @@ type RecruiterJSON struct {
 type FiledJSON struct {
 	Conversation ConversationJSON `json:"conversation"`
 	Recruiter    RecruiterJSON    `json:"recruiter"`
+}
+
+// RecruiterRefJSON names a Recruiter, for the app to link to their page.
+type RecruiterRefJSON struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// RecruiterPageJSON is a Recruiter as their page in the app shows them, with
+// each of their Conversations.
+type RecruiterPageJSON struct {
+	RecruiterJSON
+	// Conversations are newest first.
+	Conversations []RecruiterPageConversationJSON `json:"conversations"`
 }

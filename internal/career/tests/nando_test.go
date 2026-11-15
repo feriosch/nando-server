@@ -78,6 +78,7 @@ func newNandoWith(t *testing.T, cfg career.Config) *nando {
 		t.Fatalf("NewCareerModule: %v", err)
 	}
 	c.AddToolProvider(module.ToolProvider())
+	c.AddNotificationProvider(module.NotificationProvider())
 	c.AddTickJob(module.TickJob())
 	return &nando{
 		t:     t,
