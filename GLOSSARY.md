@@ -164,6 +164,10 @@ _Avoid_: Benefit, extra
 An employer that has been put to the Owner in at least one Opportunity. It keeps what Nando knows about the employer across all of its Opportunities.
 _Avoid_: Employer, firm, client
 
+**Company Brief**:
+Claude's summary of a Company from public information, written when the Company's first Opportunity appears. It stops where only the Owner could add more, and the Owner and Claude take it further together in a chat.
+_Avoid_: Research, report, profile, dossier
+
 **Recruiter**:
 A person who contacts the Owner about roles, either from an agency or from the hiring Company itself. One Recruiter can bring many Opportunities.
 _Avoid_: Headhunter, agent, contact, HR
@@ -179,6 +183,14 @@ _Avoid_: Thread, chat, inbox, message (for the whole thread)
 **Suggested Reply**:
 Claude's draft of the Owner's next message in a Conversation whose last message is the Recruiter's, written to sound like the Owner. Only the Owner ever sends it; Claude never sends anything.
 _Avoid_: Draft, auto-reply, response, answer
+
+**Sync**:
+One pass in which Nando picks up the Owner's new LinkedIn messages from the Owner's MacBook, at most twice a Day. A Day on which the MacBook is never on has no Sync.
+_Avoid_: Pull, fetch, scrape, import, read
+
+**Career Profile**:
+What Claude knows about the Owner's working life, to judge Opportunities and write Suggested Replies: their resumes, current situation, what they are looking for and their deal-breakers.
+_Avoid_: Resume (for the whole), CV, preferences, about me
 
 ## Body
 
