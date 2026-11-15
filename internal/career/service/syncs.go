@@ -7,7 +7,10 @@ import (
 	"fmt"
 	"time"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/feriosch/nando-server/internal/career/model"
+	careerutils "github.com/feriosch/nando-server/internal/career/utils"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
@@ -22,6 +25,9 @@ const (
 	syncsPerDay = 2
 	// syncGap is the least time between two Syncs.
 	syncGap = 6 * time.Hour
+	// syncBatchWindow is how long after a Sync's first batch its later
+	// batches may still be added to it.
+	syncBatchWindow = 10 * time.Minute
 )
 
 // SyncsService serves the Tools the Mac's Sync script calls: whether a Sync
@@ -59,8 +65,10 @@ func (s *SyncsService) Tools() []coremodel.Tool {
 			"Each message is from the owner or the other person, with when it was sent and LinkedIn's id for it if known. " +
 			"Messages Nando already holds are skipped. If the script couldn't read LinkedIn, it sends only a problem: " +
 			"session_expired when LinkedIn wants the Owner to log in again. " +
+			"A Sync sent in batches is one Sync: send each batch after the first, within 10 minutes of it, with sync, the id the first was answered with. " +
 			"Answers {\"sync\": id, \"stored\": how many new messages were stored}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"sync":{"type":"string","description":"On every batch after a Sync's first, within 10 minutes of it: the id the first was answered with, so the batches count as one Sync."},` +
 			`"threads":{"type":"array","items":{"type":"object","properties":{` +
 			`"threadId":{"type":"string"},` +
 			`"url":{"type":"string"},` +
@@ -137,6 +145,14 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
+	// A later batch of a Sync adds to it, so that a Sync sent in batches
+	// counts once towards when the next is due.
+	var id bson.ObjectID
+	if j.Sync != "" {
+		if id, err = s.batchOf(ctx, j.Sync); err != nil {
+			return nil, err
+		}
+	}
 	stored := 0
 	for _, update := range updates {
 		added, err := s.conversations.AddMessages(ctx, update)
@@ -148,7 +164,11 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 			return nil, err
 		}
 	}
-	id, err := s.syncs.Insert(ctx, model.Sync{At: s.core.Now(), Threads: len(updates), Problem: problem})
+	if id.IsZero() {
+		id, err = s.syncs.Insert(ctx, model.Sync{At: s.core.Now(), Threads: len(updates), Problem: problem})
+	} else {
+		err = s.syncs.AddThreads(ctx, id, len(updates))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +176,27 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 		s.scheduledTask.Wake(ctx)
 	}
 	return model.RecordedSyncJSON{Sync: id.Hex(), Stored: stored}, nil
+}
+
+// batchOf checks that sync, the id a later batch sends, is a Sync of the same
+// run: one that read LinkedIn, started at most syncBatchWindow ago. A later
+// run that sends an old id would otherwise never count.
+func (s *SyncsService) batchOf(ctx context.Context, sync string) (bson.ObjectID, error) {
+	id, err := careerutils.ID("Sync", sync)
+	if err != nil {
+		return bson.ObjectID{}, err
+	}
+	found, err := s.syncs.Read(ctx, id)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return bson.ObjectID{}, fmt.Errorf("no Sync that read LinkedIn has the id %q: send the first batch without sync", sync)
+	}
+	if err != nil {
+		return bson.ObjectID{}, err
+	}
+	if s.core.Now().Sub(found.At) > syncBatchWindow {
+		return bson.ObjectID{}, fmt.Errorf("sync %s started over %.0f minutes ago: a new run sends its first batch without sync", sync, syncBatchWindow.Minutes())
+	}
+	return found.ID, nil
 }
 
 // queue puts what the run has to do about a Conversation's new messages in
@@ -179,6 +220,9 @@ func (s *SyncsService) queue(ctx context.Context, added model.Added) error {
 func fromRecordSyncJSON(j model.RecordSyncJSON) ([]model.ThreadUpdate, *model.SyncProblem, error) {
 	var problem *model.SyncProblem
 	if j.Problem != nil {
+		if j.Sync != "" {
+			return nil, nil, errors.New("a problem is a Sync of its own: send it without sync")
+		}
 		if j.Problem.Kind != model.ProblemSessionExpired && j.Problem.Kind != model.ProblemOther {
 			return nil, nil, fmt.Errorf("problem.kind must be %s or %s", model.ProblemSessionExpired, model.ProblemOther)
 		}

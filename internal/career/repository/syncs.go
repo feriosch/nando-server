@@ -27,6 +27,16 @@ func (r syncs) Insert(ctx context.Context, sync model.Sync) (bson.ObjectID, erro
 	return sync.ID, err
 }
 
+func (r syncs) Read(ctx context.Context, id bson.ObjectID) (model.Sync, error) {
+	var sync model.Sync
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}, read}).Decode(&sync)
+	return sync, utils.NotFound(err)
+}
+
+func (r syncs) AddThreads(ctx context.Context, id bson.ObjectID, n int) error {
+	return utils.Matched(r.collection.UpdateByID(ctx, id, bson.D{{Key: "$inc", Value: bson.D{{Key: "threads", Value: n}}}}))
+}
+
 // read matches the Syncs that read LinkedIn: those with no problem.
 var read = bson.E{Key: "problem", Value: bson.D{{Key: "$exists", Value: false}}}
 

@@ -38,6 +38,12 @@ const (
 type SyncsRepository interface {
 	// Insert stores a Sync and returns its id.
 	Insert(ctx context.Context, sync Sync) (bson.ObjectID, error)
+	// Read returns the Sync with that id if it read LinkedIn, or Core's
+	// utils.ErrNotFound if there's none, or it had a problem.
+	Read(ctx context.Context, id bson.ObjectID) (Sync, error)
+	// AddThreads counts n more threads in the Sync with that id, or returns
+	// Core's utils.ErrNotFound.
+	AddThreads(ctx context.Context, id bson.ObjectID, n int) error
 	// LatestRead returns the newest n Syncs that read LinkedIn, with no
 	// problem, newest first.
 	LatestRead(ctx context.Context, n int64) ([]Sync, error)
@@ -69,6 +75,9 @@ type ThreadJSON struct {
 // RecordSyncJSON is what the Sync script sends: the new messages of each
 // thread it opened.
 type RecordSyncJSON struct {
+	// Sync is the id the Sync's first batch was answered with, on every
+	// later batch, so a Sync sent in batches is one Sync.
+	Sync    string             `json:"sync"`
 	Threads []ThreadUpdateJSON `json:"threads"`
 	// Problem is why the script couldn't read LinkedIn, if it couldn't.
 	Problem *SyncProblemJSON `json:"problem"`

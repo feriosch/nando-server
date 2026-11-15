@@ -60,6 +60,23 @@ func TestASyncWithNewMessagesWakesTheScheduledTask(t *testing.T) {
 	}
 }
 
+func TestASyncSentInBatchesWakesTheScheduledTaskOnce(t *testing.T) {
+	trigger := testtrigger.New(t)
+	_, phone := signedInBrowserWith(t, config(trigger))
+	phone.saveTimeZone("Asia/Tokyo")
+	start := at(0, 8, 0)
+	sent := at(-1, 18, 0)
+
+	mac := phone.macAt(start)
+	first := callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"threads": batch(0, 10, sent)})
+	phone.nando.clock.Set(start.Add(4 * time.Second))
+	callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"sync": first.Sync, "threads": batch(10, 10, sent)})
+	phone.nando.clock.Set(start.Add(8 * time.Second))
+	callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"sync": first.Sync, "threads": batch(20, 5, sent)})
+
+	firedTimes(t, trigger, 1, "the run the first batch woke lists the later batches' threads too")
+}
+
 func TestASyncWithNothingNewDoesNotWakeTheScheduledTask(t *testing.T) {
 	trigger := testtrigger.New(t)
 	_, phone := signedInBrowserWith(t, config(trigger))
