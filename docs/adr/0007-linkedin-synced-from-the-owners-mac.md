@@ -1,0 +1,22 @@
+# LinkedIn is read by a model-free script on the Owner's MacBook
+
+The Career Module needs the Owner's LinkedIn Conversations, and LinkedIn offers no API for personal messages. So a Sync reads them with the open-source `stickerdaniel/linkedin-mcp-server`, which drives a headless browser with the Owner's own LinkedIn session. LinkedIn judges a session partly by the address it is used from, and the Owner's account is what is at risk. So the session lives only on the Owner's MacBook, on their home connection in Japan, and never in the cloud. A `launchd` job wakes a small script every hour, and at login and on wake. The script calls no model. It decides whether a Sync is due, calls only the reader's read Tools (`get_inbox`, `get_conversation`), and hands the new messages to Nando. Nando then wakes a cloud Claude run, as for Word Requests (ADR 0006), which sorts the Conversations, updates Opportunities and writes Suggested Replies. This departs from ADR 0006's choice of the cloud over the Owner's own computer, only for the step that touches LinkedIn.
+
+## Considered Options
+
+- **Read LinkedIn from a cloud run**, with the session cookie in a secret: rejected. The session would be used from a datacenter address outside Japan, the usual trigger for a security checkpoint or a restriction. A cloud run also can't reach a stdio MCP server on the Mac.
+- **Read from nando-server on Cloud Run** (Tokyo): rejected for now. The address is in Japan, but it is still a datacenter's. Running Chromium would also make the image much heavier.
+- **A Claude Desktop scheduled task, every hour**: rejected. Every check would be a full Claude session on the Owner's usage, around 15 a day, most of which find nothing to do. The run could also call the reader's sending Tools, which only a deny rule would stop.
+- **A Claude Desktop scheduled task twice a day**: rejected. It runs only while the app is open and the Mac is awake. The docs disagree on whether a missed run catches up, and the Owner has no fixed hours at the Mac.
+- **The Owner's Windows PC**: rejected. It can stay off for days. The MacBook is on almost every day.
+- **LinkedIn's notification emails in Gmail**: carries no ban risk, but the Owner chose to keep Gmail out for now.
+
+## Consequences
+
+- Nando's database is the hand-off. The script sends each changed thread's new messages to Nando, which stores them at once as waiting to be sorted, so the Mac can sleep straight after. Nando then calls the scheduled task's `/fire`, as for Word Requests, and Core's tick fires it again while messages are still waiting, under the same wake rules as Word Requests. The run marks a thread that isn't about a role as ignored. Nando deletes its text and keeps only the LinkedIn thread ID, so later Syncs don't send that thread again.
+- A Sync happens **at most twice a Day, at least 6 hours apart, and not before 07:00** in the Owner Time Zone. A Day on which the Mac is never on has no Sync and is not made up later. The hourly check costs nothing when no Sync is due.
+- The script calls only read Tools, so nothing in a Sync can send, archive, connect or dismiss on LinkedIn. As a second layer, the reader's writing Tools (`send_message`, `reply_to_conversation`, `archive_conversation`, `connect_with_person`, `dismiss_job`) are denied in the Mac's `~/.claude/settings.json`, in case the reader is ever used from Claude Code there.
+- The script reaches Nando as a Connector (ADR 0004), approved once with a Passkey and removable in Settings like any other.
+- LinkedIn's session expires from time to time. The script tells Nando, and the Owner gets a Notification to log in again on the Mac. The Owner also gets one if no Sync has happened for 36 hours.
+- Using the reader at all is against LinkedIn's User Agreement, which forbids automated access. We accept the risk because there are only two Syncs a Day, they only read, and they come from the Owner's own address. Claude never sends anything: the Owner sends every reply themselves.
+- Only Conversations with Recruiters are stored. Claude sorts each new thread in the cloud run, and threads that aren't about roles are dropped there. The first Sync reads back to 2025-01-01. Nothing from before the Module went live becomes an Opportunity.
