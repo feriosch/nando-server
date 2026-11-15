@@ -60,6 +60,8 @@ func (s *WorkService) Tools() []coremodel.Tool {
 			"or file it under its Recruiter with career_file_conversation. " +
 			"A reply Item is a filed Conversation with a new message from its Recruiter: update their Opportunities, " +
 			"and write the Owner's answer with career_set_suggested_reply. " +
+			"A late_reply Item is a Suggested Reply to a message over 30 days old: rewrite it as kind late, apologising for the delay. " +
+			"A follow_up Item is a Conversation whose Opportunity has waited 14 days on the Recruiter after the Owner's message: write a follow_up. " +
 			"Each Item comes with its Conversation's messages, and its Recruiter, if filed. " +
 			"The answer also has whether the Owner is Looking, the Career Profile, and liveSince, the time of the first Sync: " +
 			"nothing from before it becomes an Opportunity. Call this again until it answers no Items. " +

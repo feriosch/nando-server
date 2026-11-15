@@ -183,3 +183,57 @@ func (r conversations) SetSuggestedReply(ctx context.Context, id bson.ObjectID, 
 	).Decode(&c)
 	return c, utils.NotFound(err)
 }
+
+func (r conversations) WithReplyBefore(ctx context.Context, kinds []string, before time.Time) ([]model.Conversation, error) {
+	cursor, err := r.collection.Find(ctx, bson.D{
+		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: kinds}}},
+		{Key: "suggestedReply.answers", Value: bson.D{{Key: "$lt", Value: before}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	found := []model.Conversation{}
+	return found, cursor.All(ctx, &found)
+}
+
+func (r conversations) MakeReplyLate(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply) (bool, error) {
+	result, err := r.collection.UpdateOne(ctx,
+		bson.D{
+			{Key: "_id", Value: id},
+			{Key: "suggestedReply.kind", Value: reply.Kind},
+			{Key: "suggestedReply.writtenAt", Value: reply.WrittenAt},
+		},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "suggestedReply.kind", Value: model.ReplyLate}}}},
+	)
+	if err != nil {
+		return false, err
+	}
+	return result.ModifiedCount == 1, nil
+}
+
+func (r conversations) MarkFollowedUp(ctx context.Context, id bson.ObjectID, sentAt time.Time) error {
+	return utils.Matched(r.collection.UpdateByID(ctx, id, bson.D{{Key: "$set", Value: bson.D{{Key: "followedUp", Value: sentAt}}}}))
+}
+
+func (r conversations) AnyAnswerFromSync(ctx context.Context, syncID bson.ObjectID) (bool, error) {
+	err := r.collection.FindOne(ctx,
+		bson.D{{Key: "suggestedReply.kind", Value: model.ReplyAnswer}, {Key: "suggestedReply.syncId", Value: syncID}},
+		options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}}),
+	).Err()
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (r conversations) WaitingRecruiters(ctx context.Context) (int, error) {
+	waiting, err := r.collection.Distinct(ctx, "recruiterId", bson.D{
+		{Key: "recruiterId", Value: bson.D{{Key: "$exists", Value: true}}},
+		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: bson.A{model.ReplyAnswer, model.ReplyFollowUp}}}},
+	}).Raw()
+	if err != nil {
+		return 0, err
+	}
+	values, err := waiting.Values()
+	return len(values), err
+}
