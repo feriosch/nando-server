@@ -326,6 +326,9 @@ func (s *WordRequestsService) resolveTool(ctx context.Context, arguments json.Ra
 	if err != nil {
 		return nil, err
 	}
+	if err := s.scheduledTask.RunActive(ctx); err != nil {
+		return nil, err
+	}
 	return wordRequestJSON(request), nil
 }
 
@@ -344,6 +347,9 @@ func trimmed(list []string) []string {
 // waiting for Claude.
 func (s *WordRequestsService) listTool(ctx context.Context, _ json.RawMessage) (any, error) {
 	if err := s.failUnfinished(ctx); err != nil {
+		return nil, err
+	}
+	if err := s.scheduledTask.RunActive(ctx); err != nil {
 		return nil, err
 	}
 	claimed := []model.ClaimedWordRequestJSON{}
