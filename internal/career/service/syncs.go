@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"time"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/feriosch/nando-server/internal/career/model"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 )
@@ -54,8 +56,10 @@ func (s *SyncsService) Tools() []coremodel.Tool {
 			"Each message is from the owner or the other person, with when it was sent and LinkedIn's id for it if known. " +
 			"Messages Nando already holds are skipped. If the script couldn't read LinkedIn, it sends only a problem: " +
 			"session_expired when LinkedIn wants the Owner to log in again. " +
+			"A Sync sent in batches is one Sync: send each batch after the first with sync, the id the first was answered with. " +
 			"Answers {\"sync\": id, \"stored\": how many new messages were stored}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"sync":{"type":"string","description":"On every batch after a Sync's first: the id the first was answered with, so the batches count as one Sync."},` +
 			`"threads":{"type":"array","items":{"type":"object","properties":{` +
 			`"threadId":{"type":"string"},` +
 			`"url":{"type":"string"},` +
@@ -132,6 +136,14 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
+	var batchOf *bson.ObjectID
+	if j.Sync != "" {
+		id, err := s.readingSync(ctx, j.Sync)
+		if err != nil {
+			return nil, err
+		}
+		batchOf = &id
+	}
 	stored := 0
 	for _, update := range updates {
 		n, err := s.conversations.AddMessages(ctx, update)
@@ -140,11 +152,39 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 		}
 		stored += n
 	}
+	// A later batch of a Sync adds to it, so that a Sync sent in batches
+	// counts once towards when the next is due.
+	if batchOf != nil {
+		if err := s.syncs.AddThreads(ctx, *batchOf, len(updates)); err != nil {
+			return nil, err
+		}
+		return model.RecordedSyncJSON{Sync: batchOf.Hex(), Stored: stored}, nil
+	}
 	id, err := s.syncs.Insert(ctx, model.Sync{At: s.core.Now(), Threads: len(updates), Problem: problem})
 	if err != nil {
 		return nil, err
 	}
 	return model.RecordedSyncJSON{Sync: id.Hex(), Stored: stored}, nil
+}
+
+// readingSync checks that sync, the id a later batch sends, is a Sync that
+// read LinkedIn, and returns it parsed.
+func (s *SyncsService) readingSync(ctx context.Context, sync string) (bson.ObjectID, error) {
+	id, err := bson.ObjectIDFromHex(sync)
+	if err != nil {
+		return bson.ObjectID{}, fmt.Errorf("sync %q isn't a Sync's id", sync)
+	}
+	found, err := s.syncs.Get(ctx, id)
+	if errors.Is(err, model.ErrSyncNotFound) {
+		return bson.ObjectID{}, fmt.Errorf("there is no Sync %s: send the first batch without sync", sync)
+	}
+	if err != nil {
+		return bson.ObjectID{}, err
+	}
+	if found.Problem != nil {
+		return bson.ObjectID{}, fmt.Errorf("Sync %s couldn't read LinkedIn, so it takes no more threads", sync)
+	}
+	return id, nil
 }
 
 // fromRecordSyncJSON checks what the Sync script sent, or explains what's
@@ -153,6 +193,9 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 func fromRecordSyncJSON(j model.RecordSyncJSON) ([]model.ThreadUpdate, *model.SyncProblem, error) {
 	var problem *model.SyncProblem
 	if j.Problem != nil {
+		if j.Sync != "" {
+			return nil, nil, errors.New("a problem is a Sync of its own: send it without sync")
+		}
 		if j.Problem.Kind != model.ProblemSessionExpired && j.Problem.Kind != model.ProblemOther {
 			return nil, nil, fmt.Errorf("problem.kind must be %s or %s", model.ProblemSessionExpired, model.ProblemOther)
 		}

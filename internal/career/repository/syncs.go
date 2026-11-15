@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -24,6 +25,26 @@ func (r syncs) Insert(ctx context.Context, sync model.Sync) (bson.ObjectID, erro
 	sync.ID = bson.NewObjectID()
 	_, err := r.collection.InsertOne(ctx, sync)
 	return sync.ID, err
+}
+
+func (r syncs) Get(ctx context.Context, id bson.ObjectID) (model.Sync, error) {
+	var sync model.Sync
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&sync)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return model.Sync{}, model.ErrSyncNotFound
+	}
+	return sync, err
+}
+
+func (r syncs) AddThreads(ctx context.Context, id bson.ObjectID, n int) error {
+	result, err := r.collection.UpdateByID(ctx, id, bson.D{{Key: "$inc", Value: bson.D{{Key: "threads", Value: n}}}})
+	if err != nil {
+		return err
+	}
+	if result.MatchedCount == 0 {
+		return model.ErrSyncNotFound
+	}
+	return nil
 }
 
 // read matches the Syncs that read LinkedIn: those with no problem.

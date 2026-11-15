@@ -2,6 +2,7 @@ package tests
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -164,6 +165,78 @@ func TestASyncIsDueOnly6HoursAfterTheLast(t *testing.T) {
 	}
 	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 14, 0)), "career_sync_status", nil); !got.Due {
 		t.Errorf("6 h after the last Sync: due = false, want true")
+	}
+}
+
+// recruiterThread is a LinkedIn thread with one new message from a Recruiter.
+func recruiterThread(n int, sent time.Time) map[string]any {
+	id := fmt.Sprintf("2-recruiter-%d", n)
+	return map[string]any{
+		"threadId": id,
+		"url":      "https://www.linkedin.com/messaging/thread/" + id + "/",
+		"person":   map[string]any{"name": fmt.Sprintf("Recruiter %d", n)},
+		"messages": []any{message("", "other", sent, "Hello! I have a role for you.")},
+	}
+}
+
+// batch is threads first to first+n-1, as one career_record_sync call sends them.
+func batch(first, n int, sent time.Time) []any {
+	threads := []any{}
+	for i := first; i < first+n; i++ {
+		threads = append(threads, recruiterThread(i, sent))
+	}
+	return threads
+}
+
+func TestASyncSentInBatchesCountsOnce(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	start := at(0, 8, 0)
+	sent := at(-1, 18, 0)
+
+	mac := phone.macAt(start)
+	first := callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"threads": batch(0, 10, sent)})
+	phone.nando.clock.Set(start.Add(4 * time.Second))
+	second := callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"sync": first.Sync, "threads": batch(10, 10, sent)})
+	phone.nando.clock.Set(start.Add(8 * time.Second))
+	third := callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"sync": first.Sync, "threads": batch(20, 5, sent)})
+
+	if second.Sync != first.Sync || third.Sync != first.Sync {
+		t.Errorf("syncs = %s, %s, %s; want later batches added to the first", first.Sync, second.Sync, third.Sync)
+	}
+	if first.Stored+second.Stored+third.Stored != 25 {
+		t.Errorf("stored = %d + %d + %d, want 25 in all", first.Stored, second.Stored, third.Stored)
+	}
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 13, 59)), "career_sync_status", nil); got.Due {
+		t.Errorf("5 h 59 m after a Sync sent in 3 batches: due = true, want false")
+	}
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 14, 0)), "career_sync_status", nil); !got.Due {
+		t.Errorf("6 h after a Sync sent in 3 batches: due = false, want true: it is the Day's first Sync")
+	}
+}
+
+func TestABatchIsAddedOnlyToASyncThatReadLinkedIn(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	mac := phone.macAt(at(0, 8, 0))
+	failed := callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"problem": map[string]any{"kind": "session_expired"}})
+	read := callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"threads": batch(0, 1, at(-1, 18, 0))})
+	pitch := message("m1", "other", at(-3, 10, 15), "Hello! I have a backend role at a fintech in Tokyo.")
+
+	for _, args := range []map[string]any{
+		{"sync": "not-a-sync", "threads": []any{tanakaThread(pitch)}},
+		{"sync": "0123456789abcdef01234567", "threads": []any{tanakaThread(pitch)}},
+		{"sync": failed.Sync, "threads": []any{tanakaThread(pitch)}},
+		{"sync": read.Sync, "problem": map[string]any{"kind": "other", "text": "the reader quit"}},
+	} {
+		toolFails(t, mac, "career_record_sync", args)
+	}
+
+	status := callTool[syncStatusJSON](t, mac, "career_sync_status", nil)
+	for _, thread := range status.Threads {
+		if thread.ThreadID == "2-tanaka" {
+			t.Errorf("a refused batch stored Tanaka-san's thread")
+		}
 	}
 }
 
