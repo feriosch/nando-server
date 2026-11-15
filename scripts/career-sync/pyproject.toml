@@ -2,7 +2,7 @@
 name = "nando-career-sync"
 version = "0"
 requires-python = ">=3.12"
-dependencies = ["mcp==2.3.0"]
+dependencies = ["mcp==2.3.0", "keyring==25.7.0"]
 
 [dependency-groups]
 dev = ["pytest==9.2.0"]
