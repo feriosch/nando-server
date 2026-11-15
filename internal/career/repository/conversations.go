@@ -184,9 +184,9 @@ func (r conversations) SetSuggestedReply(ctx context.Context, id bson.ObjectID, 
 	return c, utils.NotFound(err)
 }
 
-func (r conversations) WithReplyBefore(ctx context.Context, kinds []string, before time.Time) ([]model.Conversation, error) {
+func (r conversations) WithWaitingReplyBefore(ctx context.Context, before time.Time) ([]model.Conversation, error) {
 	cursor, err := r.collection.Find(ctx, bson.D{
-		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: kinds}}},
+		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: model.WaitingReplyKinds}}},
 		{Key: "suggestedReply.answers", Value: bson.D{{Key: "$lt", Value: before}}},
 	})
 	if err != nil {
@@ -226,10 +226,11 @@ func (r conversations) AnyAnswerFromSync(ctx context.Context, syncID bson.Object
 	return err == nil, err
 }
 
-func (r conversations) WaitingRecruiters(ctx context.Context) (int, error) {
+func (r conversations) WaitingRecruiters(ctx context.Context, since time.Time) (int, error) {
 	waiting, err := r.collection.Distinct(ctx, "recruiterId", bson.D{
 		{Key: "recruiterId", Value: bson.D{{Key: "$exists", Value: true}}},
-		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: bson.A{model.ReplyAnswer, model.ReplyFollowUp}}}},
+		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: model.WaitingReplyKinds}}},
+		{Key: "suggestedReply.answers", Value: bson.D{{Key: "$gte", Value: since}}},
 	}).Raw()
 	if err != nil {
 		return 0, err

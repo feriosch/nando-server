@@ -49,7 +49,7 @@ func (r syncs) LatestRead(ctx context.Context, n int64) ([]model.Sync, error) {
 	return syncs, cursor.All(ctx, &syncs)
 }
 
-func (r syncs) ReadSince(ctx context.Context, since time.Time) ([]model.Sync, error) {
+func (r syncs) AllReadSince(ctx context.Context, since time.Time) ([]model.Sync, error) {
 	cursor, err := r.collection.Find(ctx, bson.D{read, {Key: "at", Value: bson.D{{Key: "$gte", Value: since}}}},
 		options.Find().SetSort(bson.D{{Key: "at", Value: 1}}))
 	if err != nil {

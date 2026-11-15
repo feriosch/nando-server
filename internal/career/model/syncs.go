@@ -47,9 +47,9 @@ type SyncsRepository interface {
 	// LatestRead returns the newest n Syncs that read LinkedIn, with no
 	// problem, newest first.
 	LatestRead(ctx context.Context, n int64) ([]Sync, error)
-	// ReadSince returns the Syncs that read LinkedIn at or after since,
+	// AllReadSince returns every Sync that read LinkedIn at or after since,
 	// oldest first.
-	ReadSince(ctx context.Context, since time.Time) ([]Sync, error)
+	AllReadSince(ctx context.Context, since time.Time) ([]Sync, error)
 	// FirstProblemAfter returns the first Sync after after that reported a
 	// problem of kind, or Core's utils.ErrNotFound if none did.
 	FirstProblemAfter(ctx context.Context, kind string, after time.Time) (Sync, error)

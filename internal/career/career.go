@@ -9,6 +9,7 @@ package career
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 
@@ -101,11 +102,10 @@ func (m *Module) TickJob() coremodel.TickJob {
 // tickJob is the Module's work at every tick.
 type tickJob struct{ m *Module }
 
+// RunAtTick applies the rules first, so the run is woken for what they
+// queue. A rule that fails doesn't stop the run's work, nor it the rules.
 func (j tickJob) RunAtTick(ctx context.Context) error {
-	if err := j.m.tickRules.Apply(ctx); err != nil {
-		return err
-	}
-	return j.m.work.RunAtTick(ctx)
+	return errors.Join(j.m.tickRules.Apply(ctx), j.m.work.RunAtTick(ctx))
 }
 
 // ToolProvider gathers the Module's Tools, for Core to serve to Connectors.

@@ -61,7 +61,7 @@ Without both variables, Nando never wakes the run. The last fire and the run's a
 At every tick (Core's `/internal/tick`, every 5 minutes), before it sets aside failed Items and wakes the run, the Module applies these rules by the clock. None needs a model. What they queue wakes the run under the rules above, at the same tick.
 
 - **Faded.** An open Opportunity closes with Outcome `faded` once 30 days have passed with no new message (from either side) in its Recruiter's Conversations and no change to it through the Tools. One with no Recruiter counts only changes through the Tools. It keeps the Stage it had, for `career_reopen_opportunity`, which counts as a change.
-- **Late Reply.** A Suggested Reply of kind `answer` or `follow_up` that answers a message more than 30 days old becomes kind `late`, and a `late_reply` Item is queued for the run to rewrite it from the late templates.
+- **Late Reply.** A Suggested Reply of kind `answer` or `follow_up` that answers a message more than 30 days old becomes kind `late`, and a `late_reply` Item is queued for the run to rewrite it from the late templates. A reply the run rewrote in the meantime is left alone.
 - **Follow-up.** For an Opportunity in `in_process` or `offer`, each of its Recruiter's Conversations whose last message is the Owner's, at least 14 days old, with no Suggested Reply, gets a `follow_up` Item. A message gets one at most, ever: not again if no run writes it and it is set aside.
 
 ## Notifications
@@ -73,10 +73,10 @@ Core asks the Module at every tick (see [Core's API](../core/API.md)), and sends
 | **Looking**, every Item a Sync queued is done or set aside, and an `answer` Suggested Reply now answers a message it brought, within 48 hours of the Sync | "Recruiters waiting" / "N Recruiters are waiting for your reply" | `/career` | `career:replies:<sync id>` |
 | **Not Looking**, Monday and Thursday in the 19:00 slot, when any Recruiter is waiting | the same | `/career` | `career:replies:<YYYY-MM-DD>` |
 | The 20:00 slot, for each Step on the next Day in an open Opportunity | "Tomorrow: \<Step kind\>" / "\<Company\>, \<HH:MM\>", or only the Company with no time | `/career/opportunities/{id}` | `career:step:<opportunity id>:<step id>:<YYYY-MM-DD>` |
-| A Sync reported `session_expired`: once for the first such report since the last Sync that read LinkedIn, as the Mac reports it again every hour | "Log in to LinkedIn again" / "Open the Mac and run the Sync's login" | `/career` | `career:sync-problem:<sync id>` |
-| No Sync has read LinkedIn for 36 hours (a Sync that reported a problem doesn't count) | "No LinkedIn Sync since \<weekday\>" / "Check that the Mac is on and its Sync job is loaded" | `/career` | `career:no-sync:<last sync id>` |
+| A Sync reported `session_expired`: once for the first such report since the last Sync that read LinkedIn, as the Mac reports it again every hour, and only within 7 days of it | "Log in to LinkedIn again" / "Open the Mac and run the Sync's login" | `/career` | `career:sync-problem:<sync id>` |
+| No Sync has read LinkedIn for 36 hours, sent within the 7 days after that (a Sync that reported a problem doesn't count) | "No LinkedIn Sync since \<weekday\>" / "Check that the Mac is on and its Sync job is loaded" | `/career` | `career:no-sync:<last sync id>` |
 
-A Recruiter is waiting when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up`. Late Replies never cause a Notification. Once a Sync reads LinkedIn, the "no Sync" Notification can fire again only after a later 36-hour gap. Before the first Sync, there is none.
+A Recruiter is waiting when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up` to a message at most 30 days old. Late Replies never cause a Notification, nor a reply about to turn late: Core sends the tick's Notifications before the rules run. The Sync Notifications stop after 7 days, well within the 30 days Core remembers a sent ID, so none is sent twice. Once a Sync reads LinkedIn, the "no Sync" Notification can fire again only after a later 36-hour gap. Before the first Sync, there is none.
 
 ## Tools
 

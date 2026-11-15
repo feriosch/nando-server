@@ -232,3 +232,34 @@ func TestALateReplyNeverNotifiesTheOwner(t *testing.T) {
 	n.tickAt(at(28, 19, 0))
 	received(t, push, nil, "Monday at 19:00, with only a Late Reply")
 }
+
+func TestAReplyTurningLateAtThe19SlotIsNotCountedAsWaiting(t *testing.T) {
+	n, phone, push := subscribedPhone(t)
+	_, filed := fileTanakasConversation(t, phone)
+	// Thirty days and two minutes before Monday 2026-12-14 at 19:00.
+	asked := at(-2, 18, 58)
+	callTool[recordedJSON](t, phone.macAt(at(0, 9, 0)), "career_record_sync", map[string]any{"threads": []any{
+		tanakaThread(message("m2", "other", asked, "Are you free for a call?")),
+	}})
+	callTool[conversationJSON](t, phone.connect(), "career_set_suggested_reply", map[string]any{
+		"conversationId": filed.Conversation.ID, "text": "Yes, thank you!",
+		"language": "en", "kind": "answer", "answers": asked.Format(time.RFC3339),
+	})
+	phone.emptySyncAt(at(28, 8, 0))
+
+	// The tick sends Notifications before its rules turn the reply late.
+	n.tickAt(at(28, 19, 0))
+	received(t, push, nil, "Monday at 19:00, the first tick after the answer's message turned 30 days old")
+}
+
+func TestSyncProblemsAreToldOnlyWithin7Days(t *testing.T) {
+	n, phone, push := subscribedPhone(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	phone.emptySyncAt(at(0, 8, 0))
+	phone.sessionExpiredAt(at(0, 9, 0))
+
+	// Core forgets a sent ID after 30 days, so a problem told for longer
+	// would be told again: the first tick in 9 days tells neither.
+	n.tickAt(at(9, 9, 5))
+	received(t, push, nil, "9 days after the last Sync and the expired session, at the first tick since")
+}

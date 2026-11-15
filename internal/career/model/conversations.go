@@ -66,6 +66,10 @@ const (
 	ReplyLate = "late"
 )
 
+// WaitingReplyKinds are the kinds of Suggested Reply a Recruiter waits on:
+// they can also turn late.
+var WaitingReplyKinds = []string{ReplyAnswer, ReplyFollowUp}
+
 // MaxLanguageNotes is the most language notes a Suggested Reply has.
 const MaxLanguageNotes = 3
 
@@ -136,16 +140,18 @@ type ConversationsRepository interface {
 	// Threads returns every Conversation's thread id, newest message time and
 	// whether it is ignored, without its messages.
 	Threads(ctx context.Context) ([]Conversation, error)
-	// WithReplyBefore returns the Conversations whose Suggested Reply is of
-	// one of kinds and answers a message sent before before.
-	WithReplyBefore(ctx context.Context, kinds []string, before time.Time) ([]Conversation, error)
+	// WithWaitingReplyBefore returns the Conversations whose Suggested Reply
+	// is of one of WaitingReplyKinds and answers a message sent before
+	// before.
+	WithWaitingReplyBefore(ctx context.Context, before time.Time) ([]Conversation, error)
 	// AnyAnswerFromSync reports whether a Conversation's Suggested Reply is
 	// an answer to a message the Sync with syncID brought.
 	AnyAnswerFromSync(ctx context.Context, syncID bson.ObjectID) (bool, error)
 	// WaitingRecruiters counts the Recruiters waiting for the Owner's reply:
-	// those with a Conversation whose Suggested Reply is an answer or a
-	// follow-up. A Late Reply isn't counted.
-	WaitingRecruiters(ctx context.Context) (int, error)
+	// those with a Conversation whose Suggested Reply is of one of
+	// WaitingReplyKinds and answers a message sent at or after since. A Late
+	// Reply isn't counted, nor one about to turn late.
+	WaitingRecruiters(ctx context.Context, since time.Time) (int, error)
 	// MarkFollowedUp records that a follow_up Item was queued for the
 	// Owner's message sent at sentAt.
 	MarkFollowedUp(ctx context.Context, id bson.ObjectID, sentAt time.Time) error
