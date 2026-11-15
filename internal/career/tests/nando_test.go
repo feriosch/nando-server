@@ -37,6 +37,8 @@ type nando struct {
 	core    *core.Core
 	handler http.Handler
 	clock   *clock
+	// career is the Career Module's database, for what no API shows.
+	career *mongo.Database
 }
 
 func newNando(t *testing.T) *nando {
@@ -67,15 +69,17 @@ func newNando(t *testing.T) *nando {
 	if err != nil {
 		t.Fatalf("core.New: %v", err)
 	}
-	module, err := career.NewCareerModule(context.Background(), client.Database("career"), c.Service(), career.Config{})
+	careerDB := client.Database("career")
+	module, err := career.NewCareerModule(context.Background(), careerDB, c.Service(), career.Config{})
 	if err != nil {
 		t.Fatalf("NewCareerModule: %v", err)
 	}
 	c.AddToolProvider(module.ToolProvider())
 	return &nando{
-		t:     t,
-		core:  c,
-		clock: clk,
+		t:      t,
+		core:   c,
+		clock:  clk,
+		career: careerDB,
 		handler: server.New(server.Config{
 			AllowedOrigins: []string{webOrigin},
 			Core:           c,

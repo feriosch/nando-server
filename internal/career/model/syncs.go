@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -35,16 +34,15 @@ const (
 	ProblemOther          = "other"
 )
 
-// ErrSyncNotFound is a Sync id Nando holds no Sync for.
-var ErrSyncNotFound = errors.New("no such Sync")
-
 // SyncsRepository reads and writes the syncs collection.
 type SyncsRepository interface {
 	// Insert stores a Sync and returns its id.
 	Insert(ctx context.Context, sync Sync) (bson.ObjectID, error)
-	// Get returns the Sync with that id, or ErrSyncNotFound.
-	Get(ctx context.Context, id bson.ObjectID) (Sync, error)
-	// AddThreads counts n more threads in the Sync with that id.
+	// Read returns the Sync with that id if it read LinkedIn, or Core's
+	// utils.ErrNotFound if there's none, or it had a problem.
+	Read(ctx context.Context, id string) (Sync, error)
+	// AddThreads counts n more threads in the Sync with that id, or returns
+	// Core's utils.ErrNotFound.
 	AddThreads(ctx context.Context, id bson.ObjectID, n int) error
 	// LatestRead returns the newest n Syncs that read LinkedIn, with no
 	// problem, newest first.

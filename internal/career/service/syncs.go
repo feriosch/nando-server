@@ -11,6 +11,7 @@ import (
 
 	"github.com/feriosch/nando-server/internal/career/model"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const (
@@ -23,6 +24,9 @@ const (
 	syncsPerDay = 2
 	// syncGap is the least time between two Syncs.
 	syncGap = 6 * time.Hour
+	// syncBatchWindow is how long after a Sync's first batch its later
+	// batches may still be added to it.
+	syncBatchWindow = 10 * time.Minute
 )
 
 // SyncsService serves the Tools the Mac's Sync script calls: whether a Sync
@@ -56,10 +60,10 @@ func (s *SyncsService) Tools() []coremodel.Tool {
 			"Each message is from the owner or the other person, with when it was sent and LinkedIn's id for it if known. " +
 			"Messages Nando already holds are skipped. If the script couldn't read LinkedIn, it sends only a problem: " +
 			"session_expired when LinkedIn wants the Owner to log in again. " +
-			"A Sync sent in batches is one Sync: send each batch after the first with sync, the id the first was answered with. " +
+			"A Sync sent in batches is one Sync: send each batch after the first, within 10 minutes of it, with sync, the id the first was answered with. " +
 			"Answers {\"sync\": id, \"stored\": how many new messages were stored}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
-			`"sync":{"type":"string","description":"On every batch after a Sync's first: the id the first was answered with, so the batches count as one Sync."},` +
+			`"sync":{"type":"string","description":"On every batch after a Sync's first, within 10 minutes of it: the id the first was answered with, so the batches count as one Sync."},` +
 			`"threads":{"type":"array","items":{"type":"object","properties":{` +
 			`"threadId":{"type":"string"},` +
 			`"url":{"type":"string"},` +
@@ -136,13 +140,13 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 	if err != nil {
 		return nil, err
 	}
-	var batchOf *bson.ObjectID
+	// A later batch of a Sync adds to it, so that a Sync sent in batches
+	// counts once towards when the next is due.
+	var id bson.ObjectID
 	if j.Sync != "" {
-		id, err := s.readingSync(ctx, j.Sync)
-		if err != nil {
+		if id, err = s.batchOf(ctx, j.Sync); err != nil {
 			return nil, err
 		}
-		batchOf = &id
 	}
 	stored := 0
 	for _, update := range updates {
@@ -152,39 +156,32 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 		}
 		stored += n
 	}
-	// A later batch of a Sync adds to it, so that a Sync sent in batches
-	// counts once towards when the next is due.
-	if batchOf != nil {
-		if err := s.syncs.AddThreads(ctx, *batchOf, len(updates)); err != nil {
-			return nil, err
-		}
-		return model.RecordedSyncJSON{Sync: batchOf.Hex(), Stored: stored}, nil
+	if id.IsZero() {
+		id, err = s.syncs.Insert(ctx, model.Sync{At: s.core.Now(), Threads: len(updates), Problem: problem})
+	} else {
+		err = s.syncs.AddThreads(ctx, id, len(updates))
 	}
-	id, err := s.syncs.Insert(ctx, model.Sync{At: s.core.Now(), Threads: len(updates), Problem: problem})
 	if err != nil {
 		return nil, err
 	}
 	return model.RecordedSyncJSON{Sync: id.Hex(), Stored: stored}, nil
 }
 
-// readingSync checks that sync, the id a later batch sends, is a Sync that
-// read LinkedIn, and returns it parsed.
-func (s *SyncsService) readingSync(ctx context.Context, sync string) (bson.ObjectID, error) {
-	id, err := bson.ObjectIDFromHex(sync)
-	if err != nil {
-		return bson.ObjectID{}, fmt.Errorf("sync %q isn't a Sync's id", sync)
-	}
-	found, err := s.syncs.Get(ctx, id)
-	if errors.Is(err, model.ErrSyncNotFound) {
-		return bson.ObjectID{}, fmt.Errorf("there is no Sync %s: send the first batch without sync", sync)
+// batchOf checks that sync, the id a later batch sends, is a Sync of the same
+// run: one that read LinkedIn, started at most syncBatchWindow ago. A later
+// run that sends an old id would otherwise never count.
+func (s *SyncsService) batchOf(ctx context.Context, sync string) (bson.ObjectID, error) {
+	found, err := s.syncs.Read(ctx, sync)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return bson.ObjectID{}, fmt.Errorf("there is no Sync %s that read LinkedIn: send the first batch without sync", sync)
 	}
 	if err != nil {
 		return bson.ObjectID{}, err
 	}
-	if found.Problem != nil {
-		return bson.ObjectID{}, fmt.Errorf("Sync %s couldn't read LinkedIn, so it takes no more threads", sync)
+	if s.core.Now().Sub(found.At) > syncBatchWindow {
+		return bson.ObjectID{}, fmt.Errorf("sync %s started over %.0f minutes ago: a new run sends its first batch without sync", sync, syncBatchWindow.Minutes())
 	}
-	return id, nil
+	return found.ID, nil
 }
 
 // fromRecordSyncJSON checks what the Sync script sent, or explains what's

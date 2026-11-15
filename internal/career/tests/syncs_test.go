@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // tokyo is the Owner Time Zone in these tests.
@@ -207,11 +208,48 @@ func TestASyncSentInBatchesCountsOnce(t *testing.T) {
 	if first.Stored+second.Stored+third.Stored != 25 {
 		t.Errorf("stored = %d + %d + %d, want 25 in all", first.Stored, second.Stored, third.Stored)
 	}
+	var syncs []struct {
+		Threads int `bson:"threads"`
+	}
+	cursor, err := phone.nando.career.Collection("syncs").Find(t.Context(), bson.M{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cursor.All(t.Context(), &syncs); err != nil {
+		t.Fatal(err)
+	}
+	if len(syncs) != 1 || syncs[0].Threads != 25 {
+		t.Errorf("syncs = %+v, want one Sync of 25 threads", syncs)
+	}
 	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 13, 59)), "career_sync_status", nil); got.Due {
 		t.Errorf("5 h 59 m after a Sync sent in 3 batches: due = true, want false")
 	}
 	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 14, 0)), "career_sync_status", nil); !got.Due {
 		t.Errorf("6 h after a Sync sent in 3 batches: due = false, want true: it is the Day's first Sync")
+	}
+}
+
+func TestABatchIsAddedOnlyToASyncStartedMinutesAgo(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	start := at(0, 8, 0)
+	mac := phone.macAt(start)
+	first := callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"threads": batch(0, 10, at(-1, 18, 0))})
+
+	phone.nando.clock.Set(start.Add(10 * time.Minute))
+	callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"sync": first.Sync, "threads": batch(10, 1, at(-1, 18, 0))})
+
+	// A later run that reuses the id must start a Sync of its own, or it
+	// would never count towards when the next is due.
+	later := phone.macAt(at(0, 14, 0))
+	pitch := message("m1", "other", at(-3, 10, 15), "Hello! I have a backend role at a fintech in Tokyo.")
+	toolFails(t, later, "career_record_sync", map[string]any{"sync": first.Sync, "threads": []any{tanakaThread(pitch)}})
+
+	status := callTool[syncStatusJSON](t, later, "career_sync_status", nil)
+	for _, thread := range status.Threads {
+		if thread.ThreadID == "2-tanaka" {
+			t.Errorf("a batch for a Sync started 6 hours ago stored Tanaka-san's thread")
+		}
 	}
 }
 
