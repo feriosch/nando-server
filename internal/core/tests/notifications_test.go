@@ -492,14 +492,26 @@ func TestAPushSubscriptionItsPushServiceForgotIsRefusedWhenRegisteredAgain(t *te
 					t.Fatalf("test Notification answered %+v; want the forgotten Push Subscription removed", result)
 				}
 
+				logs := captureLog(t)
+
 				// Settings opens on the device whose browser still holds it.
 				rec := phone.registerAgain(forgotten)
 
 				if rec.Code != http.StatusGone {
 					t.Errorf("registering it again: status = %d, body %q; want %d so the web app subscribes afresh", rec.Code, rec.Body, http.StatusGone)
 				}
-				if endpoint, _ := url.Parse(forgotten.Endpoint()); strings.Contains(rec.Body.String(), endpoint.Path) {
+				endpoint, err := url.Parse(forgotten.Endpoint())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(rec.Body.String(), endpoint.Path) {
 					t.Errorf("refusal %q quotes the endpoint", rec.Body)
+				}
+				if want := "refused Push Subscription at 127.0.0.1: its push service no longer knows it\n"; !strings.Contains(logs.String(), want) {
+					t.Errorf("log = %q; want a line %q", logs, want)
+				}
+				if strings.Contains(logs.String(), endpoint.Path) {
+					t.Errorf("log = %q; gives away the endpoint", logs)
 				}
 				if result := phone.sendTestNotification(); result.Sent != 0 || result.Removed != 0 {
 					t.Errorf("next test Notification answered %+v; want the forgotten Push Subscription not registered", result)
@@ -535,9 +547,15 @@ func TestADeviceWhosePushServiceForgotItGetsNotificationsOnceSubscribedAfresh(t 
 
 func TestOnlyAPushSubscriptionItsPushServiceForgotIsRefused(t *testing.T) {
 	for name, forget := range map[string]func(phone *browser, push *testpush.Service){
+		// Sent alongside one its push service forgot, which mustn't taint it.
 		"push service failed": func(phone *browser, push *testpush.Service) {
+			forgotten := testpush.New(phone.nando.t)
+			phone.subscribe(forgotten)
+			forgotten.Answer(http.StatusGone)
 			push.Answer(http.StatusInternalServerError)
-			phone.sendTestNotification()
+			if result := phone.sendTestNotification(); result.Removed != 1 || len(result.Failed) != 1 {
+				phone.nando.t.Fatalf("test Notification answered %+v; want one removed and one failed", result)
+			}
 			push.Answer(http.StatusCreated)
 		},
 		"Owner unregistered it": func(phone *browser, push *testpush.Service) {
@@ -548,10 +566,8 @@ func TestOnlyAPushSubscriptionItsPushServiceForgotIsRefused(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, phone := signedInBrowser(t, wednesday)
-			push, other := testpush.New(t), testpush.New(t)
+			push := testpush.New(t)
 			phone.subscribe(push)
-			phone.subscribe(other)
-			other.Answer(http.StatusGone)
 			forget(phone, push)
 
 			if rec := phone.registerAgain(push); rec.Code != http.StatusNoContent {

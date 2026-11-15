@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -93,6 +94,7 @@ func (s *PushSubscriptionsService) postPushSubscription(w http.ResponseWriter, r
 		return
 	}
 	if forgotten {
+		log.Printf("refused Push Subscription at %s: its push service no longer knows it", pushServiceHost(model.PushSubscription{Endpoint: j.Endpoint}))
 		http.Error(w, "its push service no longer knows this Push Subscription: subscribe afresh", http.StatusGone)
 		return
 	}
