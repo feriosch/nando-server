@@ -152,6 +152,10 @@ _Avoid_: Application, process, job, deal
 Where an Opportunity stands overall: Introduced, In Process, Offer, or Closed with an outcome. It can skip ahead but never goes back.
 _Avoid_: Status, phase, step
 
+**Outcome**:
+How a Closed Opportunity ended: Accepted, Declined (the Owner turned down an Offer), Withdrawn (the Owner stepped away before an Offer, for any reason), Rejected (the Company said no) or Faded (30 days passed with no message about it).
+_Avoid_: Result, resolution, status
+
 **Step**:
 One dated event inside an Opportunity's process, of any kind, such as a casual interview, a take-home assignment or a final interview. An Opportunity has any number of Steps, in any order, and none are required.
 _Avoid_: Round, phase, interview (for any Step), stage
@@ -181,8 +185,12 @@ One message thread between the Owner and exactly one Recruiter, such as a Linked
 _Avoid_: Thread, chat, inbox, message (for the whole thread)
 
 **Suggested Reply**:
-Claude's draft of the Owner's next message in a Conversation whose last message is the Recruiter's, written to sound like the Owner. Only the Owner ever sends it; Claude never sends anything.
+Claude's draft of the Owner's next message in a Conversation, written to sound like the Owner: an answer when the last message is the Recruiter's, or a follow-up when an open Opportunity has had no message for 14 days after the Owner's. It follows whether the Owner is Looking. Only the Owner ever sends it; Claude never sends anything.
 _Avoid_: Draft, auto-reply, response, answer
+
+**Late Reply**:
+A Suggested Reply to a Recruiter's message more than 30 days old, apologising for the delay. Late Replies are kept apart from the others so that they never bury new ones.
+_Avoid_: Revival, catch-up, old reply
 
 **Sync**:
 One pass in which Nando picks up the Owner's new LinkedIn messages from the Owner's MacBook, at most twice a Day. A Day on which the MacBook is never on has no Sync.
@@ -191,6 +199,10 @@ _Avoid_: Pull, fetch, scrape, import, read
 **Career Profile**:
 What Claude knows about the Owner's working life, to judge Opportunities and write Suggested Replies: their resumes, current situation, what they are looking for and their deal-breakers.
 _Avoid_: Resume (for the whole), CV, preferences, about me
+
+**Looking**:
+Whether the Owner is looking for a new role right now, set by the Owner as Looking or Not Looking. It changes the tone of every Suggested Reply and how often the Owner hears about them.
+_Avoid_: Open to Work (that is LinkedIn's), job hunting, active, available
 
 ## Body
 
