@@ -12,12 +12,12 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	careerutils "github.com/feriosch/nando-server/internal/career/utils"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
-// OpportunitiesService serves the Tools for Opportunities, their Steps and
-// their Companies.
+// OpportunitiesService serves the Tools for Opportunities and their Steps.
 type OpportunitiesService struct {
 	opportunities model.OpportunitiesRepository
 	companies     model.CompaniesRepository
@@ -103,114 +103,7 @@ func (s *OpportunitiesService) Tools() []coremodel.Tool {
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"opportunityId":{"type":"string"},"stepId":{"type":"string"}},"required":["opportunityId","stepId"]}`),
 		Destructive: true,
 		Handle:      s.deleteStepTool,
-	}, {
-		Name: "career_save_company",
-		Description: "Creates a Company, or, with id, updates one: only the fields sent change. " +
-			"brief is the Company Brief, a summary from public information only (what they do, size, tech, reputation, red flags), " +
-			"stopping where only the Owner could add more; notes are anything else worth keeping. " +
-			"A new Company needs a name no Company has. Answers the Company with its Opportunities.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
-			`"id":{"type":"string","description":"The Company to update; leave out to create one."},` +
-			`"name":{"type":"string"},` +
-			`"linkedInUrl":{"type":"string"},` +
-			`"websiteUrl":{"type":"string"},` +
-			`"brief":{"type":"string"},` +
-			`"notes":{"type":"string"}}}`),
-		Handle: s.saveCompanyTool,
-	}, {
-		Name:        "career_get_company",
-		Description: "A Company, with its Company Brief, notes and Opportunities. Answers the Company.",
-		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
-		ReadOnly:    true,
-		Handle:      s.getCompanyTool,
 	}}
-}
-
-func (s *OpportunitiesService) saveCompanyTool(ctx context.Context, arguments json.RawMessage) (any, error) {
-	var args struct {
-		ID          string  `json:"id"`
-		Name        *string `json:"name"`
-		LinkedInURL *string `json:"linkedInUrl"`
-		WebsiteURL  *string `json:"websiteUrl"`
-		Brief       *string `json:"brief"`
-		Notes       *string `json:"notes"`
-	}
-	if err := json.Unmarshal(arguments, &args); err != nil {
-		return nil, err
-	}
-	var company model.Company
-	if args.ID != "" {
-		var err error
-		if company, err = findCompany(ctx, s.companies, args.ID); err != nil {
-			return nil, err
-		}
-	} else if args.Name == nil {
-		return nil, badOpportunity("a new Company needs its name")
-	}
-	if args.Name != nil {
-		name := strings.TrimSpace(*args.Name)
-		if name == "" {
-			return nil, badOpportunity("a Company's name can't be empty")
-		}
-		other, err := s.companies.GetByName(ctx, name)
-		if err == nil && other.ID != company.ID {
-			return nil, fmt.Errorf("the Company %s (%s) already has that name", other.ID.Hex(), other.Name)
-		}
-		if err != nil && !errors.Is(err, coreutils.ErrNotFound) {
-			return nil, err
-		}
-		company.Name = name
-	}
-	for field, value := range map[*string]*string{
-		&company.LinkedInURL: args.LinkedInURL, &company.WebsiteURL: args.WebsiteURL,
-		&company.Brief: args.Brief, &company.Notes: args.Notes,
-	} {
-		if value != nil {
-			*field = strings.TrimSpace(*value)
-		}
-	}
-	var err error
-	if args.ID == "" {
-		company, err = s.companies.Insert(ctx, company)
-	} else {
-		err = s.companies.Replace(ctx, company)
-	}
-	if err != nil {
-		return nil, err
-	}
-	return s.companyJSON(ctx, company)
-}
-
-func (s *OpportunitiesService) getCompanyTool(ctx context.Context, arguments json.RawMessage) (any, error) {
-	var args idArgs
-	if err := json.Unmarshal(arguments, &args); err != nil {
-		return nil, err
-	}
-	company, err := findCompany(ctx, s.companies, args.ID)
-	if err != nil {
-		return nil, err
-	}
-	return s.companyJSON(ctx, company)
-}
-
-// companyJSON is the Company with its Opportunities.
-func (s *OpportunitiesService) companyJSON(ctx context.Context, c model.Company) (model.CompanyJSON, error) {
-	opportunities, err := s.opportunities.ByCompany(ctx, c.ID)
-	if err != nil {
-		return model.CompanyJSON{}, err
-	}
-	j := model.CompanyJSON{
-		ID: c.ID.Hex(), Name: c.Name, LinkedInURL: c.LinkedInURL, WebsiteURL: c.WebsiteURL, Brief: c.Brief, Notes: c.Notes,
-		Opportunities: []model.OpportunityJSON{},
-	}
-	for _, o := range opportunities {
-		short, err := opportunityJSON(ctx, s.companies, o)
-		if err != nil {
-			return model.CompanyJSON{}, err
-		}
-		j.Opportunities = append(j.Opportunities, short)
-	}
-	return j, nil
 }
 
 // idArgs are the arguments of a Tool that takes only an id.
@@ -239,7 +132,10 @@ func (s *OpportunitiesService) deleteTool(ctx context.Context, arguments json.Ra
 	if err != nil {
 		return nil, err
 	}
-	return struct{}{}, s.opportunities.Delete(ctx, o.ID)
+	if err := s.opportunities.Delete(ctx, o.ID); err != nil {
+		return nil, err
+	}
+	return model.OpportunityDeletedJSON{Deleted: o.ID.Hex()}, nil
 }
 
 func (s *OpportunitiesService) saveStepTool(ctx context.Context, arguments json.RawMessage) (any, error) {
@@ -260,19 +156,19 @@ func (s *OpportunitiesService) saveStepTool(ctx context.Context, arguments json.
 	}
 	step := model.Step{Kind: strings.TrimSpace(args.Kind), Date: args.Date, Time: args.Time, Notes: strings.TrimSpace(args.Notes)}
 	if step.Kind == "" {
-		return nil, badOpportunity("a Step needs its kind, such as \"Casual interview\"")
+		return nil, errors.New("a Step needs its kind, such as \"Casual interview\"")
 	}
 	if _, err := time.Parse(time.DateOnly, step.Date); err != nil {
-		return nil, badOpportunity("a Step's date is YYYY-MM-DD")
+		return nil, errors.New("a Step's date is YYYY-MM-DD")
 	}
 	if _, err := time.Parse("15:04", step.Time); step.Time != "" && err != nil {
-		return nil, badOpportunity("a Step's time is HH:MM, or left out")
+		return nil, errors.New("a Step's time is HH:MM, or left out")
 	}
 	if args.StepID == "" {
 		step.ID = bson.NewObjectID()
 		o.Steps = append(o.Steps, step)
 	} else {
-		i := s.stepIndex(o, args.StepID)
+		i := stepIndex(o, args.StepID)
 		if i < 0 {
 			return nil, fmt.Errorf("the Opportunity has no Step with the id %q", args.StepID)
 		}
@@ -295,7 +191,7 @@ func (s *OpportunitiesService) deleteStepTool(ctx context.Context, arguments jso
 	if err != nil {
 		return nil, err
 	}
-	i := s.stepIndex(o, args.StepID)
+	i := stepIndex(o, args.StepID)
 	if i < 0 {
 		return nil, fmt.Errorf("the Opportunity has no Step with the id %q", args.StepID)
 	}
@@ -304,7 +200,7 @@ func (s *OpportunitiesService) deleteStepTool(ctx context.Context, arguments jso
 }
 
 // stepIndex is where the Step with the id is in o's Steps, or -1.
-func (s *OpportunitiesService) stepIndex(o model.Opportunity, hex string) int {
+func stepIndex(o model.Opportunity, hex string) int {
 	return slices.IndexFunc(o.Steps, func(step model.Step) bool { return step.ID.Hex() == hex })
 }
 
@@ -334,7 +230,7 @@ func (s *OpportunitiesService) reopenTool(ctx context.Context, arguments json.Ra
 		return nil, err
 	}
 	if o.Stage != model.StageClosed || o.Outcome != model.OutcomeFaded {
-		return nil, badOpportunity("only a faded Opportunity is reopened")
+		return nil, errors.New("only a faded Opportunity is reopened")
 	}
 	o.Stage, o.Outcome, o.ClosedFrom = o.ClosedFrom, "", ""
 	return s.replace(ctx, o)
@@ -373,11 +269,6 @@ type saveOpportunityArgs struct {
 	Perks       *[]string             `json:"perks"`
 }
 
-// badOpportunity is a Tool argument that can't be saved, said for the model.
-type badOpportunity string
-
-func (e badOpportunity) Error() string { return string(e) }
-
 func (s *OpportunitiesService) saveTool(ctx context.Context, arguments json.RawMessage) (any, error) {
 	var args saveOpportunityArgs
 	if err := json.Unmarshal(arguments, &args); err != nil {
@@ -387,7 +278,7 @@ func (s *OpportunitiesService) saveTool(ctx context.Context, arguments json.RawM
 	var o model.Opportunity
 	if args.ID == "" {
 		if args.Company == nil || args.Role == nil || strings.TrimSpace(*args.Role) == "" {
-			return nil, badOpportunity("a new Opportunity needs its company and role")
+			return nil, errors.New("a new Opportunity needs its company and role")
 		}
 		o = model.Opportunity{Stage: model.StageIntroduced, Interest: model.InterestNormal, Perks: []string{}, Steps: []model.Step{}, CreatedAt: now}
 	} else {
@@ -416,15 +307,19 @@ func (s *OpportunitiesService) saveTool(ctx context.Context, arguments json.RawM
 func (s *OpportunitiesService) apply(ctx context.Context, o *model.Opportunity, args saveOpportunityArgs) error {
 	if args.Role != nil {
 		if o.Role = strings.TrimSpace(*args.Role); o.Role == "" {
-			return badOpportunity("role can't be empty")
+			return errors.New("role can't be empty")
 		}
 	}
 	if args.RecruiterID.Sent {
 		o.RecruiterID = nil
 		if args.RecruiterID.Value != nil {
-			recruiter, err := findRecruiter(ctx, s.recruiters, *args.RecruiterID.Value)
+			id, err := careerutils.ID("Recruiter", *args.RecruiterID.Value)
 			if err != nil {
 				return err
+			}
+			recruiter, err := s.recruiters.GetByID(ctx, id)
+			if err != nil {
+				return careerutils.Found(err, "Recruiter", *args.RecruiterID.Value)
 			}
 			o.RecruiterID = &recruiter.ID
 		}
@@ -434,7 +329,7 @@ func (s *OpportunitiesService) apply(ctx context.Context, o *model.Opportunity, 
 	}
 	if args.Interest != nil {
 		if !slices.Contains([]string{model.InterestHigh, model.InterestNormal, model.InterestLow}, *args.Interest) {
-			return badOpportunity("interest is high, normal or low")
+			return errors.New("interest is high, normal or low")
 		}
 		o.Interest = *args.Interest
 	}
@@ -452,19 +347,19 @@ func (s *OpportunitiesService) apply(ctx context.Context, o *model.Opportunity, 
 		o.Conditions = model.Conditions{OfficeDays: c.OfficeDays, OfficeLocation: strings.TrimSpace(c.OfficeLocation)}
 		if c.Remote != nil {
 			if !slices.Contains([]string{model.RemoteFull, model.RemoteHybrid, model.RemoteOffice}, *c.Remote) {
-				return badOpportunity("conditions.remote is remote, hybrid or office")
+				return errors.New("conditions.remote is remote, hybrid or office")
 			}
 			o.Conditions.Remote = *c.Remote
 		}
 		if c.WorkingLanguage != nil {
 			if !slices.Contains([]string{model.LanguageJA, model.LanguageEN, model.LanguageMixed}, *c.WorkingLanguage) {
-				return badOpportunity("conditions.workingLanguage is ja, en or mixed")
+				return errors.New("conditions.workingLanguage is ja, en or mixed")
 			}
 			o.Conditions.WorkingLanguage = *c.WorkingLanguage
 		}
 	}
 	if args.Perks != nil {
-		o.Perks = trimmed(*args.Perks)
+		o.Perks = careerutils.Trimmed(*args.Perks)
 	}
 	if args.Company != nil {
 		company, err := s.company(ctx, *args.Company)
@@ -479,13 +374,18 @@ func (s *OpportunitiesService) apply(ctx context.Context, o *model.Opportunity, 
 // applyStage moves o to stage, which may only be ahead of its Stage, with
 // outcome, which only a closed Opportunity has.
 func applyStage(o *model.Opportunity, stage, outcome *string) error {
+	// Faded is for an Opportunity that went quiet while open: a closed one
+	// made faded could be reopened, which only a faded one may be.
+	if o.Stage == model.StageClosed && outcome != nil && *outcome == model.OutcomeFaded && o.Outcome != model.OutcomeFaded {
+		return errors.New("a closed Opportunity can't become faded: only one that went quiet while open is")
+	}
 	if stage != nil && *stage != o.Stage {
 		from, to := slices.Index(model.Stages, o.Stage), slices.Index(model.Stages, *stage)
 		if to < 0 {
-			return badOpportunity("stage is introduced, in_process, offer or closed")
+			return errors.New("stage is introduced, in_process, offer or closed")
 		}
 		if to < from {
-			return badOpportunity(fmt.Sprintf("the Stage never goes back, from %s to %s; only a faded Opportunity is reopened, with career_reopen_opportunity", o.Stage, *stage))
+			return fmt.Errorf("the Stage never goes back, from %s to %s; only a faded Opportunity is reopened, with career_reopen_opportunity", o.Stage, *stage)
 		}
 		if *stage == model.StageClosed {
 			o.ClosedFrom = o.Stage
@@ -494,15 +394,15 @@ func applyStage(o *model.Opportunity, stage, outcome *string) error {
 	}
 	if outcome != nil {
 		if !slices.Contains(model.Outcomes, *outcome) {
-			return badOpportunity("outcome is accepted, declined, withdrawn, rejected or faded")
+			return errors.New("outcome is accepted, declined, withdrawn, rejected or faded")
 		}
 		o.Outcome = *outcome
 	}
 	switch {
 	case o.Stage == model.StageClosed && o.Outcome == "":
-		return badOpportunity("closing an Opportunity needs its outcome: accepted, declined, withdrawn, rejected or faded")
+		return errors.New("closing an Opportunity needs its outcome: accepted, declined, withdrawn, rejected or faded")
 	case o.Stage != model.StageClosed && o.Outcome != "":
-		return badOpportunity("only a closed Opportunity has an outcome")
+		return errors.New("only a closed Opportunity has an outcome")
 	}
 	return nil
 }
@@ -511,11 +411,16 @@ func applyStage(o *model.Opportunity, stage, outcome *string) error {
 // ignoring case, or a new one it stores.
 func (s *OpportunitiesService) company(ctx context.Context, ref model.CompanyRefJSON) (model.Company, error) {
 	if ref.ID != "" {
-		return findCompany(ctx, s.companies, ref.ID)
+		id, err := careerutils.ID("Company", ref.ID)
+		if err != nil {
+			return model.Company{}, err
+		}
+		company, err := s.companies.GetByID(ctx, id)
+		return company, careerutils.Found(err, "Company", ref.ID)
 	}
 	name := strings.TrimSpace(ref.Name)
 	if name == "" {
-		return model.Company{}, badOpportunity("company is {\"id\"} for an existing one or {\"name\"} for a new one")
+		return model.Company{}, errors.New("company is {\"id\"} for an existing one or {\"name\"} for a new one")
 	}
 	company, err := s.companies.GetByName(ctx, name)
 	if errors.Is(err, coreutils.ErrNotFound) {
@@ -526,21 +431,17 @@ func (s *OpportunitiesService) company(ctx context.Context, ref model.CompanyRef
 
 // opportunity returns the Opportunity with the id from a Tool's arguments.
 func (s *OpportunitiesService) opportunity(ctx context.Context, hex string) (model.Opportunity, error) {
-	missing := fmt.Errorf("no Opportunity has the id %q", hex)
-	id, err := bson.ObjectIDFromHex(hex)
+	id, err := careerutils.ID("Opportunity", hex)
 	if err != nil {
-		return model.Opportunity{}, missing
+		return model.Opportunity{}, err
 	}
 	o, err := s.opportunities.GetByID(ctx, id)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		return model.Opportunity{}, missing
-	}
-	return o, err
+	return o, careerutils.Found(err, "Opportunity", hex)
 }
 
 // fullJSON is everything about o, with its Company's name.
 func (s *OpportunitiesService) fullJSON(ctx context.Context, o model.Opportunity) (model.FullOpportunityJSON, error) {
-	short, err := opportunityJSON(ctx, s.companies, o)
+	short, err := s.Short(ctx, o)
 	if err != nil {
 		return model.FullOpportunityJSON{}, err
 	}
@@ -550,10 +451,10 @@ func (s *OpportunitiesService) fullJSON(ctx context.Context, o model.Opportunity
 		Details:         o.Details,
 		Pay:             model.PayJSON{FirstStated: o.Pay.FirstStated, Offered: o.Pay.Offered, BonusIncluded: o.Pay.BonusIncluded},
 		Conditions: model.ConditionsJSON{
-			Remote:          orNull(o.Conditions.Remote),
+			Remote:          careerutils.OrNull(o.Conditions.Remote),
 			OfficeDays:      o.Conditions.OfficeDays,
 			OfficeLocation:  o.Conditions.OfficeLocation,
-			WorkingLanguage: orNull(o.Conditions.WorkingLanguage),
+			WorkingLanguage: careerutils.OrNull(o.Conditions.WorkingLanguage),
 		},
 		Perks:     append([]string{}, o.Perks...),
 		Steps:     []model.StepJSON{},
@@ -561,61 +462,39 @@ func (s *OpportunitiesService) fullJSON(ctx context.Context, o model.Opportunity
 		UpdatedAt: o.UpdatedAt,
 	}
 	for _, step := range o.Steps {
-		j.Steps = append(j.Steps, model.StepJSON{ID: step.ID.Hex(), Kind: step.Kind, Date: step.Date, Time: orNull(step.Time), Notes: step.Notes})
+		j.Steps = append(j.Steps, model.StepJSON{ID: step.ID.Hex(), Kind: step.Kind, Date: step.Date, Time: careerutils.OrNull(step.Time), Notes: step.Notes})
 	}
 	return j, nil
 }
 
-// opportunityJSON is o in short, with its Company's name from companies.
-func opportunityJSON(ctx context.Context, companies model.CompaniesRepository, o model.Opportunity) (model.OpportunityJSON, error) {
-	company, err := companies.GetByID(ctx, o.CompanyID)
+// Short is o in short, with its Company's name, for the Module's other
+// services too.
+func (s *OpportunitiesService) Short(ctx context.Context, o model.Opportunity) (model.OpportunityJSON, error) {
+	company, err := s.companies.GetByID(ctx, o.CompanyID)
 	if err != nil {
 		return model.OpportunityJSON{}, err
 	}
-	j := model.OpportunityJSON{
-		ID:       o.ID.Hex(),
-		Company:  model.CompanyRefJSON{ID: company.ID.Hex(), Name: company.Name},
-		Role:     o.Role,
-		Stage:    o.Stage,
-		Outcome:  orNull(o.Outcome),
-		Interest: o.Interest,
-	}
-	if o.RecruiterID != nil {
-		id := o.RecruiterID.Hex()
-		j.RecruiterID = &id
-	}
-	return j, nil
+	return careerutils.ToOpportunityJSON(o, company), nil
 }
 
-// findCompany returns the Company with the id from a Tool's arguments.
-func findCompany(ctx context.Context, companies model.CompaniesRepository, hex string) (model.Company, error) {
-	missing := fmt.Errorf("no Company has the id %q", hex)
-	id, err := bson.ObjectIDFromHex(hex)
+// ByRecruiter is the Opportunities the Recruiter brought, in short.
+func (s *OpportunitiesService) ByRecruiter(ctx context.Context, recruiterID bson.ObjectID) ([]model.OpportunityJSON, error) {
+	brought, err := s.opportunities.ByRecruiter(ctx, recruiterID)
 	if err != nil {
-		return model.Company{}, missing
+		return nil, err
 	}
-	company, err := companies.GetByID(ctx, id)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		return model.Company{}, missing
-	}
-	return company, err
+	return s.shortAll(ctx, brought)
 }
 
-// orNull is s, or nil if it is empty.
-func orNull(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
-// trimmed is list with each item trimmed and the blank ones left out.
-func trimmed(list []string) []string {
-	out := []string{}
-	for _, item := range list {
-		if item = strings.TrimSpace(item); item != "" {
-			out = append(out, item)
+// shortAll is every Opportunity in opportunities, in short.
+func (s *OpportunitiesService) shortAll(ctx context.Context, opportunities []model.Opportunity) ([]model.OpportunityJSON, error) {
+	all := []model.OpportunityJSON{}
+	for _, o := range opportunities {
+		short, err := s.Short(ctx, o)
+		if err != nil {
+			return nil, err
 		}
+		all = append(all, short)
 	}
-	return out
+	return all, nil
 }

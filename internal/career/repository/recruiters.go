@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	careerutils "github.com/feriosch/nando-server/internal/career/utils"
 	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
@@ -35,9 +36,9 @@ func (r recruiters) GetByID(ctx context.Context, id bson.ObjectID) (model.Recrui
 
 func (r recruiters) Search(ctx context.Context, query string) ([]model.Recruiter, error) {
 	cursor, err := r.collection.Find(ctx, bson.D{{Key: "$or", Value: bson.A{
-		bson.D{{Key: "name", Value: containing(query)}},
-		bson.D{{Key: "organisation", Value: containing(query)}},
-	}}}, byName)
+		bson.D{{Key: "name", Value: careerutils.Containing(query)}},
+		bson.D{{Key: "organisation", Value: careerutils.Containing(query)}},
+	}}}, careerutils.ByName())
 	if err != nil {
 		return nil, err
 	}

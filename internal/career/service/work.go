@@ -10,6 +10,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	careerutils "github.com/feriosch/nando-server/internal/career/utils"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
@@ -32,9 +33,10 @@ type WorkService struct {
 	work          model.WorkRepository
 	conversations model.ConversationsRepository
 	recruiters    model.RecruitersRepository
-	opportunities model.OpportunitiesRepository
-	companies     model.CompaniesRepository
-	settings      model.SettingsRepository
+	// opportunities shows a Recruiter's Opportunities, and settings
+	// whether the Owner is Looking.
+	opportunities *OpportunitiesService
+	settings      *SettingsService
 	profile       model.ProfileRepository
 	syncs         model.SyncsRepository
 	now           func() time.Time
@@ -42,11 +44,10 @@ type WorkService struct {
 
 // NewWork returns the WorkService.
 func NewWork(scheduledTask *coreutils.ScheduledTask, work model.WorkRepository, conversations model.ConversationsRepository, recruiters model.RecruitersRepository,
-	opportunities model.OpportunitiesRepository, companies model.CompaniesRepository,
-	settings model.SettingsRepository, profile model.ProfileRepository, syncs model.SyncsRepository, now func() time.Time) *WorkService {
+	opportunities *OpportunitiesService, settings *SettingsService, profile model.ProfileRepository, syncs model.SyncsRepository, now func() time.Time) *WorkService {
 	return &WorkService{
-		scheduledTask: scheduledTask, work: work, conversations: conversations, recruiters: recruiters, opportunities: opportunities, companies: companies,
-		settings: settings, profile: profile, syncs: syncs, now: now,
+		scheduledTask: scheduledTask, work: work, conversations: conversations, recruiters: recruiters,
+		opportunities: opportunities, settings: settings, profile: profile, syncs: syncs, now: now,
 	}
 }
 
@@ -86,7 +87,7 @@ func (s *WorkService) listTool(ctx context.Context, _ json.RawMessage) (any, err
 		if err != nil {
 			return nil, err
 		}
-		j := model.ItemJSON{ID: item.ID.Hex(), Kind: item.Kind, Conversation: conversationJSON(conversation)}
+		j := model.ItemJSON{ID: item.ID.Hex(), Kind: item.Kind, Conversation: careerutils.ToConversationJSON(conversation)}
 		if conversation.RecruiterID != nil {
 			if j.Recruiter, err = s.recruiterWithWork(ctx, *conversation.RecruiterID, conversation.ID); err != nil {
 				return nil, err
@@ -99,7 +100,7 @@ func (s *WorkService) listTool(ctx context.Context, _ json.RawMessage) (any, err
 	} else {
 		s.scheduledTask.RunWorking(ctx)
 	}
-	settings, err := savedOrDefault(ctx, s.settings)
+	settings, err := s.settings.Settings(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -132,18 +133,11 @@ func (s *WorkService) recruiterWithWork(ctx context.Context, id, item bson.Objec
 	if err != nil {
 		return nil, err
 	}
-	j := &model.RecruiterWithWorkJSON{RecruiterJSON: recruiterJSON(recruiter), Conversations: []model.ConversationJSON{}, Opportunities: []model.OpportunityJSON{}}
+	j := &model.RecruiterWithWorkJSON{RecruiterJSON: careerutils.ToRecruiterJSON(recruiter), Conversations: []model.ConversationJSON{}, Opportunities: brought}
 	for _, c := range filed {
 		if c.ID != item {
-			j.Conversations = append(j.Conversations, conversationJSON(c))
+			j.Conversations = append(j.Conversations, careerutils.ToConversationJSON(c))
 		}
-	}
-	for _, o := range brought {
-		short, err := opportunityJSON(ctx, s.companies, o)
-		if err != nil {
-			return nil, err
-		}
-		j.Opportunities = append(j.Opportunities, short)
 	}
 	return j, nil
 }
@@ -186,30 +180,4 @@ func (s *WorkService) failUnfinished(ctx context.Context) error {
 			item.Kind, item.ID.Hex(), item.ConversationID.Hex(), item.Claims)
 	}
 	return err
-}
-
-// conversationJSON is c as the Tools answer it.
-func conversationJSON(c model.Conversation) model.ConversationJSON {
-	j := model.ConversationJSON{
-		ID:       c.ID.Hex(),
-		ThreadID: c.ThreadID,
-		URL:      c.URL,
-		Person:   model.PersonJSON{Name: c.Person.Name, ProfileURL: c.Person.ProfileURL},
-		Messages: []model.MessageJSON{},
-		Ignored:  c.Ignored,
-	}
-	for _, m := range c.Messages {
-		j.Messages = append(j.Messages, model.MessageJSON{ID: m.LinkedInID, From: m.From, SentAt: m.SentAt, Text: m.Text})
-	}
-	if c.RecruiterID != nil {
-		id := c.RecruiterID.Hex()
-		j.RecruiterID = &id
-	}
-	if r := c.SuggestedReply; r != nil {
-		j.SuggestedReply = &model.SuggestedReplyJSON{
-			Text: r.Text, Language: r.Language, Kind: r.Kind, Answers: r.Answers,
-			Notes: append([]model.LanguageNote{}, r.Notes...), WrittenAt: r.WrittenAt,
-		}
-	}
-	return j
 }

@@ -130,13 +130,6 @@ type ConversationsRepository interface {
 	Threads(ctx context.Context) ([]Conversation, error)
 }
 
-// SearchJSON is what career_search answers.
-type SearchJSON struct {
-	Recruiters    []RecruiterJSON   `json:"recruiters"`
-	Companies     []CompanyRefJSON  `json:"companies"`
-	Opportunities []OpportunityJSON `json:"opportunities"`
-}
-
 // ConversationJSON is a Conversation as the Tools answer it.
 type ConversationJSON struct {
 	ID       string        `json:"id"`

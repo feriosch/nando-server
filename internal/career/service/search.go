@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	careerutils "github.com/feriosch/nando-server/internal/career/utils"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 )
 
@@ -17,11 +18,14 @@ type SearchService struct {
 	recruiters    model.RecruitersRepository
 	companies     model.CompaniesRepository
 	opportunities model.OpportunitiesRepository
+	// opportunitiesService shows the Opportunities found in short.
+	opportunitiesService *OpportunitiesService
 }
 
 // NewSearch returns the SearchService.
-func NewSearch(recruiters model.RecruitersRepository, companies model.CompaniesRepository, opportunities model.OpportunitiesRepository) *SearchService {
-	return &SearchService{recruiters: recruiters, companies: companies, opportunities: opportunities}
+func NewSearch(recruiters model.RecruitersRepository, companies model.CompaniesRepository, opportunities model.OpportunitiesRepository,
+	opportunitiesService *OpportunitiesService) *SearchService {
+	return &SearchService{recruiters: recruiters, companies: companies, opportunities: opportunities, opportunitiesService: opportunitiesService}
 }
 
 // Tools are career_search.
@@ -55,7 +59,7 @@ func (s *SearchService) searchTool(ctx context.Context, arguments json.RawMessag
 		return nil, err
 	}
 	for _, r := range recruiters {
-		found.Recruiters = append(found.Recruiters, recruiterJSON(r))
+		found.Recruiters = append(found.Recruiters, careerutils.ToRecruiterJSON(r))
 	}
 	companies, err := s.companies.Search(ctx, query)
 	if err != nil {
@@ -70,12 +74,8 @@ func (s *SearchService) searchTool(ctx context.Context, arguments json.RawMessag
 	if err != nil {
 		return nil, err
 	}
-	for _, o := range opportunities {
-		short, err := opportunityJSON(ctx, s.companies, o)
-		if err != nil {
-			return nil, err
-		}
-		found.Opportunities = append(found.Opportunities, short)
+	if found.Opportunities, err = s.opportunitiesService.shortAll(ctx, opportunities); err != nil {
+		return nil, err
 	}
 	return found, nil
 }

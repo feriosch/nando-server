@@ -12,6 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	careerutils "github.com/feriosch/nando-server/internal/career/utils"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
@@ -112,13 +113,13 @@ func (s *ConversationsService) setSuggestedReplyTool(ctx context.Context, argume
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
 	}
-	id, err := conversationID(args.ConversationID)
+	id, err := careerutils.ID("Conversation", args.ConversationID)
 	if err != nil {
 		return nil, err
 	}
 	held, err := s.conversations.GetByID(ctx, id)
 	if err != nil {
-		return nil, noConversation(args.ConversationID, err)
+		return nil, careerutils.Found(err, "Conversation", args.ConversationID)
 	}
 	reply := model.SuggestedReply{
 		Text: strings.TrimSpace(args.Text), Language: args.Language, Kind: args.Kind, Answers: args.Answers,
@@ -133,6 +134,9 @@ func (s *ConversationsService) setSuggestedReplyTool(ctx context.Context, argume
 		return nil, errors.New("a Suggested Reply's kind is answer, follow_up or late")
 	case !slices.ContainsFunc(held.Messages, func(m model.Message) bool { return sameTime(m.SentAt, args.Answers) }):
 		return nil, errors.New("answers is the sentAt of a message in the Conversation, as career_get_conversation shows it")
+	case reply.Kind != model.ReplyFollowUp && !sameTime(args.Answers, newestFrom(held, model.MessageFromOther)):
+		return nil, fmt.Errorf("an answer or late reply answers the Recruiter's newest message, sent at %s: read the Conversation again with career_get_conversation",
+			newestFrom(held, model.MessageFromOther).Format(time.RFC3339))
 	case len(args.Notes) > model.MaxLanguageNotes:
 		return nil, fmt.Errorf("a Suggested Reply has at most %d language notes", model.MaxLanguageNotes)
 	}
@@ -153,7 +157,29 @@ func (s *ConversationsService) setSuggestedReplyTool(ctx context.Context, argume
 	if err := s.complete(ctx, id, model.ItemReply, model.ItemLateReply, model.ItemFollowUp); err != nil {
 		return nil, err
 	}
-	return conversationJSON(conversation), nil
+	return careerutils.ToConversationJSON(conversation), nil
+}
+
+// newestFrom is when the newest of c's messages from sender was sent, or the
+// zero time if there is none.
+func newestFrom(c model.Conversation, sender string) time.Time {
+	var newest time.Time
+	for _, m := range c.Messages {
+		if m.From == sender && m.SentAt.After(newest) {
+			newest = m.SentAt
+		}
+	}
+	return newest
+}
+
+// recruiter returns the Recruiter with the id from a Tool's arguments.
+func (s *ConversationsService) recruiter(ctx context.Context, hex string) (model.Recruiter, error) {
+	id, err := careerutils.ID("Recruiter", hex)
+	if err != nil {
+		return model.Recruiter{}, err
+	}
+	recruiter, err := s.recruiters.GetByID(ctx, id)
+	return recruiter, careerutils.Found(err, "Recruiter", hex)
 }
 
 // sameTime reports whether a and b are the same time to the millisecond, as
@@ -169,15 +195,15 @@ func (s *ConversationsService) getTool(ctx context.Context, arguments json.RawMe
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
 	}
-	id, err := conversationID(args.ID)
+	id, err := careerutils.ID("Conversation", args.ID)
 	if err != nil {
 		return nil, err
 	}
 	conversation, err := s.conversations.GetByID(ctx, id)
 	if err != nil {
-		return nil, noConversation(args.ID, err)
+		return nil, careerutils.Found(err, "Conversation", args.ID)
 	}
-	return conversationJSON(conversation), nil
+	return careerutils.ToConversationJSON(conversation), nil
 }
 
 func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawMessage) (any, error) {
@@ -189,14 +215,14 @@ func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawM
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
 	}
-	id, err := conversationID(args.ConversationID)
+	id, err := careerutils.ID("Conversation", args.ConversationID)
 	if err != nil {
 		return nil, err
 	}
 	// Check everything before storing a new Recruiter.
 	held, err := s.conversations.GetByID(ctx, id)
 	if err != nil {
-		return nil, noConversation(args.ConversationID, err)
+		return nil, careerutils.Found(err, "Conversation", args.ConversationID)
 	}
 	if held.Ignored {
 		return nil, errors.New("that Conversation is ignored: it isn't about a role")
@@ -204,7 +230,7 @@ func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawM
 	var recruiter model.Recruiter
 	switch {
 	case args.RecruiterID != "":
-		if recruiter, err = findRecruiter(ctx, s.recruiters, args.RecruiterID); err != nil {
+		if recruiter, err = s.recruiter(ctx, args.RecruiterID); err != nil {
 			return nil, err
 		}
 	case args.Recruiter != nil:
@@ -228,31 +254,12 @@ func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawM
 	}
 	conversation, err := s.conversations.File(ctx, id, recruiter.ID)
 	if err != nil {
-		return nil, noConversation(args.ConversationID, err)
+		return nil, careerutils.Found(err, "Conversation", args.ConversationID)
 	}
 	if err := s.complete(ctx, id, model.ItemSort); err != nil {
 		return nil, err
 	}
-	return model.FiledJSON{Conversation: conversationJSON(conversation), Recruiter: recruiterJSON(recruiter)}, nil
-}
-
-// findRecruiter returns the Recruiter with the id from a Tool's arguments.
-func findRecruiter(ctx context.Context, recruiters model.RecruitersRepository, hex string) (model.Recruiter, error) {
-	missing := fmt.Errorf("no Recruiter has the id %q", hex)
-	id, err := bson.ObjectIDFromHex(hex)
-	if err != nil {
-		return model.Recruiter{}, missing
-	}
-	recruiter, err := recruiters.GetByID(ctx, id)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		return model.Recruiter{}, missing
-	}
-	return recruiter, err
-}
-
-// recruiterJSON is r as the Tools answer it.
-func recruiterJSON(r model.Recruiter) model.RecruiterJSON {
-	return model.RecruiterJSON{ID: r.ID.Hex(), Name: r.Name, ProfileURL: r.ProfileURL, Kind: r.Kind, Organisation: r.Organisation}
+	return model.FiledJSON{Conversation: careerutils.ToConversationJSON(conversation), Recruiter: careerutils.ToRecruiterJSON(recruiter)}, nil
 }
 
 func (s *ConversationsService) ignoreTool(ctx context.Context, arguments json.RawMessage) (any, error) {
@@ -262,34 +269,17 @@ func (s *ConversationsService) ignoreTool(ctx context.Context, arguments json.Ra
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
 	}
-	id, err := conversationID(args.ConversationID)
+	id, err := careerutils.ID("Conversation", args.ConversationID)
 	if err != nil {
 		return nil, err
 	}
 	conversation, err := s.conversations.Ignore(ctx, id)
 	if err != nil {
-		return nil, noConversation(args.ConversationID, err)
+		return nil, careerutils.Found(err, "Conversation", args.ConversationID)
 	}
-	if err := s.complete(ctx, id, model.ItemSort); err != nil {
+	// Nothing is left to do for a thread that isn't about a role.
+	if err := s.complete(ctx, id, model.ItemKinds...); err != nil {
 		return nil, err
 	}
-	return conversationJSON(conversation), nil
-}
-
-// conversationID is the Conversation id in a Tool's arguments.
-func conversationID(hex string) (bson.ObjectID, error) {
-	id, err := bson.ObjectIDFromHex(hex)
-	if err != nil {
-		return bson.ObjectID{}, fmt.Errorf("no Conversation has the id %q", hex)
-	}
-	return id, nil
-}
-
-// noConversation says that no Conversation has the id, for a repository's
-// ErrNotFound, and returns any other err as it is.
-func noConversation(id string, err error) error {
-	if errors.Is(err, coreutils.ErrNotFound) {
-		return fmt.Errorf("no Conversation has the id %q", id)
-	}
-	return err
+	return careerutils.ToConversationJSON(conversation), nil
 }

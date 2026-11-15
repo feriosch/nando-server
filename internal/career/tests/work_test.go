@@ -351,3 +351,18 @@ func TestTheRunSeesTheRecruitersOpportunities(t *testing.T) {
 		t.Errorf("the reply item's recruiter = %+v; want Tanaka with the Kumo Pay Opportunity", item.Recruiter)
 	}
 }
+
+func TestIgnoringAFiledConversationDoesAllItsWork(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	_, filed := fileTanakasConversation(t, phone)
+	callTool[recordedJSON](t, phone.macAt(at(0, 15, 0)), "career_record_sync", map[string]any{"threads": []any{
+		tanakaThread(message("m2", "other", at(0, 14, 0), "Are you free for a call this week?")),
+	}})
+	// On a closer look, Tanaka was only selling a course.
+	callTool[conversationJSON](t, phone.connect(), "career_ignore_thread", map[string]any{"conversationId": filed.Conversation.ID})
+
+	n.clock.Set(at(1, 8, 0))
+	if left := callTool[workJSON](t, phone.connect(), "career_list_work", nil); len(left.Items) != 0 {
+		t.Errorf("after ignoring, a run claimed %+v; want nothing", left.Items)
+	}
+}

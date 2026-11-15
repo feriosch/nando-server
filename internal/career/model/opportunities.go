@@ -176,6 +176,12 @@ type ConditionsJSON struct {
 	WorkingLanguage *string `json:"workingLanguage"`
 }
 
+// OpportunityDeletedJSON is what career_delete_opportunity answers: the
+// deleted Opportunity's id.
+type OpportunityDeletedJSON struct {
+	Deleted string `json:"deleted"`
+}
+
 // StepJSON is a Step as the Tools answer it.
 type StepJSON struct {
 	ID    string  `json:"id"`

@@ -96,3 +96,19 @@ func TestASuggestedReplyDoesTheReplyItem(t *testing.T) {
 		t.Errorf("after the Suggested Reply, a run claimed %+v; want nothing", left.Items)
 	}
 }
+
+func TestAnAnswerAnswersTheRecruitersNewestMessage(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	fileTanaka(t, phone)
+	callTool[recordedJSON](t, phone.macAt(at(0, 15, 0)), "career_record_sync", map[string]any{"threads": []any{
+		tanakaThread(message("m2", "other", at(0, 14, 0), "Are you free for a call this week?")),
+	}})
+	run := phone.connect()
+	id := callTool[workJSON](t, run, "career_list_work", nil).Items[0].Conversation.ID
+
+	// The run read only the pitch, and Tanaka has written since.
+	toolFails(t, run, "career_set_suggested_reply", map[string]any{
+		"conversationId": id, "text": "Thank you for reaching out!", "language": "en", "kind": "answer",
+		"answers": pitched.Format(time.RFC3339),
+	})
+}

@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	careerutils "github.com/feriosch/nando-server/internal/career/utils"
 	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
@@ -39,11 +40,7 @@ func (r opportunities) Replace(ctx context.Context, opportunity model.Opportunit
 }
 
 func (r opportunities) Delete(ctx context.Context, id bson.ObjectID) error {
-	result, err := r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}})
-	if err == nil && result.DeletedCount == 0 {
-		return utils.ErrNotFound
-	}
-	return err
+	return utils.Deleted(r.collection.DeleteOne(ctx, bson.D{{Key: "_id", Value: id}}))
 }
 
 func (r opportunities) ByRecruiter(ctx context.Context, recruiterID bson.ObjectID) ([]model.Opportunity, error) {
@@ -56,7 +53,7 @@ func (r opportunities) ByCompany(ctx context.Context, companyID bson.ObjectID) (
 
 func (r opportunities) Search(ctx context.Context, query string, companyIDs []bson.ObjectID) ([]model.Opportunity, error) {
 	return r.find(ctx, bson.D{{Key: "$or", Value: bson.A{
-		bson.D{{Key: "role", Value: containing(query)}},
+		bson.D{{Key: "role", Value: careerutils.Containing(query)}},
 		bson.D{{Key: "companyId", Value: bson.D{{Key: "$in", Value: companyIDs}}}},
 	}}})
 }

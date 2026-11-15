@@ -2,13 +2,12 @@ package repository
 
 import (
 	"context"
-	"regexp"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
-	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	careerutils "github.com/feriosch/nando-server/internal/career/utils"
 	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
@@ -37,26 +36,18 @@ func (r companies) GetByID(ctx context.Context, id bson.ObjectID) (model.Company
 
 func (r companies) GetByName(ctx context.Context, name string) (model.Company, error) {
 	var company model.Company
-	err := r.collection.FindOne(ctx, bson.D{{Key: "name", Value: bson.Regex{Pattern: "^" + regexp.QuoteMeta(name) + "$", Options: "i"}}}).Decode(&company)
+	err := r.collection.FindOne(ctx, bson.D{{Key: "name", Value: careerutils.Exactly(name)}}).Decode(&company)
 	return company, utils.NotFound(err)
 }
 
 func (r companies) Search(ctx context.Context, query string) ([]model.Company, error) {
-	cursor, err := r.collection.Find(ctx, bson.D{{Key: "name", Value: containing(query)}}, byName)
+	cursor, err := r.collection.Find(ctx, bson.D{{Key: "name", Value: careerutils.Containing(query)}}, careerutils.ByName())
 	if err != nil {
 		return nil, err
 	}
 	found := []model.Company{}
 	return found, cursor.All(ctx, &found)
 }
-
-// containing matches a string with query in it, ignoring case.
-func containing(query string) bson.Regex {
-	return bson.Regex{Pattern: regexp.QuoteMeta(query), Options: "i"}
-}
-
-// byName sorts what is found by name.
-var byName = options.Find().SetSort(bson.D{{Key: "name", Value: 1}})
 
 func (r companies) Replace(ctx context.Context, company model.Company) error {
 	return utils.Matched(r.collection.ReplaceOne(ctx, bson.D{{Key: "_id", Value: company.ID}}, company))

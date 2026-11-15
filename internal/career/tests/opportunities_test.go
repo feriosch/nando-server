@@ -183,3 +183,18 @@ func TestOnlyDeletingIsDestructive(t *testing.T) {
 		t.Errorf("destructive Career Tools = %v; want %v", destructive, want)
 	}
 }
+
+func TestAClosedOpportunityIsNotMadeFadedToReopenIt(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run, tanaka := fileTanaka(t, phone)
+	o := newOpportunity(t, run, tanaka)
+	callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{"id": o.ID, "stage": "closed", "outcome": "rejected"})
+
+	toolFails(t, run, "career_save_opportunity", map[string]any{"id": o.ID, "outcome": "faded"})
+
+	// The Owner may still correct how it ended.
+	corrected := callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{"id": o.ID, "outcome": "withdrawn"})
+	if corrected.Outcome == nil || *corrected.Outcome != "withdrawn" {
+		t.Errorf("correcting the outcome answered %v; want withdrawn", corrected.Outcome)
+	}
+}

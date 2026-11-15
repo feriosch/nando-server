@@ -44,6 +44,9 @@ const (
 	ItemFollowUp = "follow_up"
 )
 
+// ItemKinds are every kind of Item.
+var ItemKinds = []string{ItemSort, ItemReply, ItemLateReply, ItemFollowUp}
+
 // The states of an Item.
 const (
 	ItemWaiting = "waiting"

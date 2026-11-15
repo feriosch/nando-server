@@ -28,15 +28,10 @@ func (s *SettingsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/career/settings", s.putSettings)
 }
 
-// savedOrDefault returns the saved settings, or the defaults if none were saved.
-func (s *SettingsService) savedOrDefault(ctx context.Context) (model.Settings, error) {
-	return savedOrDefault(ctx, s.settings)
-}
-
-// savedOrDefault returns the settings saved in repo, or the defaults if none
-// were saved.
-func savedOrDefault(ctx context.Context, repo model.SettingsRepository) (model.Settings, error) {
-	settings, err := repo.Find(ctx)
+// Settings returns the saved settings, or the defaults if none were saved,
+// for the Module's other services too.
+func (s *SettingsService) Settings(ctx context.Context) (model.Settings, error) {
+	settings, err := s.settings.Find(ctx)
 	if errors.Is(err, coreutils.ErrNotFound) {
 		return model.DefaultSettings, nil
 	}
@@ -44,7 +39,7 @@ func savedOrDefault(ctx context.Context, repo model.SettingsRepository) (model.S
 }
 
 func (s *SettingsService) getSettings(w http.ResponseWriter, r *http.Request) {
-	settings, err := s.savedOrDefault(r.Context())
+	settings, err := s.Settings(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
@@ -84,7 +79,7 @@ func (s *SettingsService) Tools() []coremodel.Tool {
 }
 
 func (s *SettingsService) getSettingsTool(ctx context.Context, _ json.RawMessage) (any, error) {
-	settings, err := s.savedOrDefault(ctx)
+	settings, err := s.Settings(ctx)
 	if err != nil {
 		return nil, err
 	}
