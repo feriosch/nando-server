@@ -16,6 +16,7 @@ import (
 // SearchService serves career_search, for the Owner's chat skills.
 type SearchService struct {
 	recruiters    model.RecruitersRepository
+	conversations model.ConversationsRepository
 	companies     model.CompaniesRepository
 	opportunities model.OpportunitiesRepository
 	// opportunitiesService shows the Opportunities found in short.
@@ -23,9 +24,10 @@ type SearchService struct {
 }
 
 // NewSearch returns the SearchService.
-func NewSearch(recruiters model.RecruitersRepository, companies model.CompaniesRepository, opportunities model.OpportunitiesRepository,
-	opportunitiesService *OpportunitiesService) *SearchService {
-	return &SearchService{recruiters: recruiters, companies: companies, opportunities: opportunities, opportunitiesService: opportunitiesService}
+func NewSearch(recruiters model.RecruitersRepository, conversations model.ConversationsRepository, companies model.CompaniesRepository,
+	opportunities model.OpportunitiesRepository, opportunitiesService *OpportunitiesService) *SearchService {
+	return &SearchService{recruiters: recruiters, conversations: conversations, companies: companies, opportunities: opportunities,
+		opportunitiesService: opportunitiesService}
 }
 
 // Tools are career_search.
@@ -33,8 +35,10 @@ func (s *SearchService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "career_search",
 		Description: "Finds Recruiters (by name or their agency or Company), Companies (by name) and Opportunities " +
-			"(by role, or by their Company's name), open or closed, ignoring case. " +
-			"Answers {\"recruiters\": [{\"id\", \"name\", \"profileUrl\", \"kind\", \"organisation\"}], \"companies\": [{\"id\", \"name\"}], " +
+			"(by role, or by their Company's name), open or closed, ignoring case. A Recruiter comes with their Conversations, " +
+			"each with whether it has a Suggested Reply; career_get_conversation reads one. " +
+			"Answers {\"recruiters\": [{\"id\", \"name\", \"profileUrl\", \"kind\", \"organisation\", " +
+			"\"conversations\": [{\"id\", \"hasSuggestedReply\"}]}], \"companies\": [{\"id\", \"name\"}], " +
 			"\"opportunities\": [{\"id\", \"company\", \"role\", \"recruiterId\", \"stage\", \"outcome\", \"interest\"}]}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`),
 		ReadOnly:    true,
@@ -53,13 +57,21 @@ func (s *SearchService) searchTool(ctx context.Context, arguments json.RawMessag
 	if query == "" {
 		return nil, errors.New("query can't be empty")
 	}
-	found := model.SearchJSON{Recruiters: []model.RecruiterJSON{}, Companies: []model.CompanyRefJSON{}, Opportunities: []model.OpportunityJSON{}}
+	found := model.SearchJSON{Recruiters: []model.FoundRecruiterJSON{}, Companies: []model.CompanyRefJSON{}, Opportunities: []model.OpportunityJSON{}}
 	recruiters, err := s.recruiters.Search(ctx, query)
 	if err != nil {
 		return nil, err
 	}
 	for _, r := range recruiters {
-		found.Recruiters = append(found.Recruiters, careerutils.ToRecruiterJSON(r))
+		filed, err := s.conversations.ByRecruiter(ctx, r.ID)
+		if err != nil {
+			return nil, err
+		}
+		j := model.FoundRecruiterJSON{RecruiterJSON: careerutils.ToRecruiterJSON(r), Conversations: []model.FoundConversationJSON{}}
+		for _, c := range filed {
+			j.Conversations = append(j.Conversations, model.FoundConversationJSON{ID: c.ID.Hex(), HasSuggestedReply: c.SuggestedReply != nil})
+		}
+		found.Recruiters = append(found.Recruiters, j)
 	}
 	companies, err := s.companies.Search(ctx, query)
 	if err != nil {

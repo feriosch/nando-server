@@ -1,12 +1,15 @@
 package tests
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // searchJSON is what career_search answers.
 type searchJSON struct {
-	Recruiters    []recruiterJSON   `json:"recruiters"`
-	Companies     []companyJSON     `json:"companies"`
-	Opportunities []opportunityJSON `json:"opportunities"`
+	Recruiters    []foundRecruiterJSON `json:"recruiters"`
+	Companies     []companyJSON        `json:"companies"`
+	Opportunities []opportunityJSON    `json:"opportunities"`
 }
 
 func TestSearchFindsRecruitersCompaniesAndOpportunitiesByName(t *testing.T) {
@@ -34,5 +37,40 @@ func TestSearchFindsRecruitersCompaniesAndOpportunitiesByName(t *testing.T) {
 	}
 	if got := callTool[searchJSON](t, run, "career_search", map[string]any{"query": "kumo"}); len(got.Opportunities) == 1 && got.Opportunities[0].ID != o.ID {
 		t.Errorf("career_search kumo found Opportunity %s; want %s", got.Opportunities[0].ID, o.ID)
+	}
+}
+
+// foundRecruiterJSON is a Recruiter as career_search answers it: with their
+// Conversations, so a chat can reach a Suggested Reply.
+type foundRecruiterJSON struct {
+	recruiterJSON
+	Conversations []struct {
+		ID                string `json:"id"`
+		HasSuggestedReply bool   `json:"hasSuggestedReply"`
+	} `json:"conversations"`
+}
+
+func TestSearchLeadsFromARecruiterToTheirSuggestedReply(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run, filed := fileTanakasConversation(t, phone)
+	found := func() foundRecruiterJSON {
+		t.Helper()
+		got := callTool[searchJSON](t, run, "career_search", map[string]any{"query": "tanaka"})
+		if len(got.Recruiters) != 1 || got.Recruiters[0].ID != filed.Recruiter.ID || len(got.Recruiters[0].Conversations) != 1 ||
+			got.Recruiters[0].Conversations[0].ID != filed.Conversation.ID {
+			t.Fatalf("career_search tanaka found %+v; want Tanaka with Conversation %s", got.Recruiters, filed.Conversation.ID)
+		}
+		return got.Recruiters[0]
+	}
+
+	if found().Conversations[0].HasSuggestedReply {
+		t.Errorf("before the run wrote one, Tanaka's Conversation has a Suggested Reply")
+	}
+	callTool[conversationJSON](t, run, "career_set_suggested_reply", map[string]any{
+		"conversationId": filed.Conversation.ID, "text": "Thank you for reaching out!",
+		"language": "en", "kind": "answer", "answers": pitched.Format(time.RFC3339),
+	})
+	if !found().Conversations[0].HasSuggestedReply {
+		t.Errorf("after the run wrote one, Tanaka's Conversation has no Suggested Reply")
 	}
 }
