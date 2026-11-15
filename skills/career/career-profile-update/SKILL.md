@@ -26,21 +26,16 @@ Roles, seniority, stack, Company kind and size, pay range, remote and office, lo
 ## Deal-breakers
 What the Owner would turn down outright.
 
-## Experience
-Each job, newest first: Company, role, dates, what they did and achieved, stack.
-
-## Skills and languages
-Languages with levels (Japanese at JLPT N2), technical skills, certifications.
-
-## Education
+## Resume
+The text of the Owner's latest resume, in Markdown: experience, skills, languages (Japanese at JLPT N2), education. One subsection per language when they keep both, `### English` and `### 日本語`.
 
 ## Notes
 Anything else Claude should keep in mind.
 ```
 
-- **Resumes:** take the facts from them into **Experience**, **Skills and languages** and **Education**. Merge with what's there; don't duplicate a job. Several resumes (English and Japanese, or of different years) are one Profile. Never store the file itself, or paste its text whole.
-- **What the Owner says** goes where it belongs: a promotion changes **Current situation** and **Experience**; "no more fully onsite jobs" is a **Deal-breaker**.
-- Keep it short and factual, in English, so the run can read it in one go. Where something is unclear (a date, whether a wish is a deal-breaker or a preference), ask.
+- **Resumes:** the resume's text goes in **Resume**, cleaned into Markdown, replacing the older version in that language. The file itself is never stored, only its text.
+- **What the Owner says** goes where it belongs: a promotion changes **Current situation**, and **Resume** once the Owner shares the updated one; "no more fully onsite jobs" is a **Deal-breaker**.
+- Keep the other sections short and factual, in English, so the run can read the Profile in one go. Where something is unclear (a date, whether a wish is a deal-breaker or a preference), ask.
 
 ## 3. Show, then save
 

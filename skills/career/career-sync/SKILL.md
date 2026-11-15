@@ -29,7 +29,7 @@ In a Conversation, a message `from` `"owner"` is the Owner's; `"other"` is the p
 
 ### `sort`: a thread Nando hasn't sorted yet
 
-**Ignore** a thread that isn't about a role for the Owner: a friend or ex-colleague saying "my team is hiring", sales pitches, event or webinar invites, networking with no role in it. `career_ignore_thread` with `conversationId`. Nando deletes its text and keeps only its thread ID, so later Syncs never send it again. The HR person or Recruiter who follows up on a friend's tip writes in their own thread, which is a Recruiter's.
+**Ignore** a thread that isn't about a role for the Owner: a friend or ex-colleague saying "my team is hiring", sales pitches, event or webinar invites, networking with no role in it. `career_ignore_thread` with `conversationId`. Nando deletes its text and keeps only its thread ID, so later Syncs never send it again. Someone at the Company who follows up on a friend's tip writes in their own thread, and is a Recruiter.
 
 **Otherwise**, file it under its Recruiter with `career_file_conversation`:
 
@@ -42,13 +42,15 @@ Then keep its Opportunities (step 3), and write its Suggested Reply when the las
 
 Keep its Opportunities (step 3) with what the new messages say, then write an `answer`, or a `late` reply if the Recruiter's newest message is over 30 days old.
 
+When the Owner's own message is the last (they answered on LinkedIn, and the same Sync brought both), there is nothing to reply to: keep its Opportunities and leave the Item as it is. Nando sets it aside after 3 claims.
+
 ### `late_reply`: a Suggested Reply turned late
 
 The Recruiter's message is now over 30 days old. Rewrite the Suggested Reply as a `late` one from the templates (step 5).
 
 ### `follow_up`: an open Opportunity silent since the Owner's message
 
-The Owner wrote last, 14 days ago or more, on an Opportunity In Process or at Offer. Write a `follow_up`: a short, friendly nudge in the Conversation's thread, asking where things stand, in the Owner's voice (step 4), with nothing about being late. `answers` is the `sentAt` of the Owner's message it follows up.
+The Owner wrote last, 14 days ago or more, on an Opportunity In Process or at Offer. Write a `follow_up`: a short, friendly nudge asking where things stand, in the Owner's voice (step 4), with nothing about being late. `answers` is the `sentAt` of the Owner's message it follows up.
 
 ## 3. Opportunities
 
@@ -78,9 +80,9 @@ Stop where only the Owner could add more, such as what the team is like inside o
 - a date set for an interview, a call or an assignment is a Step: `kind` as they name it ("Casual interview", "Coding test"), `date`, `time` if they gave one, and short `notes`;
 - the first Step makes it `in_process`; an offer makes it `offer`. The Stage skips ahead but never goes back;
 - an offered salary goes in `pay.offered`;
-- the Company saying no closes it as `closed` with Outcome `rejected`.
+- the Company saying no goes in `details`, dated, leaving the Opportunity open: closing it as `rejected` is the Owner's, in chat.
 
-An Opportunity closes as `withdrawn` only once the Owner's own message in the Conversation declines it. Close it no other way: accepting or declining an offer, and changing Interest, are the Owner's to tell Claude in chat.
+An Opportunity closes as `withdrawn` only once the Owner's own message in the Conversation declines it. Close it no other way: accepting or declining an offer, a rejection, and changing Interest are the Owner's to tell Claude in chat.
 
 ## 4. The Owner's voice
 

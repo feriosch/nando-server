@@ -7,9 +7,9 @@ import (
 
 // searchJSON is what career_search answers.
 type searchJSON struct {
-	Recruiters    []recruiterJSON   `json:"recruiters"`
-	Companies     []companyJSON     `json:"companies"`
-	Opportunities []opportunityJSON `json:"opportunities"`
+	Recruiters    []foundRecruiterJSON `json:"recruiters"`
+	Companies     []companyJSON        `json:"companies"`
+	Opportunities []opportunityJSON    `json:"opportunities"`
 }
 
 func TestSearchFindsRecruitersCompaniesAndOpportunitiesByName(t *testing.T) {
@@ -43,7 +43,7 @@ func TestSearchFindsRecruitersCompaniesAndOpportunitiesByName(t *testing.T) {
 // foundRecruiterJSON is a Recruiter as career_search answers it: with their
 // Conversations, so a chat can reach a Suggested Reply.
 type foundRecruiterJSON struct {
-	ID            string `json:"id"`
+	recruiterJSON
 	Conversations []struct {
 		ID                string `json:"id"`
 		HasSuggestedReply bool   `json:"hasSuggestedReply"`
@@ -55,9 +55,7 @@ func TestSearchLeadsFromARecruiterToTheirSuggestedReply(t *testing.T) {
 	run, filed := fileTanakasConversation(t, phone)
 	found := func() foundRecruiterJSON {
 		t.Helper()
-		got := callTool[struct {
-			Recruiters []foundRecruiterJSON `json:"recruiters"`
-		}](t, run, "career_search", map[string]any{"query": "tanaka"})
+		got := callTool[searchJSON](t, run, "career_search", map[string]any{"query": "tanaka"})
 		if len(got.Recruiters) != 1 || got.Recruiters[0].ID != filed.Recruiter.ID || len(got.Recruiters[0].Conversations) != 1 ||
 			got.Recruiters[0].Conversations[0].ID != filed.Conversation.ID {
 			t.Fatalf("career_search tanaka found %+v; want Tanaka with Conversation %s", got.Recruiters, filed.Conversation.ID)

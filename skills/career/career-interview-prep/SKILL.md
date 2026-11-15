@@ -1,7 +1,7 @@
 ---
 name: career-interview-prep
 description: >-
-  Prepare with the Owner for a Step in one of their Opportunities, such as a casual interview, a technical interview or a final round: start from the Company Brief, research the Company further from public information, and draft likely questions and questions to ask. Use when the Owner wants to get ready for an interview or meeting with a Company (e.g. "prep me for the Mercari interview tomorrow", "what should I ask SmartNews?"), even if they don't mention Nando.
+  Prepare with the Owner for a Step in one of their Opportunities, such as a casual interview, a technical interview or a final interview: start from the Company Brief, research the Company further from public information, and draft likely questions and questions to ask. Use when the Owner wants to get ready for an interview or meeting with a Company (e.g. "prep me for the Mercari interview tomorrow", "what should I ask SmartNews?"), even if they don't mention Nando.
 ---
 
 # Prepare for a Step

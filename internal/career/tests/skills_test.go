@@ -79,8 +79,9 @@ func TestTheSkillsUseOnlyTheToolsNandoServes(t *testing.T) {
 	}
 }
 
-// skillPaths are the skill folders a plugin.json or a marketplace entry lists.
-type skillPaths struct {
+// pluginJSON is a plugin as plugin.json or a marketplace entry describes it:
+// its name, its source and the skill folders it lists.
+type pluginJSON struct {
 	Name   string          `json:"name"`
 	Source json.RawMessage `json:"source"`
 	Skills []string        `json:"skills"`
@@ -102,17 +103,17 @@ func TestTheNandoPluginCarriesExactlyTheChatSkills(t *testing.T) {
 			t.Fatalf("%s: %v", name, err)
 		}
 	}
-	var manifest skillPaths
+	var manifest pluginJSON
 	read("plugin.json", &manifest)
 	if manifest.Name != "nando" {
 		t.Errorf("plugin.json names the plugin %q; want nando, for /nando:career-…", manifest.Name)
 	}
 	var marketplace struct {
 		Name    string       `json:"name"`
-		Plugins []skillPaths `json:"plugins"`
+		Plugins []pluginJSON `json:"plugins"`
 	}
 	read("marketplace.json", &marketplace)
-	var entry *skillPaths
+	var entry *pluginJSON
 	for i, p := range marketplace.Plugins {
 		if p.Name == "nando" {
 			entry = &marketplace.Plugins[i]

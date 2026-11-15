@@ -1,7 +1,7 @@
 ---
 name: career-opportunity-update
 description: >-
-  Update the Owner's Opportunities in Nando from what happened: a Step done or scheduled, dates, salary or offer numbers, Perks, a tip from another network, a PDF or a screenshot; also closes, reopens and re-ranks Opportunities. Use whenever the Owner tells Claude news about a job process, a Company or a Recruiter (e.g. "had the casual interview with Mercari, next is a coding test on the 20th", "they offered 9.5M", "I'm out of the LINE one"), even if they don't mention Nando.
+  Update the Owner's Opportunities in Nando from what happened: a Step done or scheduled, dates, salary or offer numbers, Perks, a tip from another network, a PDF or a screenshot; also closes, reopens and re-ranks Opportunities. Use whenever the Owner tells Claude news about an Opportunity, a Company or a Recruiter (e.g. "had the casual interview with Mercari, next is a coding test on the 20th", "they offered 9.5M", "I'm out of the LINE one"), even if they don't mention Nando.
 ---
 
 # Update an Opportunity
