@@ -3,7 +3,7 @@
 //
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests
-// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files, WordRequestsService for the Owner's Word Requests and their Notifications, ScheduledTaskService to wake Claude for them) and repository holds all database
+// (SearchService for the search screen, WordsService for the Word page, KanjiService for the Kanji page, AnkiService for the Anki deck files, WordRequestsService for the Owner's Word Requests and their Notifications, with Core's utils.ScheduledTask to wake Claude for them) and repository holds all database
 // code. The services see only the repository and CoreService interfaces,
 // never a database.
 package japanese
@@ -17,6 +17,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 	"github.com/feriosch/nando-server/internal/japanese/repository"
 	"github.com/feriosch/nando-server/internal/japanese/service"
 )
@@ -32,7 +33,7 @@ type Module struct {
 	// requests are the Owner's Word Requests.
 	requests *service.WordRequestsService
 	// scheduledTask wakes Claude to work through them.
-	scheduledTask *service.ScheduledTaskService
+	scheduledTask *coreutils.ScheduledTask
 }
 
 // Config is where the Module finds the outside services it looks Words up
@@ -78,7 +79,8 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	if err != nil {
 		return nil, err
 	}
-	scheduledTask := service.NewScheduledTask(repository.NewScheduledTask(db), requests, cfg.WordRequestsTriggerURL, cfg.WordRequestsTriggerToken, core.Now)
+	scheduledTask := coreutils.NewScheduledTask(repository.NewScheduledTask(db), service.WordRequestsQueue(requests),
+		coreutils.Trigger{URL: cfg.WordRequestsTriggerURL, Token: cfg.WordRequestsTriggerToken, Env: "WORD_REQUESTS_TRIGGER"}, core.Now)
 	return &Module{
 		search:        service.NewSearch(words, kanji),
 		words:         service.NewWords(words, repository.NewGroups(db), kanji),

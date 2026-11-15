@@ -9,6 +9,7 @@ import (
 
 	"github.com/feriosch/nando-server/internal/career/model"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const (
@@ -26,14 +27,18 @@ const (
 // SyncsService serves the Tools the Mac's Sync script calls: whether a Sync
 // is due, and recording what one brought.
 type SyncsService struct {
+	// scheduledTask is woken when a Sync stores new messages.
+	scheduledTask *coreutils.ScheduledTask
 	syncs         model.SyncsRepository
 	conversations model.ConversationsRepository
+	work          model.WorkRepository
 	core          coremodel.CoreService
 }
 
 // NewSyncs returns the SyncsService.
-func NewSyncs(syncs model.SyncsRepository, conversations model.ConversationsRepository, core coremodel.CoreService) *SyncsService {
-	return &SyncsService{syncs: syncs, conversations: conversations, core: core}
+func NewSyncs(scheduledTask *coreutils.ScheduledTask, syncs model.SyncsRepository, conversations model.ConversationsRepository,
+	work model.WorkRepository, core coremodel.CoreService) *SyncsService {
+	return &SyncsService{scheduledTask: scheduledTask, syncs: syncs, conversations: conversations, work: work, core: core}
 }
 
 // Tools are what the Mac's Sync script calls.
@@ -134,17 +139,38 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 	}
 	stored := 0
 	for _, update := range updates {
-		n, err := s.conversations.AddMessages(ctx, update)
+		added, err := s.conversations.AddMessages(ctx, update)
 		if err != nil {
 			return nil, err
 		}
-		stored += n
+		stored += added.Stored
+		if err := s.queue(ctx, added); err != nil {
+			return nil, err
+		}
 	}
 	id, err := s.syncs.Insert(ctx, model.Sync{At: s.core.Now(), Threads: len(updates), Problem: problem})
 	if err != nil {
 		return nil, err
 	}
+	if stored > 0 {
+		s.scheduledTask.Wake(ctx)
+	}
 	return model.RecordedSyncJSON{Sync: id.Hex(), Stored: stored}, nil
+}
+
+// queue puts what the run has to do about a Conversation's new messages in
+// its work: sort a Conversation not filed yet, or answer its Recruiter's new
+// message.
+func (s *SyncsService) queue(ctx context.Context, added model.Added) error {
+	switch {
+	case added.Stored == 0 || added.Ignored:
+		return nil
+	case !added.Filed:
+		return s.work.Add(ctx, model.ItemSort, added.ConversationID, s.core.Now())
+	case added.FromOther:
+		return s.work.Add(ctx, model.ItemReply, added.ConversationID, s.core.Now())
+	}
+	return nil
 }
 
 // fromRecordSyncJSON checks what the Sync script sent, or explains what's

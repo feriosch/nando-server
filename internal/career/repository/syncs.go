@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // NewSyncs returns the SyncsRepository over the syncs collection in db.
@@ -36,4 +37,10 @@ func (r syncs) LatestRead(ctx context.Context, n int64) ([]model.Sync, error) {
 	}
 	syncs := []model.Sync{}
 	return syncs, cursor.All(ctx, &syncs)
+}
+
+func (r syncs) FirstRead(ctx context.Context) (model.Sync, error) {
+	var sync model.Sync
+	err := r.collection.FindOne(ctx, bson.D{read}, options.FindOne().SetSort(bson.D{{Key: "at", Value: 1}})).Decode(&sync)
+	return sync, utils.NotFound(err)
 }
