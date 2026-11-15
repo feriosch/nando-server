@@ -11,6 +11,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/career/model"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // NewConversations returns the ConversationsRepository over the conversations
@@ -34,32 +35,42 @@ type conversations struct {
 
 func (r conversations) AddMessages(ctx context.Context, update model.ThreadUpdate) (int, error) {
 	var held model.Conversation
-	err := r.collection.FindOne(ctx, bson.D{{Key: "threadId", Value: update.ThreadID}},
-		options.FindOne().SetProjection(bson.D{{Key: "messages", Value: 1}})).Decode(&held)
-	if err != nil && !errors.Is(err, mongo.ErrNoDocuments) {
+	err := utils.NotFound(r.collection.FindOne(ctx, bson.D{{Key: "threadId", Value: update.ThreadID}},
+		options.FindOne().SetProjection(bson.D{{Key: "messages", Value: 1}})).Decode(&held))
+	if err != nil && !errors.Is(err, utils.ErrNotFound) {
 		return 0, err
 	}
-	update.Messages = slices.DeleteFunc(update.Messages, func(m model.Message) bool {
-		return slices.ContainsFunc(held.Messages, func(h model.Message) bool { return sameMessage(h, m) })
-	})
+	// Keep only messages Nando doesn't hold, and each of them once, even if
+	// the Sync sent it twice.
+	var added []model.Message
+	for _, m := range update.Messages {
+		isHeld := func(h model.Message) bool { return sameMessage(h, m) }
+		if !slices.ContainsFunc(held.Messages, isHeld) && !slices.ContainsFunc(added, isHeld) {
+			added = append(added, m)
+		}
+	}
 
-	set := bson.D{
-		{Key: "url", Value: update.URL},
-		{Key: "person", Value: update.Person},
+	// A Sync that leaves out the URL or the person keeps what Nando has.
+	set := bson.D{}
+	if update.URL != "" {
+		set = append(set, bson.E{Key: "url", Value: update.URL})
 	}
-	change := bson.D{
-		{Key: "$set", Value: set},
-		{Key: "$setOnInsert", Value: bson.D{{Key: "ignored", Value: false}}},
+	if update.Person != (model.Person{}) {
+		set = append(set, bson.E{Key: "person", Value: update.Person})
 	}
-	if len(update.Messages) > 0 {
-		newest := update.Messages[0].SentAt
-		for _, m := range update.Messages[1:] {
+	change := bson.D{{Key: "$setOnInsert", Value: bson.D{{Key: "ignored", Value: false}}}}
+	if len(set) > 0 {
+		change = append(change, bson.E{Key: "$set", Value: set})
+	}
+	if len(added) > 0 {
+		newest := added[0].SentAt
+		for _, m := range added[1:] {
 			if m.SentAt.After(newest) {
 				newest = m.SentAt
 			}
 		}
 		change = append(change,
-			bson.E{Key: "$push", Value: bson.D{{Key: "messages", Value: bson.D{{Key: "$each", Value: update.Messages}}}}},
+			bson.E{Key: "$push", Value: bson.D{{Key: "messages", Value: bson.D{{Key: "$each", Value: added}}}}},
 			bson.E{Key: "$max", Value: bson.D{{Key: "newest", Value: newest}}},
 		)
 	}
@@ -67,7 +78,7 @@ func (r conversations) AddMessages(ctx context.Context, update model.ThreadUpdat
 	if err != nil {
 		return 0, err
 	}
-	return len(update.Messages), nil
+	return len(added), nil
 }
 
 func (r conversations) Threads(ctx context.Context) ([]model.Conversation, error) {
@@ -87,5 +98,5 @@ func sameMessage(held, m model.Message) bool {
 		return held.LinkedInID == m.LinkedInID
 	}
 	return held.From == m.From && held.Text == m.Text &&
-		held.SentAt.Equal(m.SentAt.Truncate(time.Millisecond))
+		held.SentAt.Truncate(time.Millisecond).Equal(m.SentAt.Truncate(time.Millisecond))
 }

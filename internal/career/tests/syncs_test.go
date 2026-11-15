@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -179,5 +180,51 @@ func TestASyncThatOnlyReportsAProblemDoesNotCount(t *testing.T) {
 
 	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 9, 1)), "career_sync_status", nil); !got.Due {
 		t.Errorf("after Syncs that only reported a problem: due = false, want true")
+	}
+}
+
+// toolFails calls the Tool name with args and fails the test unless the Tool
+// refuses it.
+func toolFails(t *testing.T, session *mcp.ClientSession, name string, args map[string]any) {
+	t.Helper()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		t.Fatalf("%s: %v", name, err)
+	}
+	if !result.IsError {
+		t.Errorf("%s %v succeeded, want it refused", name, args)
+	}
+}
+
+func TestASyncThatIsRefusedStoresNothing(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	mac := phone.macAt(at(0, 8, 0))
+	pitch := message("m1", "other", at(-3, 10, 15), "Hello! I have a backend role at a fintech in Tokyo.")
+
+	for _, args := range []map[string]any{
+		{"threads": []any{tanakaThread(pitch)}, "problem": map[string]any{"kind": "timeout"}},
+		{"threads": []any{map[string]any{"threadId": "", "messages": []any{pitch}}}},
+		{"threads": []any{tanakaThread(message("m1", "recruiter", at(-3, 10, 15), "Hello!"))}},
+		{"threads": []any{tanakaThread(map[string]any{"id": "m1", "from": "other", "text": "Hello!"})}},
+	} {
+		toolFails(t, mac, "career_record_sync", args)
+	}
+
+	status := callTool[syncStatusJSON](t, mac, "career_sync_status", nil)
+	if len(status.Threads) != 0 || !status.Due {
+		t.Errorf("after refused Syncs: threads = %+v, due = %v; want none, and due", status.Threads, status.Due)
+	}
+}
+
+func TestAMessageSentTwiceInOneSyncIsStoredOnce(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	pitch := message("m1", "other", at(-3, 10, 15), "Hello! I have a backend role at a fintech in Tokyo.")
+
+	got := callTool[recordedJSON](t, phone.macAt(at(0, 8, 0)), "career_record_sync", map[string]any{"threads": []any{tanakaThread(pitch, pitch)}})
+
+	if got.Stored != 1 {
+		t.Errorf("stored = %d, want 1", got.Stored)
 	}
 }

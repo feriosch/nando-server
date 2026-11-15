@@ -9,7 +9,6 @@ import (
 
 	"github.com/feriosch/nando-server/internal/career/model"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
-	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const (
@@ -106,22 +105,20 @@ func (s *SyncsService) due(ctx context.Context, now time.Time) (bool, error) {
 	if now.Hour() < firstSyncHour {
 		return false, nil
 	}
-	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	today, err := s.syncs.CountReadSince(ctx, startOfDay)
+	// The newest syncsPerDay Syncs settle both other rules: the newest must
+	// be syncGap ago, and the oldest of them must be before today.
+	latest, err := s.syncs.LatestRead(ctx, syncsPerDay)
 	if err != nil {
 		return false, err
 	}
-	if today >= syncsPerDay {
+	if len(latest) > 0 && now.Sub(latest[0].At) < syncGap {
 		return false, nil
 	}
-	latest, err := s.syncs.LatestRead(ctx)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		return true, nil
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	if len(latest) == syncsPerDay && !latest[syncsPerDay-1].At.Before(startOfDay) {
+		return false, nil
 	}
-	if err != nil {
-		return false, err
-	}
-	return now.Sub(latest.At) >= syncGap, nil
+	return true, nil
 }
 
 func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (any, error) {
@@ -129,32 +126,58 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 	if err := json.Unmarshal(args, &j); err != nil {
 		return nil, fmt.Errorf("the arguments aren't a Sync: %w", err)
 	}
+	// Check everything before writing anything, so a refused Sync stores
+	// nothing and the script can send it again.
+	updates, problem, err := fromRecordSyncJSON(j)
+	if err != nil {
+		return nil, err
+	}
 	stored := 0
-	for _, t := range j.Threads {
-		update := model.ThreadUpdate{
-			ThreadID: t.ThreadID,
-			URL:      t.URL,
-			Person:   model.Person{Name: t.Person.Name, ProfileURL: t.Person.ProfileURL},
-		}
-		for _, m := range t.Messages {
-			update.Messages = append(update.Messages, model.Message{LinkedInID: m.ID, From: m.From, SentAt: m.SentAt, Text: m.Text})
-		}
+	for _, update := range updates {
 		n, err := s.conversations.AddMessages(ctx, update)
 		if err != nil {
 			return nil, err
 		}
 		stored += n
 	}
-	sync := model.Sync{At: s.core.Now(), Threads: len(j.Threads)}
-	if j.Problem != nil {
-		if j.Problem.Kind != model.ProblemSessionExpired && j.Problem.Kind != model.ProblemOther {
-			return nil, fmt.Errorf("problem.kind must be %s or %s", model.ProblemSessionExpired, model.ProblemOther)
-		}
-		sync.Problem = &model.SyncProblem{Kind: j.Problem.Kind, Text: j.Problem.Text}
-	}
-	id, err := s.syncs.Insert(ctx, sync)
+	id, err := s.syncs.Insert(ctx, model.Sync{At: s.core.Now(), Threads: len(updates), Problem: problem})
 	if err != nil {
 		return nil, err
 	}
 	return model.RecordedSyncJSON{Sync: id.Hex(), Stored: stored}, nil
+}
+
+// fromRecordSyncJSON checks what the Sync script sent, or explains what's
+// wrong with it. The Tool's input schema isn't enforced, so this is the only
+// check.
+func fromRecordSyncJSON(j model.RecordSyncJSON) ([]model.ThreadUpdate, *model.SyncProblem, error) {
+	var problem *model.SyncProblem
+	if j.Problem != nil {
+		if j.Problem.Kind != model.ProblemSessionExpired && j.Problem.Kind != model.ProblemOther {
+			return nil, nil, fmt.Errorf("problem.kind must be %s or %s", model.ProblemSessionExpired, model.ProblemOther)
+		}
+		problem = &model.SyncProblem{Kind: j.Problem.Kind, Text: j.Problem.Text}
+	}
+	updates := make([]model.ThreadUpdate, 0, len(j.Threads))
+	for _, t := range j.Threads {
+		if t.ThreadID == "" {
+			return nil, nil, errors.New("every thread needs its threadId")
+		}
+		update := model.ThreadUpdate{
+			ThreadID: t.ThreadID,
+			URL:      t.URL,
+			Person:   model.Person{Name: t.Person.Name, ProfileURL: t.Person.ProfileURL},
+		}
+		for _, m := range t.Messages {
+			if m.From != model.MessageFromOwner && m.From != model.MessageFromOther {
+				return nil, nil, fmt.Errorf("thread %s: a message's from must be %s or %s", t.ThreadID, model.MessageFromOwner, model.MessageFromOther)
+			}
+			if m.SentAt.IsZero() {
+				return nil, nil, fmt.Errorf("thread %s: every message needs its sentAt", t.ThreadID)
+			}
+			update.Messages = append(update.Messages, model.Message{LinkedInID: m.ID, From: m.From, SentAt: m.SentAt, Text: m.Text})
+		}
+		updates = append(updates, update)
+	}
+	return updates, problem, nil
 }

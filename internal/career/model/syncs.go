@@ -38,12 +38,9 @@ const (
 type SyncsRepository interface {
 	// Insert stores a Sync and returns its id.
 	Insert(ctx context.Context, sync Sync) (bson.ObjectID, error)
-	// CountReadSince counts the Syncs at or after from that read LinkedIn,
-	// with no problem.
-	CountReadSince(ctx context.Context, from time.Time) (int64, error)
-	// LatestRead returns the newest Sync that read LinkedIn, with no problem,
-	// or Core's utils.ErrNotFound if there was none.
-	LatestRead(ctx context.Context) (Sync, error)
+	// LatestRead returns the newest n Syncs that read LinkedIn, with no
+	// problem, newest first.
+	LatestRead(ctx context.Context, n int64) ([]Sync, error)
 }
 
 // The JSON shapes below are what the Sync Tools answer with and are sent.
