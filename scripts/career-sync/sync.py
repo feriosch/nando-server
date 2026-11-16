@@ -124,7 +124,7 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
                 problem = {"kind": "other", "text": f"LinkedIn opened {conversation.get('url')} for thread {thread_id}"}
                 break
             text = conversation.get("sections", {}).get("conversation", "")
-            if is_sponsored(text):
+            if is_ad(text):
                 # An InMail ad, not a conversation: nothing to send, and
                 # nothing it says about the threads after it.
                 continue
@@ -183,11 +183,15 @@ def inbox_names(inbox: dict[str, Any]) -> dict[str, str]:
     return names
 
 
-def is_sponsored(text: str) -> bool:
-    """Whether get_conversation's page text is a Sponsored Message, an InMail
-    ad, which LinkedIn lists among the threads. Its text starts with
-    "Sponsored" and has no message headings."""
-    return text.lstrip().startswith("Sponsored\n") or text.strip() == "Sponsored"
+# The first line of an ad LinkedIn lists among the threads: an InMail ad, or
+# its own offer of Premium.
+AD_LABELS = frozenset({"Sponsored", "LinkedIn Offer"})
+
+
+def is_ad(text: str) -> bool:
+    """Whether get_conversation's page text is an ad, not a conversation."""
+    first = next((line.strip() for line in text.splitlines() if line.strip()), "")
+    return first in AD_LABELS
 
 
 def landed_on(conversation: dict[str, Any]) -> str | None:
@@ -254,52 +258,78 @@ class Reader:
 
 # A message group's heading, which LinkedIn writes for screen readers before
 # the messages one person sent at one time.
-GROUP_HEADING = re.compile(r"^(?P<name>.+?) sent the following messages? at (?P<time>\d{1,2}:\d{2}\s?[AP]M)$", re.IGNORECASE)
+# The heading of a group of messages from one sender, for screen readers. It
+# comes only when the sender changes.
+GROUP_HEADING = re.compile(r"^(?P<name>.*?)\s*sent the following messages? at (?P<time>\d{1,2}:\d{2}\s?[AP]M)$", re.IGNORECASE)
+# Each message's own line: the sender's name, their pronouns if they show
+# them, and the time, two spaces or more apart.
+SENDER_LINE = re.compile(r"^(?P<name>\S.*?)\s{2,}(?:\([^)]*\)\s{2,})?(?P<time>\d{1,2}:\d{2}\s?[AP]M)$", re.IGNORECASE)
+# The link to the sender's profile, right above their line.
+PROFILE_LINK = re.compile(r"^View .+[’']s profile$")
+# Where LinkedIn's controls under a message start: what follows is not its text.
+REACTIONS = "Remove reaction"
 
 
 def parse_conversation(text: str, *, other: str, today: date, tz: tzinfo) -> list[dict[str, str]]:
     """The messages in get_conversation's page text, oldest first.
 
-    other is the other person's name, as the inbox gives it: a message under
-    another name is the Owner's. today and tz date LinkedIn's day headings,
-    which are in the Mac's time zone.
+    Each message starts with its sender line, under a link to their profile:
+
+        OCT 13
+        Jane Recruiter sent the following messages at 4:43 PM
+        View Jane’s profile
+        Jane Recruiter  (She/Her)  4:43 PM
+
+        Would you have any feedback?
+
+    A day heading, in capitals, comes when the Day changes, and a group
+    heading when the sender does. other is the other person's name, as the
+    inbox gives it: a message under another name is the Owner's. today and tz
+    date the day headings, which are in the Mac's time zone.
     """
     lines = [line.strip() for line in text.splitlines()]
-    # following[i] is the first non-empty line after line i.
-    following = [""] * len(lines)
-    for i in range(len(lines) - 2, -1, -1):
-        following[i] = lines[i + 1] or following[i + 1]
+    nonempty = [i for i, line in enumerate(lines) if line]
+    previous = {i: lines[nonempty[k - 1]] if k else "" for k, i in enumerate(nonempty)}
+    following = {i: lines[nonempty[k + 1]] if k + 1 < len(nonempty) else "" for k, i in enumerate(nonempty)}
+
+    def starts_message(i: int) -> re.Match | None:
+        sender = SENDER_LINE.match(lines[i])
+        if sender and (PROFILE_LINK.match(previous[i]) or GROUP_HEADING.match(previous[i]) or previous[i] == sender["name"]):
+            return sender
+        return None
+
+    def marks_message(line: str) -> bool:
+        return bool(GROUP_HEADING.match(line) or PROFILE_LINK.match(line) or SENDER_LINE.match(line))
+
     messages: list[dict[str, Any]] = []
     day: date | None = None
     current: dict[str, Any] | None = None
     for i, line in enumerate(lines):
-        heading = GROUP_HEADING.match(line)
-        if heading:
-            at = datetime.combine(day, parse_time(heading["time"]), tz) if day else None
-            name = heading["name"]
-            current = {
-                "from": "other" if name == other else "owner",
-                "at": at,
-                "lines": [],
-                "skip": {name, heading["time"]},
-            }
+        if not line:
+            if current is not None and current["lines"]:
+                current["lines"].append(line)
+            continue
+        sender = starts_message(i)
+        if sender:
+            at = datetime.combine(day, parse_time(sender["time"]), tz) if day else None
+            current = {"from": "other" if sender["name"] == other else "owner", "at": at, "lines": [], "done": False}
             messages.append(current)
             continue
-        # A day heading comes only between groups, right before a group's
-        # heading, and never as a group's first line: a group always has its
-        # text. So a message saying just "Monday" stays a message.
-        if line and (current is None or current["lines"]) and GROUP_HEADING.match(following[i]):
+        # A day heading is in capitals and comes right before a message, so a
+        # message saying just "Monday" stays a message.
+        if line == line.upper() and marks_message(following[i]):
             heading_day = parse_day(line, today)
             if heading_day:
                 day = heading_day
                 continue
-        if current is not None:
-            # The sender's profile link, name and time come before the text,
-            # so only lines before the text can be them.
-            is_header = line in current["skip"] or (line.startswith("View ") and line.endswith("profile"))
-            if not current["lines"] and (is_header or not line):
-                continue
-            current["lines"].append(line)
+        if GROUP_HEADING.match(line) or (PROFILE_LINK.match(line) and SENDER_LINE.match(following[i])):
+            continue
+        if current is None or current["done"]:
+            continue
+        if line == REACTIONS:
+            current["done"] = True
+            continue
+        current["lines"].append(line)
     return [
         {"from": m["from"], "sentAt": m["at"].isoformat(), "text": "\n".join(m["lines"]).strip()}
         for m in messages

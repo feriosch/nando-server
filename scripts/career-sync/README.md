@@ -96,24 +96,34 @@ Read from the source of `mcp-server-linkedin` 4.30.0. When updating the reader, 
 
 ### Reading a conversation's text
 
-The reader's package has no sample of a real conversation's text, so `parse_conversation` follows LinkedIn's messaging page as known when this was written:
+`parse_conversation` follows LinkedIn's messaging page as the first Sync found it, on 2026-11-16 (#94). `test_parse.py` copies its layout from real threads, with names and text made up:
 
 ```
-TODAY
-Jane Recruiter sent the following message at 10:42 AM
-View Jane Recruiter’s profile
-Jane Recruiter
- 10:42 AM
-Hi, I have a backend role in Tokyo.
+Visit my website
+OCT 13
+Jane Recruiter sent the following messages at 4:43 PM
+View Jane’s profile
+Jane Recruiter  (She/Her)  4:43 PM
+
+Would you have any feedback?
+
+OCT 15
+Sam Owner sent the following message at 10:15 AM
+View Sam’s profile
+Sam Owner   10:15 AM
+
+Hello Jane!
 ```
 
-- Day headings: `TODAY`, `YESTERDAY`, a weekday, `MAR 3` (this year), `DEC 12, 2024`, in any letter case.
-- Each group of messages starts with a heading for screen readers: `<name> sent the following message(s) at <time>`. A group from the other person's name, as the inbox gives it, is theirs. Any other is the Owner's.
-- The time is in the Mac's time zone.
+- **Each message** starts with its own sender line: the name, the pronouns if they show them, and the time, two spaces or more apart. It comes right under a link to their profile (`View <first name>’s profile`). A message under the other person's name, as the inbox gives it, is theirs. Any other is the Owner's.
+- **A day heading**, in capitals, comes when the Day changes: `TODAY`, `YESTERDAY`, a weekday, `OCT 13` (this year, or last year if that is still to come), `OCT 23, 2025`. A message saying just "Monday" stays a message.
+- **A group heading** for screen readers, `<name> sent the following message(s) at <time>`, comes only when the sender changes. A follow-up on a later Day has just a day heading and its own sender line.
+- **Under a message**, the Owner's reaction (`Remove reaction`, the emoji, a count) isn't part of its text. An attachment's name, size and `Download` are.
+- The time is in the Mac's time zone. Messages above the first day heading are left out, as their Day is unknown.
 
-**Sponsored Messages** (InMail ads) are listed among the threads. Their text starts with `Sponsored` and has no group headings, as seen on 2026-11-16. A Sync opens one, skips it and carries on, since it says nothing about the threads after it. It isn't sent to Nando.
+**Ads** are listed among the threads too: Sponsored Messages (InMail ads), whose text starts with `Sponsored`, and LinkedIn's own offers of Premium, which start with `LinkedIn Offer`. A Sync opens one, skips it and carries on, since it says nothing about the threads after it. It isn't sent to Nando.
 
-**Check this on the first Sync.** If LinkedIn lays the page out differently, the script reads no messages from the thread and tells Nando `problem: other`, "couldn't read the messages of LinkedIn thread …", instead of sending nothing. Then compare a thread's text (`get_conversation` from Claude Code, with the deny rules above) with the tests in `test_parse.py`, and fix `parse_conversation` with a test first.
+**If LinkedIn changes the page**, the script reads no messages from a thread and tells Nando `problem: other`, "couldn't read the messages of LinkedIn thread …", instead of sending nothing. Then compare a thread's text (`get_conversation` from Claude Code, with the deny rules above) with the tests in `test_parse.py`, and fix `parse_conversation` with a test first.
 
 ## Tests
 
