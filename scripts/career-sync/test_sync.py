@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from fakes import FakeNando, FakeReader, Thread, auth_required, reader_error, rate_limited
-from sync import Reader, ReaderToolRefused, run_sync
+from sync import IMPORT_ARGS, READER_ARGS, Reader, ReaderToolRefused, run_sync
 
 pytestmark = pytest.mark.anyio
 
@@ -23,7 +23,7 @@ async def no_pause() -> None:
 
 async def sync(nando: FakeNando, reader: FakeReader) -> None:
     async with nando.client() as client:
-        await run_sync(client, reader.start, now=NOW, pause=no_pause)
+        await run_sync(client, reader.start, now=NOW, pause=no_pause, import_session=reader.import_session)
 
 
 async def test_nothing_is_opened_when_no_sync_is_due():
@@ -36,9 +36,25 @@ async def test_nothing_is_opened_when_no_sync_is_due():
     assert nando.recorded == []
 
 
-async def test_a_session_linkedin_no_longer_holds_is_reported_as_expired():
+def kims_thread() -> Thread:
+    return Thread("2-new==", "Kim Hunter", day("TODAY") + message("Kim Hunter", "9:00 AM", "A role for you."))
+
+
+async def test_with_no_session_saved_chromes_is_imported_before_the_inbox_is_read():
     nando = FakeNando(due=True)
-    reader = FakeReader(stored=False)
+    reader = FakeReader(stored=False, chrome_session=True, inbox=[kims_thread()])
+
+    await sync(nando, reader)
+
+    assert reader.imports == 1
+    assert [t["threadId"] for t in nando.recorded[0]["threads"]] == ["2-new=="]
+    assert "problem" not in nando.recorded[0]
+
+
+async def test_with_no_session_saved_and_none_in_chrome_the_inbox_is_never_read():
+    # With no session, get_inbox would open a LinkedIn login window on the Mac.
+    nando = FakeNando(due=True)
+    reader = FakeReader(stored=False, chrome_session=False)
 
     await sync(nando, reader)
 
@@ -46,13 +62,52 @@ async def test_a_session_linkedin_no_longer_holds_is_reported_as_expired():
     assert "get_inbox" not in reader.calls
 
 
-async def test_a_session_linkedin_turns_away_is_reported_as_expired():
+async def test_a_session_linkedin_turns_away_is_replaced_with_chromes_and_the_inbox_read_again():
     nando = FakeNando(due=True)
-    reader = FakeReader(inbox_error=auth_required())
+    reader = FakeReader(inbox_error=auth_required(), chrome_session=True, inbox=[kims_thread()])
 
     await sync(nando, reader)
 
+    assert reader.imports == 1
+    assert reader.calls.count("get_inbox") == 2
+    assert [t["threadId"] for t in nando.recorded[0]["threads"]] == ["2-new=="]
+    assert "problem" not in nando.recorded[0]
+
+
+async def test_a_session_linkedin_turns_away_with_none_in_chrome_is_reported_as_expired():
+    nando = FakeNando(due=True)
+    reader = FakeReader(inbox_error=auth_required(), chrome_session=False)
+
+    await sync(nando, reader)
+
+    assert reader.imports == 1
     assert nando.recorded == [{"threads": [], "problem": {"kind": "session_expired"}}]
+
+
+async def test_chromes_session_is_imported_at_most_once_a_sync():
+    nando = FakeNando(due=True)
+    reader = FakeReader(inbox_error=auth_required(), chrome_session=True)
+    # LinkedIn turns the imported session away too.
+    real_import = reader.import_session
+
+    async def import_turned_away() -> bool:
+        imported = await real_import()
+        reader.inbox_error = auth_required()
+        return imported
+
+    reader.import_session = import_turned_away
+
+    await sync(nando, reader)
+
+    assert reader.imports == 1
+    assert nando.recorded == [{"threads": [], "problem": {"kind": "session_expired"}}]
+
+
+def test_the_reader_never_imports_by_itself_and_the_import_is_pinned_to_chrome():
+    # The Sync imports Chrome's session itself (import_chrome_session): left to
+    # the reader, a failed import falls back to a login window.
+    assert "--no-auto-import" in READER_ARGS
+    assert IMPORT_ARGS[-2:] == ["--import-from-browser", "chrome"]
 
 
 async def test_only_new_messages_since_2025_of_threads_not_ignored_are_sent():
@@ -171,7 +226,7 @@ async def test_at_most_30_threads_are_opened_with_a_pause_between_each():
         pauses.append(len(reader.opened))
 
     async with nando.client() as client:
-        await run_sync(client, reader.start, now=NOW, pause=pause)
+        await run_sync(client, reader.start, now=NOW, pause=pause, import_session=reader.import_session)
 
     assert reader.opened == [f"2-t{n}==" for n in range(30)]
     assert pauses == list(range(1, 30))

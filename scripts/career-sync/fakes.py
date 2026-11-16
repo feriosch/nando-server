@@ -92,8 +92,19 @@ class Thread:
 class FakeReader:
     """The LinkedIn reader's Tools, with a session, inbox and conversations a test sets."""
 
-    def __init__(self, *, stored: bool = True, inbox_error: CallToolResult | None = None, inbox: list["Thread"] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        stored: bool = True,
+        inbox_error: CallToolResult | None = None,
+        inbox: list["Thread"] | None = None,
+        chrome_session: bool = False,
+    ) -> None:
         self.stored = stored
+        # chrome_session is whether the Owner's Chrome holds a LinkedIn
+        # session that import_session can import.
+        self.chrome_session = chrome_session
+        self.imports = 0
         # inbox_error, if set, is what get_inbox answers instead.
         self.inbox_error = inbox_error
         # inbox is the threads get_inbox lists, most recent first.
@@ -148,6 +159,15 @@ class FakeReader:
         def send_message(linkedin_username: str, message: str) -> dict[str, Any]:
             self.calls.append("send_message")
             return {"status": "sent"}
+
+    async def import_session(self) -> bool:
+        """The reader's --import-from-browser chrome: with a session in Chrome,
+        a fresh one is saved, which LinkedIn accepts."""
+        self.imports += 1
+        if self.chrome_session:
+            self.stored = True
+            self.inbox_error = None
+        return self.chrome_session
 
     @asynccontextmanager
     async def start(self):
