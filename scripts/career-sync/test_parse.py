@@ -5,7 +5,7 @@ are made up."""
 from datetime import date
 from zoneinfo import ZoneInfo
 
-from sync import is_ad, parse_conversation
+from sync import ad_message, is_ad, parse_conversation
 
 TOKYO = ZoneInfo("Asia/Tokyo")
 SUNDAY = date(2026, 11, 15)
@@ -249,3 +249,101 @@ Jane Recruiter  (She/Her)  10:00 AM
 
 Sponsored
 """)
+
+
+def test_the_other_person_is_matched_by_their_name_as_the_inbox_gives_it_or_its_start():
+    # The inbox may add a reading in brackets, an emoji or a title the
+    # sender line doesn't show, or the other way round.
+    text = """TODAY
+Jane Recruiter sent the following message at 10:00 AM
+View Jane’s profile
+Jane Recruiter  (She/Her)  10:00 AM
+
+Hello!
+
+Sam Owner sent the following message at 10:05 AM
+View Sam’s profile
+Sam Owner   10:05 AM
+
+Hi Jane.
+"""
+
+    for inbox_name in ["Jane Recruiter", "Jane Recruiter (ジェーン)", "Jane Recruiter 🇯🇵", "ｊａｎｅ  recruiter"]:
+        messages = parse_conversation(text, other=inbox_name, today=SUNDAY, tz=TOKYO)
+        assert [m["from"] for m in messages] == ["other", "owner"], inbox_name
+
+
+def test_a_message_ending_in_a_day_in_capitals_keeps_it_and_its_day():
+    text = """TODAY
+Jane Recruiter sent the following messages at 10:00 AM
+View Jane’s profile
+Jane Recruiter  (She/Her)  10:00 AM
+
+Can we talk on
+FRIDAY
+View Jane’s profile
+Jane Recruiter  (She/Her)  10:01 AM
+
+Or next week.
+"""
+
+    assert [(m["sentAt"], m["text"]) for m in parse(text)] == [
+        ("2026-11-15T10:00:00+09:00", "Can we talk on\nFRIDAY"),
+        ("2026-11-15T10:01:00+09:00", "Or next week."),
+    ]
+
+
+def test_text_after_a_reaction_is_kept():
+    text = """TODAY
+Jane Recruiter sent the following message at 10:00 AM
+View Jane’s profile
+Jane Recruiter  (She/Her)  10:00 AM
+
+Great to hear!
+
+Remove reaction
+👍
+1
+Edited
+"""
+
+    assert [m["text"] for m in parse(text)] == ["Great to hear!\n\nEdited"]
+
+
+def test_lines_like_a_name_a_sender_line_or_a_group_heading_stay_in_the_text():
+    text = """TODAY
+Jane Recruiter sent the following message at 10:00 AM
+View Jane’s profile
+Jane Recruiter  (She/Her)  10:00 AM
+
+Our CEO sent the following message at 9:00 AM
+Jane Recruiter
+Jane Recruiter  10:30 AM works for me.
+Jane Recruiter  10:30 AM
+"""
+
+    assert [m["text"] for m in parse(text)] == [
+        "Our CEO sent the following message at 9:00 AM\nJane Recruiter\nJane Recruiter  10:30 AM works for me.\nJane Recruiter  10:30 AM"
+    ]
+
+
+def test_a_message_without_text_says_so():
+    # An image or sticker leaves no text on the page.
+    text = """TODAY
+Jane Recruiter sent the following message at 10:00 AM
+View Jane’s profile
+Jane Recruiter  (She/Her)  10:00 AM
+
+"""
+
+    assert [m["text"] for m in parse(text)] == ["(no text)"]
+
+
+def test_an_ad_is_one_message_from_the_other_person_on_its_date():
+    assert ad_message(SPONSORED, today=SUNDAY, tz=TOKYO) == {
+        "from": "other",
+        "sentAt": "2026-11-13T00:00:00+09:00",
+        "text": "Sponsored\n\nNov 13\nOwner, your invitation — Example Fellowship\nApply Now\nSam Admissions, PhD\nSam Admissions, PhD\n\nHi Owner,\n\nApply Now\nNot interested",
+    }
+    assert ad_message(LINKEDIN_OFFER, today=SUNDAY, tz=TOKYO)["sentAt"] == "2026-11-08T00:00:00+09:00"
+    assert ad_message("Sponsored\nNo date anywhere", today=SUNDAY, tz=TOKYO) is None

@@ -31,6 +31,8 @@ In a Conversation, a message `from` `"owner"` is the Owner's; `"other"` is the p
 
 **Ignore** a thread that isn't about a role for the Owner: a friend or ex-colleague saying "my team is hiring", sales pitches, event or webinar invites, networking with no role in it. `career_ignore_thread` with `conversationId`. Nando deletes its text and keeps only its thread ID, so later Syncs never send it again. Someone at the Company who follows up on a friend's tip writes in their own thread, and is a Recruiter.
 
+**An ad** comes as one message whose text starts with `Sponsored` (an InMail ad) or `LinkedIn Offer` (LinkedIn selling Premium), dated the Day it names. Ignore it, unless it advertises a role that could fit the Owner, such as an agency or a Company paying to reach engineers. Then file it under the sender like any Recruiter's thread, and keep the role as a Lead. Write no Suggested Reply to an ad: the Owner answers it, if at all, through its own link.
+
 **Otherwise**, file it under its Recruiter with `career_file_conversation`:
 
 - If the person is a Recruiter Nando holds (`career_search` with their name or organisation; the same `profileUrl` settles it), send `recruiterId`.

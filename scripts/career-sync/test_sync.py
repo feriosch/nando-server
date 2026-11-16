@@ -318,7 +318,7 @@ Example School | Somewhere
 """
 
 
-async def test_a_sponsored_message_is_skipped_and_the_sync_carries_on():
+async def test_an_ad_is_sent_as_one_message_for_the_run_to_sort_and_the_sync_carries_on():
     nando = FakeNando(due=True)
     reader = FakeReader(
         inbox=[
@@ -329,16 +329,80 @@ async def test_a_sponsored_message_is_skipped_and_the_sync_carries_on():
 
     await sync(nando, reader)
 
+    [recorded] = nando.recorded
+    ad, new = recorded["threads"]
+    assert (ad["threadId"], ad["person"]["name"]) == ("2-ad==", "Sam Admissions, PhD")
+    assert [(m["from"], m["sentAt"]) for m in ad["messages"]] == [("other", "2026-11-13T00:00:00+09:00")]
+    assert ad["messages"][0]["text"].startswith("Sponsored\n")
+    assert (new["threadId"], new["messages"][0]["text"]) == ("2-new==", "A role for you.")
+
+
+async def test_an_ad_nando_already_holds_doesnt_end_the_sync():
+    # LinkedIn keeps an ad near the top of the inbox, out of order: having
+    # nothing new, it says nothing about the threads after it.
+    nando = FakeNando(due=True, threads=[{"threadId": "2-ad==", "newest": "2026-11-13T00:00:00+09:00", "ignored": False}])
+    reader = FakeReader(
+        inbox=[
+            Thread("2-ad==", "Sam Admissions, PhD", SPONSORED),
+            Thread("2-new==", "Kim Hunter", today_message("Kim Hunter", "10:00 AM", "A role for you.")),
+        ]
+    )
+
+    await sync(nando, reader)
+
     assert reader.opened == ["2-ad==", "2-new=="]
-    assert nando.recorded == [
-        {
-            "threads": [
-                {
-                    "threadId": "2-new==",
-                    "url": "https://www.linkedin.com/messaging/thread/2-new%3D%3D/",
-                    "person": {"name": "Kim Hunter", "profileUrl": "https://www.linkedin.com/in/ACoAAOther/"},
-                    "messages": [{"from": "other", "sentAt": "2026-11-15T10:00:00+09:00", "text": "A role for you."}],
-                }
-            ]
-        }
+    assert [t["threadId"] for t in nando.recorded[0]["threads"]] == ["2-new=="]
+
+
+async def test_an_ad_the_run_ignored_isnt_opened_again():
+    nando = FakeNando(due=True, threads=[{"threadId": "2-ad==", "newest": "2026-11-13T00:00:00+09:00", "ignored": True}])
+    reader = FakeReader(
+        inbox=[
+            Thread("2-ad==", "Sam Admissions, PhD", SPONSORED),
+            Thread("2-new==", "Kim Hunter", today_message("Kim Hunter", "10:00 AM", "A role for you.")),
+        ]
+    )
+
+    await sync(nando, reader)
+
+    assert reader.opened == ["2-new=="]
+
+
+async def test_follow_ups_without_a_group_heading_from_a_name_the_inbox_writes_differently():
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[
+            Thread(
+                "2-yash==",
+                "Yash Tamang (ヤシュ・タマン)",
+                """OCT 1
+Yash Tamang sent the following messages at 11:15 AM
+View Yash’s profile
+Yash Tamang  (He/Him)  11:15 AM
+
+A backend role in Tokyo?
+
+Sam Owner sent the following message at 1:00 PM
+View Sam’s profile
+Sam Owner   1:00 PM
+
+Tell me more.
+
+OCT 5
+View Yash’s profile
+Yash Tamang  (He/Him)  12:34 PM
+
+Any update?
+""",
+            )
+        ]
+    )
+
+    await sync(nando, reader)
+
+    [thread] = nando.recorded[0]["threads"]
+    assert [(m["from"], m["sentAt"], m["text"]) for m in thread["messages"]] == [
+        ("other", "2026-10-01T11:15:00+09:00", "A backend role in Tokyo?"),
+        ("owner", "2026-10-01T13:00:00+09:00", "Tell me more."),
+        ("other", "2026-10-05T12:34:00+09:00", "Any update?"),
     ]
