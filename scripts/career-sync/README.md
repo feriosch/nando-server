@@ -96,22 +96,34 @@ Read from the source of `mcp-server-linkedin` 4.30.0. When updating the reader, 
 
 ### Reading a conversation's text
 
-The reader's package has no sample of a real conversation's text, so `parse_conversation` follows LinkedIn's messaging page as known when this was written:
+`parse_conversation` follows LinkedIn's messaging page as the first Sync found it, on 2026-11-16 (#94). `test_parse.py` copies its layout from real threads, with names and text made up:
 
 ```
-TODAY
-Jane Recruiter sent the following message at 10:42 AM
-View Jane Recruiter’s profile
-Jane Recruiter
- 10:42 AM
-Hi, I have a backend role in Tokyo.
+Visit my website
+OCT 13
+Jane Recruiter sent the following messages at 4:43 PM
+View Jane’s profile
+Jane Recruiter  (She/Her)  4:43 PM
+
+Would you have any feedback?
+
+OCT 15
+Sam Owner sent the following message at 10:15 AM
+View Sam’s profile
+Sam Owner   10:15 AM
+
+Hello Jane!
 ```
 
-- Day headings: `TODAY`, `YESTERDAY`, a weekday, `MAR 3` (this year), `DEC 12, 2024`, in any letter case.
-- Each group of messages starts with a heading for screen readers: `<name> sent the following message(s) at <time>`. A group from the other person's name, as the inbox gives it, is theirs. Any other is the Owner's.
-- The time is in the Mac's time zone.
+- **Each message** starts with its own sender line: the name, the pronouns if they show them, and the time, two spaces or more apart. It comes right under a link to their profile (`View <first name>’s profile`). A message from the other person's name, as the inbox gives it, is theirs, and any other is the Owner's. The two names may differ by a reading in brackets, an emoji or a title, so one only has to start the other, compared without case or width.
+- **A day heading**, in capitals, comes when the Day changes, right before a message, and never straight after a message's text: `TODAY`, `YESTERDAY`, a weekday, `OCT 13` (this year, or last year if that is still to come), `OCT 23, 2025`. A message saying just "Monday", or ending in "FRIDAY", stays as it is.
+- **A group heading** for screen readers, `<name> sent the following message(s) at <time>`, comes only when the sender changes, right above the profile link. A follow-up on a later Day has just a day heading and its own sender line. A line in a message's text that only looks like one of these stays in the text.
+- **Under a message**, the Owner's reaction (`Remove reaction`, the emoji, a count) isn't part of its text. Anything after it is. An attachment's name, size and `Download` are too. A message with no text on the page, such as an image, reads `(no text)`.
+- The time is in the Mac's time zone. Messages above the first day heading are left out, as their Day is unknown.
 
-**Check this on the first Sync.** If LinkedIn lays the page out differently, the script reads no messages from the thread and tells Nando `problem: other`, "couldn't read the messages of LinkedIn thread …", instead of sending nothing. Then compare a thread's text (`get_conversation` from Claude Code, with the deny rules above) with the tests in `test_parse.py`, and fix `parse_conversation` with a test first.
+**Ads** are listed among the threads too: Sponsored Messages (InMail ads), whose text starts with `Sponsored`, and LinkedIn's own offers of Premium, which start with `LinkedIn Offer`. An ad has no sender lines, so a Sync sends it to Nando whole, as one message from the other person at the start of the Day it names. Every Sync sends it alike, so Nando stores it once. The cloud run ignores it, unless it advertises a role for the Owner, and an ignored ad isn't opened again. An ad with nothing new doesn't end a Sync, since LinkedIn keeps ads near the top of the inbox, out of order.
+
+**If LinkedIn changes the page**, the script reads no messages from a thread and tells Nando `problem: other`, "couldn't read the messages of LinkedIn thread …", instead of sending nothing. Then compare a thread's text (`get_conversation` from Claude Code, with the deny rules above) with the tests in `test_parse.py`, and fix `parse_conversation` with a test first.
 
 ## Tests
 

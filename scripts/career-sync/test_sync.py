@@ -65,21 +65,17 @@ async def test_only_new_messages_since_2025_of_threads_not_ignored_are_sent():
     )
     reader = FakeReader(
         inbox=[
-            Thread("2-known==", "Jane Recruiter", """YESTERDAY
-Jane Recruiter sent the following message at 9:00 AM
-Already in Nando.
-TODAY
-Jane Recruiter sent the following message at 10:00 AM
-New since then."""),
-            Thread("2-ignored==", "Pat Friend", """TODAY
-Pat Friend sent the following message at 9:30 AM
-Lunch?"""),
-            Thread("2-new==", "Kim Hunter", """DEC 30, 2024
-Kim Hunter sent the following message at 8:00 AM
-Before 2025.
-JAN 2, 2025
-Kim Hunter sent the following message at 8:00 AM
-A role for you."""),
+            Thread(
+                "2-known==",
+                "Jane Recruiter",
+                day("YESTERDAY") + message("Jane Recruiter", "9:00 AM", "Already in Nando.") + day("TODAY") + message("Jane Recruiter", "10:00 AM", "New since then."),
+            ),
+            Thread("2-ignored==", "Pat Friend", day("TODAY") + message("Pat Friend", "9:30 AM", "Lunch?")),
+            Thread(
+                "2-new==",
+                "Kim Hunter",
+                day("DEC 30, 2024") + message("Kim Hunter", "8:00 AM", "Before 2025.") + day("JAN 2, 2025") + message("Kim Hunter", "8:00 AM", "A role for you."),
+            ),
         ]
     )
 
@@ -106,18 +102,28 @@ A role for you."""),
     ]
 
 
+def day(heading: str) -> str:
+    """A day heading in a thread's page text."""
+    return f"{heading}\n"
+
+
 def message(name: str, at: str, text: str) -> str:
+    """One message in a thread's page text, as LinkedIn lays it out."""
+    return f"{name} sent the following message at {at}\nView {name.split()[0]}’s profile\n{name}  (She/Her)  {at}\n\n{text}\n\n"
+
+
+def today_message(name: str, at: str, text: str) -> str:
     """A thread's page text with one message from name, at a time TODAY."""
-    return f"TODAY\n{name} sent the following message at {at}\n{text}"
+    return day("TODAY") + message(name, at, text)
 
 
 async def test_the_first_thread_with_nothing_new_ends_the_sync():
     nando = FakeNando(due=True, threads=[{"threadId": "2-old==", "newest": "2026-11-15T09:00:00+09:00", "ignored": False}])
     reader = FakeReader(
         inbox=[
-            Thread("2-fresh==", "Jane Recruiter", message("Jane Recruiter", "11:00 AM", "Hi")),
-            Thread("2-old==", "Kim Hunter", message("Kim Hunter", "9:00 AM", "Already in Nando.")),
-            Thread("2-older==", "Lee Agent", message("Lee Agent", "8:00 AM", "Never opened.")),
+            Thread("2-fresh==", "Jane Recruiter", today_message("Jane Recruiter", "11:00 AM", "Hi")),
+            Thread("2-old==", "Kim Hunter", today_message("Kim Hunter", "9:00 AM", "Already in Nando.")),
+            Thread("2-older==", "Lee Agent", today_message("Lee Agent", "8:00 AM", "Never opened.")),
         ]
     )
 
@@ -130,7 +136,7 @@ async def test_the_first_thread_with_nothing_new_ends_the_sync():
 async def test_at_most_30_threads_are_opened_with_a_pause_between_each():
     nando = FakeNando(due=True)
     reader = FakeReader(
-        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(40)]
+        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", today_message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(40)]
     )
     pauses = []
 
@@ -147,7 +153,7 @@ async def test_at_most_30_threads_are_opened_with_a_pause_between_each():
 async def test_new_messages_are_sent_in_batches_of_10_threads():
     nando = FakeNando(due=True)
     reader = FakeReader(
-        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(25)]
+        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", today_message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(25)]
     )
 
     await sync(nando, reader)
@@ -162,7 +168,7 @@ async def test_new_messages_are_sent_in_batches_of_10_threads():
 async def test_later_batches_name_the_sync_the_first_started():
     nando = FakeNando(due=True)
     reader = FakeReader(
-        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(25)]
+        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", today_message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(25)]
     )
 
     await sync(nando, reader)
@@ -172,7 +178,7 @@ async def test_later_batches_name_the_sync_the_first_started():
 
 async def test_a_sync_with_nothing_new_is_still_recorded():
     nando = FakeNando(due=True, threads=[{"threadId": "2-old==", "newest": "2026-11-15T09:00:00+09:00", "ignored": False}])
-    reader = FakeReader(inbox=[Thread("2-old==", "Kim Hunter", message("Kim Hunter", "9:00 AM", "Already in Nando."))])
+    reader = FakeReader(inbox=[Thread("2-old==", "Kim Hunter", today_message("Kim Hunter", "9:00 AM", "Already in Nando."))])
 
     await sync(nando, reader)
 
@@ -183,9 +189,9 @@ async def test_a_thread_whose_messages_cant_be_read_is_reported():
     nando = FakeNando(due=True)
     reader = FakeReader(
         inbox=[
-            Thread("2-fresh==", "Jane Recruiter", message("Jane Recruiter", "11:00 AM", "Hi")),
+            Thread("2-fresh==", "Jane Recruiter", today_message("Jane Recruiter", "11:00 AM", "Hi")),
             Thread("2-odd==", "Kim Hunter", "A page laid out in a way the script doesn't know"),
-            Thread("2-later==", "Lee Agent", message("Lee Agent", "8:00 AM", "Never opened.")),
+            Thread("2-later==", "Lee Agent", today_message("Lee Agent", "8:00 AM", "Never opened.")),
         ]
     )
 
@@ -210,7 +216,7 @@ async def test_an_inbox_the_reader_cant_read_is_reported():
 
 async def test_a_thread_the_inbox_gives_no_name_for_gets_no_profile():
     nando = FakeNando(due=True)
-    reader = FakeReader(inbox=[Thread("2-fresh==", "", message("Jane Recruiter", "11:00 AM", "Hi"))])
+    reader = FakeReader(inbox=[Thread("2-fresh==", "", today_message("Jane Recruiter", "11:00 AM", "Hi"))])
 
     await sync(nando, reader)
 
@@ -221,7 +227,7 @@ async def test_a_reader_that_stops_answering_is_reported_after_what_was_read():
     nando = FakeNando(due=True)
     reader = FakeReader(
         inbox=[
-            Thread("2-fresh==", "Jane Recruiter", message("Jane Recruiter", "11:00 AM", "Hi")),
+            Thread("2-fresh==", "Jane Recruiter", today_message("Jane Recruiter", "11:00 AM", "Hi")),
             Thread("2-broken==", "Kim Hunter", "", broken=True),
         ]
     )
@@ -236,8 +242,8 @@ async def test_a_thread_linkedin_opens_another_page_for_is_reported():
     nando = FakeNando(due=True)
     reader = FakeReader(
         inbox=[
-            Thread("2-fresh==", "Jane Recruiter", message("Jane Recruiter", "11:00 AM", "Hi")),
-            Thread("2-gone==", "Kim Hunter", message("Lee Agent", "10:00 AM", "Someone else's thread."), landed="2-other=="),
+            Thread("2-fresh==", "Jane Recruiter", today_message("Jane Recruiter", "11:00 AM", "Hi")),
+            Thread("2-gone==", "Kim Hunter", today_message("Lee Agent", "10:00 AM", "Someone else's thread."), landed="2-other=="),
         ]
     )
 
@@ -252,7 +258,7 @@ async def test_a_reader_error_is_reported_after_what_was_read():
     nando = FakeNando(due=True)
     reader = FakeReader(
         inbox=[
-            Thread("2-fresh==", "Jane Recruiter", message("Jane Recruiter", "11:00 AM", "Hi")),
+            Thread("2-fresh==", "Jane Recruiter", today_message("Jane Recruiter", "11:00 AM", "Hi")),
             Thread("2-limited==", "Kim Hunter", "", error=rate_limited()),
         ]
     )
@@ -278,3 +284,125 @@ async def test_the_reader_refuses_any_tool_but_its_three_read_tools(tool):
             await Reader(client).call(tool, {"linkedin_username": "someone", "message": "hi"})
 
     assert linkedin.calls == []
+
+
+# A Sponsored Message (an InMail ad), laid out as get_conversation gave one on
+# 2026-11-16: no "sent the following message" headings. Names and text made up.
+SPONSORED = """Sponsored
+
+Nov 13
+Owner, your invitation — Example Fellowship
+Apply Now
+Sam Admissions, PhD
+Sam Admissions, PhD
+
+Hi Owner,
+
+
+
+
+I lead Admissions at Example School. I would like to invite you to apply.
+
+
+
+
+Best regards,
+
+Sam Admissions, PhD
+
+Apply Now
+Not interested
+
+Example School | Somewhere
+
+"""
+
+
+async def test_an_ad_is_sent_as_one_message_for_the_run_to_sort_and_the_sync_carries_on():
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[
+            Thread("2-ad==", "Sam Admissions, PhD", SPONSORED),
+            Thread("2-new==", "Kim Hunter", today_message("Kim Hunter", "10:00 AM", "A role for you.")),
+        ]
+    )
+
+    await sync(nando, reader)
+
+    [recorded] = nando.recorded
+    ad, new = recorded["threads"]
+    assert (ad["threadId"], ad["person"]["name"]) == ("2-ad==", "Sam Admissions, PhD")
+    assert [(m["from"], m["sentAt"]) for m in ad["messages"]] == [("other", "2026-11-13T00:00:00+09:00")]
+    assert ad["messages"][0]["text"].startswith("Sponsored\n")
+    assert (new["threadId"], new["messages"][0]["text"]) == ("2-new==", "A role for you.")
+
+
+async def test_an_ad_nando_already_holds_doesnt_end_the_sync():
+    # LinkedIn keeps an ad near the top of the inbox, out of order: having
+    # nothing new, it says nothing about the threads after it.
+    nando = FakeNando(due=True, threads=[{"threadId": "2-ad==", "newest": "2026-11-13T00:00:00+09:00", "ignored": False}])
+    reader = FakeReader(
+        inbox=[
+            Thread("2-ad==", "Sam Admissions, PhD", SPONSORED),
+            Thread("2-new==", "Kim Hunter", today_message("Kim Hunter", "10:00 AM", "A role for you.")),
+        ]
+    )
+
+    await sync(nando, reader)
+
+    assert reader.opened == ["2-ad==", "2-new=="]
+    assert [t["threadId"] for t in nando.recorded[0]["threads"]] == ["2-new=="]
+
+
+async def test_an_ad_the_run_ignored_isnt_opened_again():
+    nando = FakeNando(due=True, threads=[{"threadId": "2-ad==", "newest": "2026-11-13T00:00:00+09:00", "ignored": True}])
+    reader = FakeReader(
+        inbox=[
+            Thread("2-ad==", "Sam Admissions, PhD", SPONSORED),
+            Thread("2-new==", "Kim Hunter", today_message("Kim Hunter", "10:00 AM", "A role for you.")),
+        ]
+    )
+
+    await sync(nando, reader)
+
+    assert reader.opened == ["2-new=="]
+
+
+async def test_follow_ups_without_a_group_heading_from_a_name_the_inbox_writes_differently():
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[
+            Thread(
+                "2-yash==",
+                "Yash Tamang (ヤシュ・タマン)",
+                """OCT 1
+Yash Tamang sent the following messages at 11:15 AM
+View Yash’s profile
+Yash Tamang  (He/Him)  11:15 AM
+
+A backend role in Tokyo?
+
+Sam Owner sent the following message at 1:00 PM
+View Sam’s profile
+Sam Owner   1:00 PM
+
+Tell me more.
+
+OCT 5
+View Yash’s profile
+Yash Tamang  (He/Him)  12:34 PM
+
+Any update?
+""",
+            )
+        ]
+    )
+
+    await sync(nando, reader)
+
+    [thread] = nando.recorded[0]["threads"]
+    assert [(m["from"], m["sentAt"], m["text"]) for m in thread["messages"]] == [
+        ("other", "2026-10-01T11:15:00+09:00", "A backend role in Tokyo?"),
+        ("owner", "2026-10-01T13:00:00+09:00", "Tell me more."),
+        ("other", "2026-10-05T12:34:00+09:00", "Any update?"),
+    ]
