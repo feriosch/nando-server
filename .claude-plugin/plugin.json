@@ -1,6 +1,6 @@
 {
   "name": "nando",
-  "description": "The Owner's chat skills for Nando's Career Module: update Opportunities, steer Suggested Replies, keep the Career Profile, and prepare for interviews. Needs the Nando Connector.",
+  "description": "The Owner's chat skills for Nando's Career Module: update Opportunities, steer Suggested Replies, answer a Recruiter's latest message, keep the Career Profile, and prepare for interviews. Needs the Nando Connector.",
   "author": { "name": "feriosch" },
   "repository": "https://github.com/feriosch/nando-server"
 }

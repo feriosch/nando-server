@@ -268,7 +268,7 @@ Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)
 | --- | --- | --- |
 | `career_get_settings` | none | Answers `{"looking": bool}` |
 | `career_sync_status` | none | For the Mac's script, before it reads LinkedIn. Answers `{"due": bool, "since": "2025-01-01", "threads": [{"threadId", "newest", "ignored"}]}`. `due` follows the rules under Syncs. `since` is the oldest Day whose messages a Sync reads. `threads` lists every thread Nando holds, with when its newest message was sent, so that the script opens only threads with newer ones and never sends an ignored thread's messages |
-| `career_search` | `query` | Recruiters by name or organisation, Companies by name, and Opportunities by role or Company name, open or closed, ignoring case. Each Recruiter comes with their `conversations`, `[{"id", "hasSuggestedReply"}]`, so that a chat can read one with `career_get_conversation`. Answers `{"recruiters", "companies": [{"id", "name"}], "opportunities": [Opportunity in short]}` |
+| `career_search` | `query` | Recruiters by name or organisation, Companies by name, and Opportunities by role or Company name, open or closed, ignoring case. Each Recruiter comes with their `conversations`, `[{"id", "hasSuggestedReply"}]`, so that a chat can read one with `career_get_conversation`, and the `opportunities` they brought, in short (`[]` for a Lead). Answers `{"recruiters", "companies": [{"id", "name"}], "opportunities": [Opportunity in short]}` |
 | `career_get_conversation` | `id` | Answers the Conversation |
 | `career_get_opportunity` | `id` | Answers the Opportunity, open or closed |
 | `career_get_company` | `id` | Answers the Company |

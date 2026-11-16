@@ -10,6 +10,7 @@
       "skills": [
         "./skills/career/career-draft-reply",
         "./skills/career/career-interview-prep",
+        "./skills/career/career-now-reply",
         "./skills/career/career-opportunity-update",
         "./skills/career/career-profile-update"
       ]

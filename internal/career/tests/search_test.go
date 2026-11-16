@@ -41,13 +41,36 @@ func TestSearchFindsRecruitersCompaniesAndOpportunitiesByName(t *testing.T) {
 }
 
 // foundRecruiterJSON is a Recruiter as career_search answers it: with their
-// Conversations, so a chat can reach a Suggested Reply.
+// Conversations, so a chat can reach a Suggested Reply, and the Opportunities
+// they brought, so a chat can tell a Lead.
 type foundRecruiterJSON struct {
 	recruiterJSON
 	Conversations []struct {
 		ID                string `json:"id"`
 		HasSuggestedReply bool   `json:"hasSuggestedReply"`
 	} `json:"conversations"`
+	Opportunities []opportunityJSON `json:"opportunities"`
+}
+
+func TestSearchFindsARecruiterWithTheOpportunitiesTheyBrought(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run, tanaka := fileTanaka(t, phone)
+	found := func() foundRecruiterJSON {
+		t.Helper()
+		got := callTool[searchJSON](t, run, "career_search", map[string]any{"query": "tanaka"})
+		if len(got.Recruiters) != 1 {
+			t.Fatalf("career_search tanaka found %+v; want Tanaka", got.Recruiters)
+		}
+		return got.Recruiters[0]
+	}
+
+	if lead := found(); lead.Opportunities == nil || len(lead.Opportunities) != 0 {
+		t.Errorf("Tanaka, a Lead, comes with Opportunities %+v; want none, as []", lead.Opportunities)
+	}
+	o := newOpportunity(t, run, tanaka)
+	if got := found().Opportunities; len(got) != 1 || got[0].ID != o.ID {
+		t.Errorf("Tanaka comes with Opportunities %+v; want the one they brought, %s", got, o.ID)
+	}
 }
 
 func TestSearchLeadsFromARecruiterToTheirSuggestedReply(t *testing.T) {

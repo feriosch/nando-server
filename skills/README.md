@@ -16,13 +16,16 @@ Skills Claude follows to work with the Owner's data in Nando, through the Nando 
 | --- | --- |
 | [`career/career-opportunity-update`](career/career-opportunity-update/SKILL.md) | Updates an Opportunity from what happened (a Step, dates, an offer, a tip, a PDF or screenshot): Steps, Stage, Outcome, Interest, pay, Perks and Company notes |
 | [`career/career-draft-reply`](career/career-draft-reply/SKILL.md) | Shows the Suggested Reply a Sync's run wrote for a Recruiter and rewrites it as the Owner steers, in their voice |
+| [`career/career-now-reply`](career/career-now-reply/SKILL.md) | Answers a Recruiter's latest message, pasted or screenshotted before a Sync brings it, with the whole Conversation, Opportunity and Career Profile, and free times from Google Calendar |
 | [`career/career-profile-update`](career/career-profile-update/SKILL.md) | Builds or changes the Career Profile from resumes or what the Owner says |
 | [`career/career-interview-prep`](career/career-interview-prep/SKILL.md) | Prepares for a Step from the Company Brief and further public research, and keeps useful findings as Company notes |
 | [`career/career-sync`](career/career-sync/SKILL.md) | Sorts what each Sync brought, keeps Opportunities and Company Briefs, and writes every Suggested Reply (scheduled task) |
 
 Each name carries `career-` because skills uploaded to the Claude app have no prefix.
 
-`internal/japanese/tests/skills_test.go` and `internal/career/tests/skills_test.go` check that every Tool a skill names is one Nando serves, so a renamed Tool fails the build until its skills follow. They also check that each unattended skill bans every destructive Tool, and that the `nando` plugin carries exactly the four Career chat skills.
+`internal/japanese/tests/skills_test.go` and `internal/career/tests/skills_test.go` check that every Tool a skill names is one Nando serves, so a renamed Tool fails the build until its skills follow. They also check that each unattended skill bans every destructive Tool, and that the `nando` plugin carries exactly the five Career chat skills.
+
+`career-now-reply` reads the Owner's calendar to propose times, and adds an agreed meeting to it, through the **Google Calendar** connector. Without it the skill asks the Owner for times.
 
 ## Use them in the Claude app
 
@@ -33,7 +36,7 @@ Each name carries `career-` because skills uploaded to the Claude app have no pr
    zip -r add-word.zip add-word
    zip -r suggest-related.zip suggest-related
    cd ../career
-   for s in career-opportunity-update career-draft-reply career-profile-update career-interview-prep; do zip -r "$s.zip" "$s"; done
+   for s in career-opportunity-update career-draft-reply career-now-reply career-profile-update career-interview-prep; do zip -r "$s.zip" "$s"; done
    ```
 
    `word-requests` and `career-sync` are never uploaded: their scheduled tasks read them from the repo.
@@ -46,18 +49,18 @@ Each name carries `career-` because skills uploaded to the Claude app have no pr
 
 ### Career: the `nando` plugin
 
-This repo is a Claude Code plugin marketplace holding one plugin, `nando`, with the four Career chat skills ([`.claude-plugin/`](../.claude-plugin/)). `career-sync` isn't in it. In Claude Code:
+This repo is a Claude Code plugin marketplace holding one plugin, `nando`, with the five Career chat skills ([`.claude-plugin/`](../.claude-plugin/)). `career-sync` isn't in it. In Claude Code:
 
 ```text
 /plugin marketplace add feriosch/nando-server
 /plugin install nando@nando
 ```
 
-The skills are then `/nando:career-opportunity-update`, `/nando:career-draft-reply`, `/nando:career-profile-update` and `/nando:career-interview-prep`, and Claude also uses them on its own when the chat calls for one. The plugin has no version, so `/plugin marketplace update nando` brings in each change pushed to `main`.
+The skills are then `/nando:career-opportunity-update`, `/nando:career-draft-reply`, `/nando:career-now-reply`, `/nando:career-profile-update` and `/nando:career-interview-prep`, and Claude also uses them on its own when the chat calls for one. The plugin has no version, so `/plugin marketplace update nando` brings in each change pushed to `main`.
 
 **Once, after the rename** of `career-help-reply` to `career-draft-reply`: run `/plugin marketplace update nando` so the plugin carries the new name.
 
-The marketplace entry's `source` is the repo root, `"./"`, and it lists the four skill folders in `skills`. A root-source entry that lists `skills` loads only those folders, without scanning `skills/` for others. A new chat skill is added to that list, and the skills test checks it.
+The marketplace entry's `source` is the repo root, `"./"`, and it lists the five skill folders in `skills`. A root-source entry that lists `skills` loads only those folders, without scanning `skills/` for others. A new chat skill is added to that list, and the skills test checks it.
 
 ### Japanese
 
