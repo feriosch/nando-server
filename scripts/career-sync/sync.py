@@ -123,9 +123,12 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
                 # thread's messages must never be filed under this one.
                 problem = {"kind": "other", "text": f"LinkedIn opened {conversation.get('url')} for thread {thread_id}"}
                 break
-            messages = parse_conversation(
-                conversation.get("sections", {}).get("conversation", ""), other=name, today=now.date(), tz=now.tzinfo
-            )
+            text = conversation.get("sections", {}).get("conversation", "")
+            if is_sponsored(text):
+                # An InMail ad, not a conversation: nothing to send, and
+                # nothing it says about the threads after it.
+                continue
+            messages = parse_conversation(text, other=name, today=now.date(), tz=now.tzinfo)
             if not messages:
                 # Every thread has a message, so the page isn't laid out as
                 # parse_conversation expects. Tell Nando rather than take it
@@ -178,6 +181,13 @@ def inbox_names(inbox: dict[str, Any]) -> dict[str, str]:
         if ref.get("kind") == "conversation" and path:
             names.setdefault(unquote(path["id"]), ref.get("text", ""))
     return names
+
+
+def is_sponsored(text: str) -> bool:
+    """Whether get_conversation's page text is a Sponsored Message, an InMail
+    ad, which LinkedIn lists among the threads. Its text starts with
+    "Sponsored" and has no message headings."""
+    return text.lstrip().startswith("Sponsored\n") or text.strip() == "Sponsored"
 
 
 def landed_on(conversation: dict[str, Any]) -> str | None:

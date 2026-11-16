@@ -111,6 +111,8 @@ Hi, I have a backend role in Tokyo.
 - Each group of messages starts with a heading for screen readers: `<name> sent the following message(s) at <time>`. A group from the other person's name, as the inbox gives it, is theirs. Any other is the Owner's.
 - The time is in the Mac's time zone.
 
+**Sponsored Messages** (InMail ads) are listed among the threads. Their text starts with `Sponsored` and has no group headings, as seen on 2026-11-16. A Sync opens one, skips it and carries on, since it says nothing about the threads after it. It isn't sent to Nando.
+
 **Check this on the first Sync.** If LinkedIn lays the page out differently, the script reads no messages from the thread and tells Nando `problem: other`, "couldn't read the messages of LinkedIn thread …", instead of sending nothing. Then compare a thread's text (`get_conversation` from Claude Code, with the deny rules above) with the tests in `test_parse.py`, and fix `parse_conversation` with a test first.
 
 ## Tests

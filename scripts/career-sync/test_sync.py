@@ -278,3 +278,61 @@ async def test_the_reader_refuses_any_tool_but_its_three_read_tools(tool):
             await Reader(client).call(tool, {"linkedin_username": "someone", "message": "hi"})
 
     assert linkedin.calls == []
+
+
+# A Sponsored Message (an InMail ad), laid out as get_conversation gave one on
+# 2026-11-16: no "sent the following message" headings. Names and text made up.
+SPONSORED = """Sponsored
+
+Nov 13
+Owner, your invitation — Example Fellowship
+Apply Now
+Sam Admissions, PhD
+Sam Admissions, PhD
+
+Hi Owner,
+
+
+
+
+I lead Admissions at Example School. I would like to invite you to apply.
+
+
+
+
+Best regards,
+
+Sam Admissions, PhD
+
+Apply Now
+Not interested
+
+Example School | Somewhere
+
+"""
+
+
+async def test_a_sponsored_message_is_skipped_and_the_sync_carries_on():
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[
+            Thread("2-ad==", "Sam Admissions, PhD", SPONSORED),
+            Thread("2-new==", "Kim Hunter", message("Kim Hunter", "10:00 AM", "A role for you.")),
+        ]
+    )
+
+    await sync(nando, reader)
+
+    assert reader.opened == ["2-ad==", "2-new=="]
+    assert nando.recorded == [
+        {
+            "threads": [
+                {
+                    "threadId": "2-new==",
+                    "url": "https://www.linkedin.com/messaging/thread/2-new%3D%3D/",
+                    "person": {"name": "Kim Hunter", "profileUrl": "https://www.linkedin.com/in/ACoAAOther/"},
+                    "messages": [{"from": "other", "sentAt": "2026-11-15T10:00:00+09:00", "text": "A role for you."}],
+                }
+            ]
+        }
+    ]
