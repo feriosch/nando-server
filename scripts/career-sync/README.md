@@ -51,7 +51,7 @@ When the session expires, the next Sync tells Nando and the Owner logs in again 
 uv run --script sync.py --connect
 ```
 
-It registers the script with Nando, opens the browser on Nando's consent page, where the Owner approves it with a Passkey, and waits for the browser to come back to `http://127.0.0.1:8765/callback`. The tokens are kept in the login Keychain (service `app.nando.career-sync`), or, if `launchd` can't reach the Keychain, in `~/.nando/career-sync.json`, readable only by the Owner, with Nando's OAuth metadata: each hourly run is a new process, and refreshes the access token, which lasts an hour, at the token endpoint it names (`/oauth/token`). A Connector approved before the script kept that metadata fails its first refresh (`Token refresh failed: 404`): run `--connect` again. The Connector appears in Nando's Settings like any other. Removing it there cuts the script off, and the log then says to run `--connect` again.
+It registers the script with Nando, opens the browser on Nando's consent page, where the Owner approves it with a Passkey, and waits for the browser to come back to `http://127.0.0.1:8765/callback`. The tokens are kept in the login Keychain (service `app.nando.career-sync`), or, if `launchd` can't reach the Keychain, in `~/.nando/career-sync.json`, readable only by the Owner. The access token lasts an hour. Each hourly run is a new process, so before refreshing it, the script reads Nando's OAuth metadata (`/.well-known/oauth-authorization-server`) for the token endpoint (`/oauth/token`): the MCP SDK reads it only on the way to the browser. If Nando can't serve it, the run logs so, keeps the tokens, and the next hour tries again. The Connector appears in Nando's Settings like any other. Removing it there cuts the script off, and the log then says to run `--connect` again.
 
 ## Keeping Claude Code away from the reader's writing Tools
 
@@ -119,4 +119,4 @@ Hi, I have a backend role in Tokyo.
 uv run --project scripts/career-sync pytest scripts/career-sync
 ```
 
-They run `run_sync` against fake MCP servers for Nando and the reader (`fakes.py`), whose answers follow the reader at 4.30.0 as above. `test_auth.py` runs the Connector's OAuth against a fake of Nando's endpoints, from `--connect` to a later hourly run that refreshes the access token. CI runs them on PRs that touch this folder.
+They run `run_sync` against fake MCP servers for Nando and the reader (`fakes.py`), whose answers follow the reader at 4.30.0 as above. `test_auth.py` runs the Connector's OAuth against a fake of Nando's endpoints, from `--connect` to a later hourly run that refreshes the access token. `NandoAuth` leans on the internals of `mcp` 2.3.0 (`_initialize`, `_refresh_token` and its context): when updating the SDK, run these tests and read its `oauth2.py` again. CI runs them on PRs that touch this folder.
