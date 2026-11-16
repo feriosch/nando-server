@@ -10,6 +10,10 @@ import (
 	"github.com/feriosch/nando-server/internal/testpush"
 )
 
+// marked is when the Owner marks Tanaka's Suggested Reply replied in
+// markedTanaka: Monday at 21:00.
+var marked = at(0, 21, 0)
+
 // markReplied marks the Conversation's Suggested Reply as replied, as the
 // app does once the Owner sent it in LinkedIn.
 func (d *browser) markReplied(conversationID string) {
@@ -17,14 +21,54 @@ func (d *browser) markReplied(conversationID string) {
 	d.must(http.MethodPost, "/api/career/conversations/"+conversationID+"/replied", nil, http.StatusNoContent)
 }
 
-func TestTheOwnerMarksASuggestedReplyAsRepliedAndItStaysOnTheRecruiterPage(t *testing.T) {
-	n, phone := signedInBrowser(t)
+// undoReplied clears the mark, as the app's Undo does.
+func (d *browser) undoReplied(conversationID string) {
+	d.nando.t.Helper()
+	d.must(http.MethodDelete, "/api/career/conversations/"+conversationID+"/replied", nil, http.StatusNoContent)
+}
+
+// suggestedReply reads the Conversation's Suggested Reply through
+// career_get_conversation, as the run and the chat skills do.
+func (d *browser) suggestedReply(conversationID string) *suggestedReplyJSON {
+	d.nando.t.Helper()
+	return callTool[conversationJSON](d.nando.t, d.connect(), "career_get_conversation", map[string]any{"id": conversationID}).SuggestedReply
+}
+
+// answeredTanaka files Tanaka's Conversation and has the run answer the
+// pitch. It answers what career_file_conversation did.
+func answeredTanaka(t *testing.T, phone *browser) filedJSON {
+	t.Helper()
 	run, filed := fileTanakasConversation(t, phone)
 	answerTanaka(t, run, filed.Conversation.ID)
+	return filed
+}
 
-	marked := at(0, 21, 0)
+// markedTanaka is answeredTanaka, and the Owner marks the answer replied at
+// marked.
+func markedTanaka(t *testing.T, n *nando, phone *browser) filedJSON {
+	t.Helper()
+	filed := answeredTanaka(t, phone)
 	n.clock.Set(marked)
 	phone.markReplied(filed.Conversation.ID)
+	return filed
+}
+
+// markedTanakaInProcess is markedTanaka, with Tanaka's fintech Opportunity
+// in process, so the tick follows it up.
+func markedTanakaInProcess(t *testing.T, n *nando, phone *browser) filedJSON {
+	t.Helper()
+	run, filed := fileTanakasConversation(t, phone)
+	o := newOpportunity(t, run, filed.Recruiter)
+	callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{"id": o.ID, "stage": "in_process"})
+	answerTanaka(t, run, filed.Conversation.ID)
+	n.clock.Set(marked)
+	phone.markReplied(filed.Conversation.ID)
+	return filed
+}
+
+func TestTheOwnerMarksASuggestedReplyAsRepliedAndItStaysOnTheRecruiterPage(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	filed := markedTanaka(t, n, phone)
 
 	page := get[recruiterPageJSON](phone, "/api/career/recruiters/"+filed.Recruiter.ID)
 	if r := page.Conversations[0].SuggestedReply; r == nil || r.MarkedRepliedAt == nil || !r.MarkedRepliedAt.Equal(marked) {
@@ -34,18 +78,14 @@ func TestTheOwnerMarksASuggestedReplyAsRepliedAndItStaysOnTheRecruiterPage(t *te
 
 func TestMarkingAgainKeepsTheFirstTime(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	run, filed := fileTanakasConversation(t, phone)
-	answerTanaka(t, run, filed.Conversation.ID)
-	first := at(0, 21, 0)
-	n.clock.Set(first)
-	phone.markReplied(filed.Conversation.ID)
+	filed := markedTanaka(t, n, phone)
 
-	n.clock.Set(at(0, 22, 0))
+	n.clock.Set(marked.Add(time.Hour))
 	phone.markReplied(filed.Conversation.ID)
 
 	page := get[recruiterPageJSON](phone, "/api/career/recruiters/"+filed.Recruiter.ID)
-	if r := page.Conversations[0].SuggestedReply; r == nil || r.MarkedRepliedAt == nil || !r.MarkedRepliedAt.Equal(first) {
-		t.Errorf("after marking twice, the Suggested Reply is %+v; want it marked replied at the first time, %v", r, first)
+	if r := page.Conversations[0].SuggestedReply; r == nil || r.MarkedRepliedAt == nil || !r.MarkedRepliedAt.Equal(marked) {
+		t.Errorf("after marking twice, the Suggested Reply is %+v; want it marked replied at the first time, %v", r, marked)
 	}
 }
 
@@ -61,19 +101,16 @@ func TestMarkingAnUnknownConversationOrOneWithNoSuggestedReplyIsRefused(t *testi
 
 func TestUndoClearsTheMark(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	run, filed := fileTanakasConversation(t, phone)
-	answerTanaka(t, run, filed.Conversation.ID)
-	n.clock.Set(at(0, 21, 0))
-	phone.markReplied(filed.Conversation.ID)
+	filed := markedTanaka(t, n, phone)
 
-	phone.must(http.MethodDelete, "/api/career/conversations/"+filed.Conversation.ID+"/replied", nil, http.StatusNoContent)
+	phone.undoReplied(filed.Conversation.ID)
 
 	page := get[recruiterPageJSON](phone, "/api/career/recruiters/"+filed.Recruiter.ID)
 	if r := page.Conversations[0].SuggestedReply; r == nil || r.MarkedRepliedAt != nil {
 		t.Fatalf("after Undo, the Suggested Reply is %+v; want it there, not marked", r)
 	}
 	// Nothing is marked now: Undo again still answers 204.
-	phone.must(http.MethodDelete, "/api/career/conversations/"+filed.Conversation.ID+"/replied", nil, http.StatusNoContent)
+	phone.undoReplied(filed.Conversation.ID)
 	for _, id := range []string{bson.NewObjectID().Hex(), "not-an-id"} {
 		phone.must(http.MethodDelete, "/api/career/conversations/"+id+"/replied", nil, http.StatusNotFound)
 	}
@@ -87,7 +124,7 @@ func TestAMarkedSuggestedReplyIsNotWaiting(t *testing.T) {
 	)
 	suggestReply(t, phone, conversations["2-tanaka"], "answer", "Thank you!", at(-3, 10, 15))
 	suggestReply(t, phone, conversations["2-sato"], "answer", "Hello Sato-san!", at(-2, 10, 0))
-	n.clock.Set(at(0, 21, 0))
+	n.clock.Set(marked)
 
 	phone.markReplied(conversations["2-sato"])
 
@@ -108,7 +145,7 @@ func TestAMarkedLateReplyIsNotInLateReplies(t *testing.T) {
 	)
 	suggestReply(t, phone, conversations["2-mori"], "late", "Hello Mori-san!", at(-45, 10, 0))
 	suggestReply(t, phone, conversations["2-ueda"], "late", "Hello Ueda-san!", at(-400, 10, 0))
-	n.clock.Set(at(0, 21, 0))
+	n.clock.Set(marked)
 
 	phone.markReplied(conversations["2-ueda"])
 
@@ -122,8 +159,8 @@ func TestAMarkedLateReplyIsNotInLateReplies(t *testing.T) {
 
 func TestNotLookingTheOwnerDoesNotHearOfAMarkedSuggestedReply(t *testing.T) {
 	n, phone, push := subscribedPhone(t)
-	run, filed := fileTanakasConversation(t, phone)
-	answerTanaka(t, run, filed.Conversation.ID)
+	filed := answeredTanaka(t, phone)
+	// Before the 19:00 slot.
 	n.clock.Set(at(0, 12, 0))
 	phone.markReplied(filed.Conversation.ID)
 
@@ -131,18 +168,17 @@ func TestNotLookingTheOwnerDoesNotHearOfAMarkedSuggestedReply(t *testing.T) {
 	received(t, push, nil, "Monday at 19:00, with only a marked Suggested Reply")
 }
 
-func TestLookingTheOwnerDoesNotHearOfASyncWhoseAnswerIsMarked(t *testing.T) {
+func TestLookingTheOwnerDoesNotHearOfASyncWhoseSuggestedReplyIsMarked(t *testing.T) {
 	n, phone, push := subscribedPhone(t)
 	phone.setLooking(true)
-	run, filed := fileTanakasConversation(t, phone)
-	answerTanaka(t, run, filed.Conversation.ID)
+	answeredTanaka(t, phone)
 	n.tickAt(at(0, 8, 10))
 	received(t, push, []testpush.Notification{waiting("1")}, "once the first Sync's work was done, with Tanaka waiting")
 
 	// The second Sync brings Sato, whom the Owner answers in LinkedIn
 	// before the tick.
 	callTool[recordedJSON](t, phone.macAt(at(1, 8, 0)), "career_record_sync", map[string]any{"threads": []any{recruiterThread(1, at(1, 7, 45))}})
-	run = phone.connect()
+	run := phone.connect()
 	sato := callTool[workJSON](t, run, "career_list_work", nil).Items[0].Conversation.ID
 	callTool[filedJSON](t, run, "career_file_conversation", map[string]any{
 		"conversationId": sato, "recruiter": map[string]any{"name": "Sato Ken", "kind": "in_house", "organisation": "Kumo Pay"},
@@ -154,24 +190,15 @@ func TestLookingTheOwnerDoesNotHearOfASyncWhoseAnswerIsMarked(t *testing.T) {
 	phone.markReplied(sato)
 
 	n.tickAt(at(1, 8, 5))
-	received(t, push, []testpush.Notification{waiting("1")}, "after the second Sync, whose only answer is marked replied")
-}
-
-// suggestedReply reads the Conversation's Suggested Reply through
-// career_get_conversation, as the run and the chat skills do.
-func (d *browser) suggestedReply(conversationID string) *suggestedReplyJSON {
-	d.nando.t.Helper()
-	return callTool[conversationJSON](d.nando.t, d.connect(), "career_get_conversation", map[string]any{"id": conversationID}).SuggestedReply
+	received(t, push, []testpush.Notification{waiting("1")}, "after the second Sync, whose only Suggested Reply is marked replied")
 }
 
 func TestTheToolsShowThatTheOwnerMarkedASuggestedReplyReplied(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	run, filed := fileTanakasConversation(t, phone)
-	answerTanaka(t, run, filed.Conversation.ID)
+	filed := answeredTanaka(t, phone)
 	if r := phone.suggestedReply(filed.Conversation.ID); r == nil || r.MarkedRepliedAt != nil {
 		t.Fatalf("before the mark, career_get_conversation shows the Suggested Reply as %+v; want it not marked", r)
 	}
-	marked := at(0, 21, 0)
 	n.clock.Set(marked)
 
 	phone.markReplied(filed.Conversation.ID)
@@ -181,21 +208,9 @@ func TestTheToolsShowThatTheOwnerMarkedASuggestedReplyReplied(t *testing.T) {
 	}
 }
 
-// markedTanaka files Tanaka's Conversation, has the run answer the pitch, and
-// has the Owner mark that answer replied at 21:00 on Monday. It returns the
-// Conversation's id.
-func markedTanaka(t *testing.T, n *nando, phone *browser) string {
-	t.Helper()
-	run, filed := fileTanakasConversation(t, phone)
-	answerTanaka(t, run, filed.Conversation.ID)
-	n.clock.Set(at(0, 21, 0))
-	phone.markReplied(filed.Conversation.ID)
-	return filed.Conversation.ID
-}
-
 func TestASyncBringingTheOwnersReplyClearsAMarkedSuggestedReply(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	id := markedTanaka(t, n, phone)
+	id := markedTanaka(t, n, phone).Conversation.ID
 
 	callTool[recordedJSON](t, phone.macAt(at(1, 8, 0)), "career_record_sync", map[string]any{"threads": []any{
 		tanakaThread(message("m2", "owner", at(0, 20, 50), "Thank you for reaching out! Could you share the job description?")),
@@ -211,7 +226,7 @@ func TestASyncBringingTheOwnersReplyClearsAMarkedSuggestedReply(t *testing.T) {
 
 func TestASyncBringingTheOwnersReplyAndTheRecruitersAnswerClearsTheMarkAndQueuesAReply(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	id := markedTanaka(t, n, phone)
+	id := markedTanaka(t, n, phone).Conversation.ID
 
 	callTool[recordedJSON](t, phone.macAt(at(1, 8, 0)), "career_record_sync", map[string]any{"threads": []any{
 		tanakaThread(
@@ -230,7 +245,7 @@ func TestASyncBringingTheOwnersReplyAndTheRecruitersAnswerClearsTheMarkAndQueues
 
 func TestTheRunsNewSuggestedReplyIsNotMarked(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	id := markedTanaka(t, n, phone)
+	id := markedTanaka(t, n, phone).Conversation.ID
 
 	callTool[conversationJSON](t, phone.connect(), "career_set_suggested_reply", map[string]any{
 		"conversationId": id, "text": "Thank you! I'm not looking right now, but let's keep in touch.",
@@ -247,7 +262,7 @@ func TestTheRunsNewSuggestedReplyIsNotMarked(t *testing.T) {
 
 func TestAMarkedAnswerNeverTurnsLate(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	id := markedTanaka(t, n, phone)
+	id := markedTanaka(t, n, phone).Conversation.ID
 
 	n.tickAt(pitched.Add(30*day + time.Minute))
 
@@ -261,13 +276,7 @@ func TestAMarkedAnswerNeverTurnsLate(t *testing.T) {
 
 func TestAnOpportunityInProcessIsFollowedUp14DaysAfterTheMark(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	run, filed := fileTanakasConversation(t, phone)
-	o := newOpportunity(t, run, filed.Recruiter)
-	callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{"id": o.ID, "stage": "in_process"})
-	answerTanaka(t, run, filed.Conversation.ID)
-	marked := at(0, 21, 0)
-	n.clock.Set(marked)
-	phone.markReplied(filed.Conversation.ID)
+	id := markedTanakaInProcess(t, n, phone).Conversation.ID
 
 	n.tickAt(marked.Add(14*day - time.Minute))
 	if items := phone.claimWorkAt(marked.Add(14*day - 30*time.Second)); len(items) != 0 {
@@ -276,29 +285,41 @@ func TestAnOpportunityInProcessIsFollowedUp14DaysAfterTheMark(t *testing.T) {
 	due := marked.Add(14 * day)
 	n.tickAt(due)
 	items := phone.claimWorkAt(due.Add(time.Minute))
-	if len(items) != 1 || items[0].Kind != "follow_up" || items[0].Conversation.ID != filed.Conversation.ID {
+	if len(items) != 1 || items[0].Kind != "follow_up" || items[0].Conversation.ID != id {
 		t.Fatalf("14 days after the mark, the run claimed %+v; want one follow_up Item for Tanaka's Conversation", items)
 	}
 
 	// The run follows up the mark, as the Owner's latest message.
 	callTool[conversationJSON](t, phone.connect(), "career_set_suggested_reply", map[string]any{
-		"conversationId": filed.Conversation.ID, "text": "Hello Tanaka-san, I wanted to follow up.",
+		"conversationId": id, "text": "Hello Tanaka-san, I wanted to follow up.",
 		"language": "en", "kind": "follow_up", "answers": marked.Format(time.RFC3339),
 	})
-	if r := phone.suggestedReply(filed.Conversation.ID); r == nil || r.Kind != "follow_up" || r.MarkedRepliedAt != nil {
+	if r := phone.suggestedReply(id); r == nil || r.Kind != "follow_up" || r.MarkedRepliedAt != nil {
 		t.Errorf("after the run's follow-up, the Suggested Reply is %+v; want the follow-up, not marked", r)
+	}
+}
+
+func TestUndoTakesBackTheMarksFollowUp(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	id := markedTanakaInProcess(t, n, phone).Conversation.ID
+	due := marked.Add(14 * day)
+	n.tickAt(due)
+
+	// The Owner never sent it after all.
+	n.clock.Set(due.Add(time.Minute))
+	phone.undoReplied(id)
+
+	if items := phone.claimWorkAt(due.Add(2 * time.Minute)); len(items) != 0 {
+		t.Errorf("after Undo, the run claimed %+v; want no follow_up Item: the Owner hasn't sent the answer yet", items)
+	}
+	if r := phone.suggestedReply(id); r == nil || r.Kind != "answer" || r.MarkedRepliedAt != nil {
+		t.Errorf("after Undo, the Suggested Reply is %+v; want the answer back, not marked", r)
 	}
 }
 
 func TestTheOwnersMessageASyncBringsAfterTheMarksFollowUpGetsNoSecond(t *testing.T) {
 	n, phone := signedInBrowser(t)
-	run, filed := fileTanakasConversation(t, phone)
-	o := newOpportunity(t, run, filed.Recruiter)
-	callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{"id": o.ID, "stage": "in_process"})
-	answerTanaka(t, run, filed.Conversation.ID)
-	marked := at(0, 21, 0)
-	n.clock.Set(marked)
-	phone.markReplied(filed.Conversation.ID)
+	markedTanakaInProcess(t, n, phone)
 	due := marked.Add(14 * day)
 	n.tickAt(due)
 	// No run writes the follow-up: after 3 lapsed claims it is set aside.

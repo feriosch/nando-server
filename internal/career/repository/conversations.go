@@ -230,12 +230,12 @@ func (r conversations) MakeReplyLate(ctx context.Context, id bson.ObjectID, repl
 	return result.ModifiedCount == 1, nil
 }
 
-func (r conversations) MarkReplied(ctx context.Context, id bson.ObjectID, at time.Time) error {
+func (r conversations) MarkReplied(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply, at time.Time) error {
 	_, err := r.collection.UpdateOne(ctx,
 		bson.D{
 			{Key: "_id", Value: id},
-			{Key: "suggestedReply", Value: bson.D{{Key: "$exists", Value: true}}},
-			{Key: "suggestedReply.markedRepliedAt", Value: bson.D{{Key: "$exists", Value: false}}},
+			{Key: "suggestedReply.writtenAt", Value: reply.WrittenAt},
+			notMarkedReplied,
 		},
 		bson.D{{Key: "$set", Value: bson.D{{Key: "suggestedReply.markedRepliedAt", Value: at}}}},
 	)
@@ -243,7 +243,8 @@ func (r conversations) MarkReplied(ctx context.Context, id bson.ObjectID, at tim
 }
 
 func (r conversations) UnmarkReplied(ctx context.Context, id bson.ObjectID) error {
-	return utils.Matched(r.collection.UpdateByID(ctx, id, bson.D{{Key: "$unset", Value: bson.D{{Key: "suggestedReply.markedRepliedAt", Value: ""}}}}))
+	_, err := r.collection.UpdateByID(ctx, id, bson.D{{Key: "$unset", Value: bson.D{{Key: "suggestedReply.markedRepliedAt", Value: ""}}}})
+	return err
 }
 
 func (r conversations) MarkFollowedUp(ctx context.Context, id bson.ObjectID, sentAt time.Time) error {

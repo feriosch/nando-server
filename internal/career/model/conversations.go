@@ -168,10 +168,10 @@ type ConversationsRepository interface {
 	// replied. It reports whether it did.
 	MakeReplyLate(ctx context.Context, id bson.ObjectID, reply SuggestedReply) (bool, error)
 	// MarkReplied marks the Conversation's Suggested Reply replied at at,
-	// unless it is already marked.
-	MarkReplied(ctx context.Context, id bson.ObjectID, at time.Time) error
+	// unless it is already marked or it changed since it was read as reply.
+	MarkReplied(ctx context.Context, id bson.ObjectID, reply SuggestedReply, at time.Time) error
 	// UnmarkReplied clears the mark on the Conversation's Suggested Reply,
-	// if any. It returns Core's utils.ErrNotFound for no such Conversation.
+	// if any.
 	UnmarkReplied(ctx context.Context, id bson.ObjectID) error
 }
 

@@ -176,7 +176,7 @@ Marks the Conversation's current Suggested Reply replied, now. `204`. Marking it
 
 #### `DELETE /api/career/conversations/{id}/replied`
 
-Undo: clears the mark. `204`, also when nothing was marked. `404` when no Conversation has the id.
+Undo: clears the mark. A `follow_up` Item the tick queued for the mark and no run has written yet is dropped with it: the Owner hasn't sent the reply after all. `204`, also when nothing was marked. `404` when no Conversation has the id.
 
 ### Paths the web app uses
 

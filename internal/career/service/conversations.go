@@ -54,14 +54,25 @@ func (s *ConversationsService) Routes(mux *http.ServeMux) {
 }
 
 // unmarkReplied is Undo: it clears the mark on the Conversation's Suggested
-// Reply, if any.
+// Reply, if any. A follow_up Item the tick queued for the mark is done with
+// it: the Owner hasn't sent the reply after all.
 func (s *ConversationsService) unmarkReplied(w http.ResponseWriter, r *http.Request) {
-	unmark := func(ctx context.Context, id bson.ObjectID) (struct{}, error) {
-		return struct{}{}, s.conversations.UnmarkReplied(ctx, id)
+	conversation, ok := careerutils.FromPath(w, r, "Conversation", s.conversations.GetByID)
+	if !ok {
+		return
 	}
-	if _, ok := careerutils.FromPath(w, r, "Conversation", unmark); ok {
-		w.WriteHeader(http.StatusNoContent)
+	if reply := conversation.SuggestedReply; reply != nil && !reply.MarkedRepliedAt.IsZero() {
+		if err := s.conversations.UnmarkReplied(r.Context(), conversation.ID); err != nil {
+			coreutils.ServerError(w, err)
+			return
+		}
+		// Not s.complete: no run did it, so the run's activity is unchanged.
+		if err := s.work.Complete(r.Context(), conversation.ID, []string{model.ItemFollowUp}, s.now()); err != nil {
+			coreutils.ServerError(w, err)
+			return
+		}
 	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // markReplied marks the Conversation's Suggested Reply replied, now: the
@@ -75,7 +86,7 @@ func (s *ConversationsService) markReplied(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "that Conversation has no Suggested Reply", http.StatusConflict)
 		return
 	}
-	if err := s.conversations.MarkReplied(r.Context(), conversation.ID, s.now()); err != nil {
+	if err := s.conversations.MarkReplied(r.Context(), conversation.ID, *conversation.SuggestedReply, s.now()); err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}

@@ -93,14 +93,8 @@ func (s *TickRulesService) fadeOrFollowUp(ctx context.Context, o model.Opportuni
 		return nil
 	}
 	for _, c := range filed {
-		last, ok := lastMessage(c)
-		if c.SuggestedReply != nil {
-			if c.SuggestedReply.MarkedRepliedAt.IsZero() {
-				continue
-			}
-			last, ok = model.Message{From: model.MessageFromOwner, SentAt: c.SuggestedReply.MarkedRepliedAt}, true
-		}
-		if !ok || last.From != model.MessageFromOwner || now.Sub(last.SentAt) < followUpAfter || !followedUpBefore(c, last.SentAt) {
+		ownerLast, ok := ownersLastWord(c)
+		if !ok || now.Sub(ownerLast) < followUpAfter || !followedUpBefore(c, ownerLast) {
 			continue
 		}
 		// The Item first: if marking the message then fails, the open Item
@@ -108,11 +102,23 @@ func (s *TickRulesService) fadeOrFollowUp(ctx context.Context, o model.Opportuni
 		if err := s.work.Add(ctx, model.ItemFollowUp, c.ID, bson.ObjectID{}, now); err != nil {
 			return err
 		}
-		if err := s.conversations.MarkFollowedUp(ctx, c.ID, last.SentAt); err != nil {
+		if err := s.conversations.MarkFollowedUp(ctx, c.ID, ownerLast); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ownersLastWord is when the Owner last wrote in c, if c is waiting on the
+// Recruiter: its last message is the Owner's and it has no Suggested Reply,
+// or the Owner marked its Suggested Reply replied, which counts as their
+// last message, sent at the mark, until a Sync brings the real one.
+func ownersLastWord(c model.Conversation) (time.Time, bool) {
+	if c.SuggestedReply != nil {
+		return c.SuggestedReply.MarkedRepliedAt, !c.SuggestedReply.MarkedRepliedAt.IsZero()
+	}
+	last, ok := lastMessage(c)
+	return last.SentAt, ok && last.From == model.MessageFromOwner
 }
 
 // followedUpBefore reports whether c's last follow_up Item was queued for a
