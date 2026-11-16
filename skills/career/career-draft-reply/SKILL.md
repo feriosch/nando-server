@@ -1,7 +1,7 @@
 ---
-name: career-help-reply
+name: career-draft-reply
 description: >-
-  Show the Owner the Suggested Reply Nando holds for a Recruiter, and rewrite it the way they steer ("decline but keep in touch", "ask about salary first", "make it shorter"), in their own voice, then save it. Use whenever the Owner wants to change, discuss or get help with a reply to a Recruiter (e.g. "help me answer Tanaka", "the reply to the Hays guy is too eager"), even if they don't mention Nando.
+  Show the Owner the Suggested Reply Nando holds for a Recruiter (the draft a Sync's run wrote), and rewrite it the way they steer ("decline but keep in touch", "ask about salary first", "make it shorter"), in their own voice, then save it. Use whenever the Owner wants to change, discuss or get help with that stored reply (e.g. "help me answer Tanaka", "the reply to the Hays guy is too eager"), even if they don't mention Nando. A message the Owner pastes or screenshots, which Nando doesn't hold yet, goes to `career-now-reply` instead.
 ---
 
 # Help with a reply

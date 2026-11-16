@@ -15,7 +15,7 @@ Skills Claude follows to work with the Owner's data in Nando, through the Nando 
 | Skill | What it does |
 | --- | --- |
 | [`career/career-opportunity-update`](career/career-opportunity-update/SKILL.md) | Updates an Opportunity from what happened (a Step, dates, an offer, a tip, a PDF or screenshot): Steps, Stage, Outcome, Interest, pay, Perks and Company notes |
-| [`career/career-help-reply`](career/career-help-reply/SKILL.md) | Shows a Recruiter's Suggested Reply and rewrites it as the Owner steers, in their voice |
+| [`career/career-draft-reply`](career/career-draft-reply/SKILL.md) | Shows the Suggested Reply a Sync's run wrote for a Recruiter and rewrites it as the Owner steers, in their voice |
 | [`career/career-profile-update`](career/career-profile-update/SKILL.md) | Builds or changes the Career Profile from resumes or what the Owner says |
 | [`career/career-interview-prep`](career/career-interview-prep/SKILL.md) | Prepares for a Step from the Company Brief and further public research, and keeps useful findings as Company notes |
 | [`career/career-sync`](career/career-sync/SKILL.md) | Sorts what each Sync brought, keeps Opportunities and Company Briefs, and writes every Suggested Reply (scheduled task) |
@@ -33,12 +33,14 @@ Each name carries `career-` because skills uploaded to the Claude app have no pr
    zip -r add-word.zip add-word
    zip -r suggest-related.zip suggest-related
    cd ../career
-   for s in career-opportunity-update career-help-reply career-profile-update career-interview-prep; do zip -r "$s.zip" "$s"; done
+   for s in career-opportunity-update career-draft-reply career-profile-update career-interview-prep; do zip -r "$s.zip" "$s"; done
    ```
 
    `word-requests` and `career-sync` are never uploaded: their scheduled tasks read them from the repo.
 
 2. **Upload them:** in claude.ai, open **Settings**, then **Capabilities**, and under **Skills** upload each zip. Skills need **Code execution and file creation** turned on there. A changed skill is uploaded again the same way.
+
+   **Once, after the rename:** `career-draft-reply` was called `career-help-reply`. Delete `career-help-reply` from your Skills, then upload `career-draft-reply.zip`.
 
 ## Use them in Claude Code
 
@@ -51,7 +53,9 @@ This repo is a Claude Code plugin marketplace holding one plugin, `nando`, with 
 /plugin install nando@nando
 ```
 
-The skills are then `/nando:career-opportunity-update`, `/nando:career-help-reply`, `/nando:career-profile-update` and `/nando:career-interview-prep`, and Claude also uses them on its own when the chat calls for one. The plugin has no version, so `/plugin marketplace update nando` brings in each change pushed to `main`.
+The skills are then `/nando:career-opportunity-update`, `/nando:career-draft-reply`, `/nando:career-profile-update` and `/nando:career-interview-prep`, and Claude also uses them on its own when the chat calls for one. The plugin has no version, so `/plugin marketplace update nando` brings in each change pushed to `main`.
+
+**Once, after the rename** of `career-help-reply` to `career-draft-reply`: run `/plugin marketplace update nando` so the plugin carries the new name.
 
 The marketplace entry's `source` is the repo root, `"./"`, and it lists the four skill folders in `skills`. A root-source entry that lists `skills` loads only those folders, without scanning `skills/` for others. A new chat skill is added to that list, and the skills test checks it.
 
