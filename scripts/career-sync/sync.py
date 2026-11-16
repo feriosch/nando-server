@@ -36,7 +36,13 @@ from mcp import Client, StdioServerParameters
 from mcp.client.auth import OAuthClientProvider
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
-from mcp.shared.auth import AuthorizationCodeResult, OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.shared.auth import (
+    AuthorizationCodeResult,
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthMetadata,
+    OAuthToken,
+)
 
 log = logging.getLogger("nando-career-sync")
 
@@ -446,11 +452,25 @@ class StoredTokens:
     def expires_at(self) -> float | None:
         return self.store.load().get("expiresAt")
 
+    def auth_server(self) -> OAuthMetadata | None:
+        metadata = self.store.load().get("authServer")
+        return OAuthMetadata.model_validate(metadata) if metadata else None
+
+    def set_auth_server(self, metadata: OAuthMetadata) -> None:
+        state = self.store.load()
+        state["authServer"] = metadata.model_dump(mode="json", exclude_none=True)
+        self.store.save(state)
+
 
 class NandoAuth(OAuthClientProvider):
-    """OAuth with Nando that restores when the access token expires: the SDK
-    reloads saved tokens without it, and would use an expired one until
-    Nando turned it away, then start over in the browser."""
+    """OAuth with Nando that a later run, a new process, can carry on with.
+    The SDK reloads saved tokens, but neither when the access token expires
+    nor Nando's authorization server metadata, which it learns only while
+    the Owner approves the Connector. Without the expiry it would use an
+    expired token until Nando turned it away; without the metadata it would
+    refresh at the origin's /token, which Nando doesn't serve (its token
+    endpoint is /oauth/token). Either way it would start over in the browser,
+    which an hourly run can't."""
 
     def __init__(self, storage: StoredTokens, *, interactive: bool) -> None:
         super().__init__(
@@ -471,6 +491,12 @@ class NandoAuth(OAuthClientProvider):
     async def _initialize(self) -> None:
         await super()._initialize()
         self.context.token_expiry_time = self._storage.expires_at()
+        self.context.oauth_metadata = self._storage.auth_server()
+
+    async def _handle_token_response(self, response: httpx2.Response) -> None:
+        await super()._handle_token_response(response)
+        if self.context.oauth_metadata:
+            self._storage.set_auth_server(self.context.oauth_metadata)
 
 
 class NotConnected(Exception):
@@ -560,13 +586,25 @@ def main() -> int:
         return 0
     try:
         asyncio.run(hourly())
-    except NotConnected as e:
-        log.error("%s", e)
-        return 1
-    except Exception:
-        log.exception("The run failed.")
+    except Exception as e:
+        if (not_connected := needs_connecting(e)) is not None:
+            log.error("%s", not_connected)
+        else:
+            log.exception("The run failed.")
         return 1
     return 0
+
+
+def needs_connecting(e: BaseException) -> NotConnected | None:
+    """The NotConnected that ended a run, also when the MCP client's task
+    group wrapped it in an ExceptionGroup."""
+    if isinstance(e, NotConnected):
+        return e
+    if isinstance(e, BaseExceptionGroup):
+        for inner in e.exceptions:
+            if (found := needs_connecting(inner)) is not None:
+                return found
+    return None
 
 
 if __name__ == "__main__":
