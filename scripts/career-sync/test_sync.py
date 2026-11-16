@@ -433,3 +433,15 @@ Any update?
         ("owner", "2026-10-01T13:00:00+09:00", "Tell me more."),
         ("other", "2026-10-05T12:34:00+09:00", "Any update?"),
     ]
+
+
+async def test_the_other_persons_profile_is_found_by_its_link_label():
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[Thread("2-yash==", "Yash Tamang (ヤシュ・タマン)", today_message("Yash Tamang", "10:00 AM", "Hi"), profile="/in/yash/")]
+    )
+
+    await sync(nando, reader)
+
+    [thread] = nando.recorded[0]["threads"]
+    assert thread["person"] == {"name": "Yash Tamang (ヤシュ・タマン)", "profileUrl": "https://www.linkedin.com/in/yash/"}

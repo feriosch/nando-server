@@ -136,8 +136,9 @@ class FakeReader:
                     "sections": {"conversation": thread.text},
                     "references": {
                         "conversation": [
-                            {"kind": "person", "url": "/in/ACoAAOwner/", "context": "conversation", "text": "Sam Owner"},
-                            {"kind": "person", "url": thread.profile, "context": "conversation", "text": thread.name},
+                            # As LinkedIn labels the links on 2026-11-16 (#94).
+                            {"kind": "person", "url": "/in/ACoAAOwner/", "context": "conversation", "text": "Open Sam Owner’s profile"},
+                            {"kind": "person", "url": thread.profile, "context": "conversation", "text": f"Open {thread.name}’s profile"},
                         ]
                     },
                 }

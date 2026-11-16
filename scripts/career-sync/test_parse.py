@@ -347,3 +347,35 @@ def test_an_ad_is_one_message_from_the_other_person_on_its_date():
     }
     assert ad_message(LINKEDIN_OFFER, today=SUNDAY, tz=TOKYO)["sentAt"] == "2026-11-08T00:00:00+09:00"
     assert ad_message("Sponsored\nNo date anywhere", today=SUNDAY, tz=TOKYO) is None
+
+
+def test_an_inmail_from_a_name_ending_in_s_with_its_quick_replies_left_out():
+    # As thread 15 of the first Sync: "View Chris’ profile", a subject line
+    # right under the sender line, and LinkedIn's quick replies at the end.
+    text = """View my services
+MAR 10
+Chris Betrand sent the following messages at 10:47 AM
+View Chris’ profile
+Chris Betrand   10:47 AM
+Explore QA roles in Tokyo
+
+Dear Owner,
+I would love to talk.
+
+MAR 13
+View Chris’ profile
+Chris Betrand   10:47 AM
+Just checking in
+
+Any interest?
+
+Reply to conversation with “Yes, interested...”
+Yes, interested...
+Reply to conversation with “No thanks...”
+No thanks...
+"""
+
+    assert [(m["from"], m["sentAt"], m["text"]) for m in parse_conversation(text, other="Chris Betrand", today=SUNDAY, tz=TOKYO)] == [
+        ("other", "2026-03-10T10:47:00+09:00", "Explore QA roles in Tokyo\n\nDear Owner,\nI would love to talk."),
+        ("other", "2026-03-13T10:47:00+09:00", "Just checking in\n\nAny interest?"),
+    ]
