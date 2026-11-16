@@ -36,14 +36,25 @@ async def test_nothing_is_opened_when_no_sync_is_due():
     assert nando.recorded == []
 
 
-async def test_a_session_linkedin_no_longer_holds_is_reported_as_expired():
+async def test_with_no_session_saved_the_reader_still_reads_the_inbox_so_it_can_import_chromes():
     nando = FakeNando(due=True)
-    reader = FakeReader(stored=False)
+    # The reader imports the session from Chrome on the first Tool that needs one.
+    reader = FakeReader(stored=False, inbox=[Thread("2-new==", "Kim Hunter", day("TODAY") + message("Kim Hunter", "9:00 AM", "A role for you."))])
+
+    await sync(nando, reader)
+
+    assert "get_inbox" in reader.calls
+    assert [t["threadId"] for t in nando.recorded[0]["threads"]] == ["2-new=="]
+    assert "problem" not in nando.recorded[0]
+
+
+async def test_with_no_session_saved_and_none_to_import_it_is_reported_as_expired():
+    nando = FakeNando(due=True)
+    reader = FakeReader(stored=False, inbox_error=auth_required())
 
     await sync(nando, reader)
 
     assert nando.recorded == [{"threads": [], "problem": {"kind": "session_expired"}}]
-    assert "get_inbox" not in reader.calls
 
 
 async def test_a_session_linkedin_turns_away_is_reported_as_expired():

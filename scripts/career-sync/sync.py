@@ -88,11 +88,11 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
         reader = Reader(client)
         session = await reader.call("get_session_status")
         # The reader checks only that a session is saved, never LinkedIn. With
-        # none, get_inbox would open a login window instead.
+        # none, such as after LinkedIn ended the last one, get_inbox first
+        # imports the session of the Owner's Chrome, if it has one. If not, it
+        # answers auth_required, reported below.
         if not session["session"]["stored"]:
-            log.warning("No LinkedIn session is saved: log in with the reader's --login.")
-            await call(nando, "career_record_sync", {"threads": [], "problem": {"kind": "session_expired"}})
-            return
+            log.info("No LinkedIn session is saved: the reader will try to import Chrome's.")
         try:
             inbox = await reader.call("get_inbox", {"limit": INBOX_LIMIT})
         except ToolError as e:
@@ -480,9 +480,10 @@ async def start_reader():
             READER,
             "--transport",
             "stdio",
-            # Never import a session from the Mac's browsers, and never wait
-            # on a login window: the Owner logs in with --login themselves.
-            "--no-auto-import",
+            # With no session saved, the reader imports the one in the
+            # Owner's Chrome (its auto-import, on by default). It never waits
+            # on a login window: without Chrome's, the Owner logs in with
+            # --login themselves.
             "--login-inline-wait",
             "0",
         ],
