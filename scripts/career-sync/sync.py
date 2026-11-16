@@ -104,10 +104,13 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
         updates = []
         problem = None
         opened = 0
+        # Set once a thread Nando holds has nothing new. The inbox is in order
+        # of activity, so the held threads after it have nothing new either.
+        caught_up = False
         names = inbox_names(inbox)
         for thread_id, name in names.items():
             thread = held.get(thread_id)
-            if thread and thread["ignored"]:
+            if thread and (thread["ignored"] or caught_up):
                 continue
             if opened == MAX_OPENED:
                 break
@@ -145,8 +148,12 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
                 if ad:
                     # LinkedIn keeps ads near the top, out of order.
                     continue
-                # The inbox lists the most recent threads first, so no later
-                # one has anything new either.
+                if thread:
+                    # Threads Nando doesn't hold yet after it are the backlog
+                    # an earlier Sync didn't reach: still read them.
+                    caught_up = True
+                    continue
+                # Nothing since `since`: every thread after it is older still.
                 break
             updates.append(
                 {
@@ -218,6 +225,14 @@ def landed_on(conversation: dict[str, Any]) -> str | None:
     return unquote(path["id"]) if path else None
 
 
+# The end of a link to someone's profile: "Jane’s profile", or "Chris’
+# profile" for a name ending in s.
+POSSESSIVE_PROFILE = r"[’']s? profile$"
+# How the references label a link to someone's profile: "Open Jane
+# Recruiter’s profile", as on 2026-11-16 (#94).
+PROFILE_LABEL = re.compile(r"^(?:Open |View )?(?P<name>.+?)" + POSSESSIVE_PROFILE)
+
+
 def person(conversation: dict[str, Any], name: str) -> dict[str, str]:
     """The other person in a conversation: their name, and their profile if
     the page links to it under their name."""
@@ -225,10 +240,17 @@ def person(conversation: dict[str, Any], name: str) -> dict[str, str]:
     if not name:
         # Every reference would match, the Owner's own profile first.
         return found
+    people = []
     for ref in conversation.get("references", {}).get("conversation", []):
-        if ref.get("kind") == "person" and ref.get("text", "").startswith(name):
-            found["profileUrl"] = urljoin(LINKEDIN, ref["url"])
-            break
+        if ref.get("kind") == "person":
+            label = PROFILE_LABEL.match(ref.get("text", ""))
+            people.append((label["name"] if label else ref.get("text", ""), ref["url"]))
+    # The same name first: the Owner's own link comes first, and their name
+    # may start with the other person's.
+    match = next((url for label, url in people if normal_name(label) == normal_name(name)), None)
+    match = match or next((url for label, url in people if same_person(label, name)), None)
+    if match:
+        found["profileUrl"] = urljoin(LINKEDIN, match)
     return found
 
 
@@ -281,7 +303,10 @@ GROUP_HEADING = re.compile(r"sent the following messages? at \d{1,2}:\d{2}\s?[AP
 # them, and the time, two spaces or more apart.
 SENDER_LINE = re.compile(r"^(?P<name>\S.*?)\s{2,}(?:\([^)]*\)\s{2,})?(?P<time>\d{1,2}:\d{2}\s?[AP]M)$", re.IGNORECASE)
 # The link to the sender's profile, right above their line.
-PROFILE_LINK = re.compile(r"^View .+[’']s profile$")
+# "View Jane’s profile", or "View Chris’ profile".
+PROFILE_LINK = re.compile(r"^View .+" + POSSESSIVE_PROFILE)
+# LinkedIn's quick replies under an InMail: this line, then the reply itself.
+QUICK_REPLY = re.compile(r"^Reply to conversation with [“\"](?P<reply>.*)[”\"]$")
 # The Owner's reaction under a message: this line, then the emoji and a count.
 REACTIONS = "Remove reaction"
 # The text of a message that has none on the page, such as an image.
@@ -333,6 +358,7 @@ def parse_conversation(text: str, *, other: str, today: date, tz: tzinfo) -> lis
     day: date | None = None
     current: dict[str, Any] | None = None
     reacting = False
+    quick_reply: str | None = None
     for i, line in enumerate(lines):
         if not line:
             if current is not None and current["lines"]:
@@ -366,6 +392,13 @@ def parse_conversation(text: str, *, other: str, today: date, tz: tzinfo) -> lis
         if reacting and is_reaction(line):
             continue
         reacting = False
+        if offered := QUICK_REPLY.match(line):
+            quick_reply = offered["reply"]
+            continue
+        if line == quick_reply:
+            quick_reply = None
+            continue
+        quick_reply = None
         current["lines"].append(line)
     return [
         {"from": m["from"], "sentAt": m["at"].isoformat(), "text": "\n".join(m["lines"]).strip() or NO_TEXT}

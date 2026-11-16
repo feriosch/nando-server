@@ -117,19 +117,46 @@ def today_message(name: str, at: str, text: str) -> str:
     return day("TODAY") + message(name, at, text)
 
 
-async def test_the_first_thread_with_nothing_new_ends_the_sync():
-    nando = FakeNando(due=True, threads=[{"threadId": "2-old==", "newest": "2026-11-15T09:00:00+09:00", "ignored": False}])
+async def test_after_a_held_thread_with_nothing_new_only_threads_nando_doesnt_hold_are_opened():
+    # The inbox is in order of activity: once a thread Nando holds has nothing
+    # new, neither have the held threads after it. Threads it doesn't hold yet
+    # are the backlog an earlier Sync didn't reach, and are still read.
+    nando = FakeNando(
+        due=True,
+        threads=[
+            {"threadId": "2-old==", "newest": "2026-11-15T09:00:00+09:00", "ignored": False},
+            {"threadId": "2-older==", "newest": "2026-11-14T09:00:00+09:00", "ignored": False},
+        ],
+    )
     reader = FakeReader(
         inbox=[
             Thread("2-fresh==", "Jane Recruiter", today_message("Jane Recruiter", "11:00 AM", "Hi")),
             Thread("2-old==", "Kim Hunter", today_message("Kim Hunter", "9:00 AM", "Already in Nando.")),
             Thread("2-older==", "Lee Agent", today_message("Lee Agent", "8:00 AM", "Never opened.")),
+            Thread("2-backlog==", "Pat Agent", day("OCT 1") + message("Pat Agent", "8:00 AM", "From the backlog.")),
         ]
     )
 
     await sync(nando, reader)
 
-    assert reader.opened == ["2-fresh==", "2-old=="]
+    assert reader.opened == ["2-fresh==", "2-old==", "2-backlog=="]
+    assert [t["threadId"] for t in nando.recorded[0]["threads"]] == ["2-fresh==", "2-backlog=="]
+
+
+async def test_a_thread_with_nothing_since_2025_ends_the_sync():
+    # Every thread after it is older still.
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[
+            Thread("2-fresh==", "Jane Recruiter", today_message("Jane Recruiter", "11:00 AM", "Hi")),
+            Thread("2-ancient==", "Kim Hunter", day("DEC 30, 2024") + message("Kim Hunter", "9:00 AM", "Before 2025.")),
+            Thread("2-older==", "Lee Agent", day("DEC 1, 2024") + message("Lee Agent", "8:00 AM", "Never opened.")),
+        ]
+    )
+
+    await sync(nando, reader)
+
+    assert reader.opened == ["2-fresh==", "2-ancient=="]
     assert [t["threadId"] for t in nando.recorded[0]["threads"]] == ["2-fresh=="]
 
 
@@ -406,3 +433,26 @@ Any update?
         ("owner", "2026-10-01T13:00:00+09:00", "Tell me more."),
         ("other", "2026-10-05T12:34:00+09:00", "Any update?"),
     ]
+
+
+async def test_the_other_persons_profile_is_found_by_its_link_label():
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[Thread("2-yash==", "Yash Tamang (ヤシュ・タマン)", today_message("Yash Tamang", "10:00 AM", "Hi"), profile="/in/yash/")]
+    )
+
+    await sync(nando, reader)
+
+    [thread] = nando.recorded[0]["threads"]
+    assert thread["person"] == {"name": "Yash Tamang (ヤシュ・タマン)", "profileUrl": "https://www.linkedin.com/in/yash/"}
+
+
+async def test_the_owners_own_profile_link_isnt_taken_for_a_name_it_starts_with():
+    # The Owner's link comes first, and "Sam" starts "Sam Owner".
+    nando = FakeNando(due=True)
+    reader = FakeReader(inbox=[Thread("2-sam==", "Sam", today_message("Sam", "10:00 AM", "Hi"), profile="/in/sam/")])
+
+    await sync(nando, reader)
+
+    [thread] = nando.recorded[0]["threads"]
+    assert thread["person"]["profileUrl"] == "https://www.linkedin.com/in/sam/"
