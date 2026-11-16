@@ -31,7 +31,7 @@ type Conversation struct {
 
 // SuggestedReply is Claude's draft of the Owner's next message in a
 // Conversation. It is gone once a Sync brings a message from the Owner newer
-// than the message it answers.
+// than the message it answers. Until then, the Owner may mark it replied.
 type SuggestedReply struct {
 	Text string `bson:"text"`
 	// Language is LanguageJA or LanguageEN.
@@ -45,6 +45,9 @@ type SuggestedReply struct {
 	// SyncID is the Sync that brought the message it answers, so that
 	// Sync's Notification knows it led to a new answer.
 	SyncID bson.ObjectID `bson:"syncId,omitempty"`
+	// MarkedRepliedAt is when the Owner marked it replied, having sent it
+	// in LinkedIn before a Sync brought their message, if they did.
+	MarkedRepliedAt time.Time `bson:"markedRepliedAt,omitempty"`
 }
 
 // LanguageNote is a mistake in the Owner's last message: what they wrote,
@@ -135,7 +138,7 @@ type ConversationsRepository interface {
 	// ByRecruiter returns the Conversations filed under the Recruiter.
 	ByRecruiter(ctx context.Context, recruiterID bson.ObjectID) ([]Conversation, error)
 	// WithSuggestedReply returns the filed Conversations whose Suggested
-	// Reply is of one of kinds.
+	// Reply is of one of kinds and not marked replied.
 	WithSuggestedReply(ctx context.Context, kinds []string) ([]Conversation, error)
 	// SetSuggestedReply replaces the Conversation's Suggested Reply, unless
 	// it is ignored, and returns it, or Core's utils.ErrNotFound.
@@ -144,23 +147,32 @@ type ConversationsRepository interface {
 	// whether it is ignored, without its messages.
 	Threads(ctx context.Context) ([]Conversation, error)
 	// WithWaitingReplyBefore returns the Conversations whose Suggested Reply
-	// is of one of WaitingReplyKinds and answers a message sent before
-	// before.
+	// is of one of WaitingReplyKinds, not marked replied, and answers a
+	// message sent before before.
 	WithWaitingReplyBefore(ctx context.Context, before time.Time) ([]Conversation, error)
 	// AnyAnswerFromSync reports whether a Conversation's Suggested Reply is
-	// an answer to a message the Sync with syncID brought.
+	// an answer to a message the Sync with syncID brought, not marked
+	// replied.
 	AnyAnswerFromSync(ctx context.Context, syncID bson.ObjectID) (bool, error)
 	// WaitingRecruiters counts the Recruiters waiting for the Owner's reply:
 	// those with a Conversation whose Suggested Reply is of one of
 	// WaitingReplyKinds and answers a message sent at or after since. A Late
-	// Reply isn't counted, nor one about to turn late.
+	// Reply isn't counted, nor one about to turn late, nor one marked
+	// replied.
 	WaitingRecruiters(ctx context.Context, since time.Time) (int, error)
 	// MarkFollowedUp records that a follow_up Item was queued for the
 	// Owner's message sent at sentAt.
 	MarkFollowedUp(ctx context.Context, id bson.ObjectID, sentAt time.Time) error
 	// MakeReplyLate turns the Conversation's Suggested Reply late, unless it
-	// changed since it was read as reply. It reports whether it did.
+	// changed since it was read as reply or the Owner has since marked it
+	// replied. It reports whether it did.
 	MakeReplyLate(ctx context.Context, id bson.ObjectID, reply SuggestedReply) (bool, error)
+	// MarkReplied marks the Conversation's Suggested Reply replied at at,
+	// unless it is already marked.
+	MarkReplied(ctx context.Context, id bson.ObjectID, at time.Time) error
+	// UnmarkReplied clears the mark on the Conversation's Suggested Reply,
+	// if any. It returns Core's utils.ErrNotFound for no such Conversation.
+	UnmarkReplied(ctx context.Context, id bson.ObjectID) error
 }
 
 // ConversationJSON is a Conversation as the Tools answer it.
@@ -185,6 +197,9 @@ type SuggestedReplyJSON struct {
 	Answers   time.Time      `json:"answers"`
 	Notes     []LanguageNote `json:"notes"`
 	WrittenAt time.Time      `json:"writtenAt"`
+	// MarkedRepliedAt is when the Owner marked it replied, or null: they
+	// sent it in LinkedIn, and no Sync has brought their message yet.
+	MarkedRepliedAt *time.Time `json:"markedRepliedAt"`
 }
 
 // RecruiterPageConversationJSON is a Conversation as its Recruiter's page
@@ -204,4 +219,6 @@ type RecruiterPageReplyJSON struct {
 	Language string         `json:"language"`
 	Kind     string         `json:"kind"`
 	Notes    []LanguageNote `json:"notes"`
+	// MarkedRepliedAt is when the Owner marked it replied, or null.
+	MarkedRepliedAt *time.Time `json:"markedRepliedAt"`
 }

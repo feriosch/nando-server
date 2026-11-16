@@ -28,6 +28,10 @@ func NewConversations(ctx context.Context, db *mongo.Database) (model.Conversati
 	return conversations{collection: collection}, nil
 }
 
+// notMarkedReplied matches a Conversation whose Suggested Reply, if any,
+// the Owner hasn't marked replied.
+var notMarkedReplied = bson.E{Key: "suggestedReply.markedRepliedAt", Value: bson.D{{Key: "$exists", Value: false}}}
+
 // conversations is the conversations collection.
 type conversations struct {
 	collection *mongo.Collection
@@ -178,6 +182,7 @@ func (r conversations) WithSuggestedReply(ctx context.Context, kinds []string) (
 	cursor, err := r.collection.Find(ctx, bson.D{
 		{Key: "recruiterId", Value: bson.D{{Key: "$exists", Value: true}}},
 		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: kinds}}},
+		notMarkedReplied,
 	})
 	if err != nil {
 		return nil, err
@@ -200,6 +205,7 @@ func (r conversations) WithWaitingReplyBefore(ctx context.Context, before time.T
 	cursor, err := r.collection.Find(ctx, bson.D{
 		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: model.WaitingReplyKinds}}},
 		{Key: "suggestedReply.answers", Value: bson.D{{Key: "$lt", Value: before}}},
+		notMarkedReplied,
 	})
 	if err != nil {
 		return nil, err
@@ -214,6 +220,7 @@ func (r conversations) MakeReplyLate(ctx context.Context, id bson.ObjectID, repl
 			{Key: "_id", Value: id},
 			{Key: "suggestedReply.kind", Value: reply.Kind},
 			{Key: "suggestedReply.writtenAt", Value: reply.WrittenAt},
+			notMarkedReplied,
 		},
 		bson.D{{Key: "$set", Value: bson.D{{Key: "suggestedReply.kind", Value: model.ReplyLate}}}},
 	)
@@ -223,13 +230,29 @@ func (r conversations) MakeReplyLate(ctx context.Context, id bson.ObjectID, repl
 	return result.ModifiedCount == 1, nil
 }
 
+func (r conversations) MarkReplied(ctx context.Context, id bson.ObjectID, at time.Time) error {
+	_, err := r.collection.UpdateOne(ctx,
+		bson.D{
+			{Key: "_id", Value: id},
+			{Key: "suggestedReply", Value: bson.D{{Key: "$exists", Value: true}}},
+			{Key: "suggestedReply.markedRepliedAt", Value: bson.D{{Key: "$exists", Value: false}}},
+		},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "suggestedReply.markedRepliedAt", Value: at}}}},
+	)
+	return err
+}
+
+func (r conversations) UnmarkReplied(ctx context.Context, id bson.ObjectID) error {
+	return utils.Matched(r.collection.UpdateByID(ctx, id, bson.D{{Key: "$unset", Value: bson.D{{Key: "suggestedReply.markedRepliedAt", Value: ""}}}}))
+}
+
 func (r conversations) MarkFollowedUp(ctx context.Context, id bson.ObjectID, sentAt time.Time) error {
 	return utils.Matched(r.collection.UpdateByID(ctx, id, bson.D{{Key: "$set", Value: bson.D{{Key: "followedUp", Value: sentAt}}}}))
 }
 
 func (r conversations) AnyAnswerFromSync(ctx context.Context, syncID bson.ObjectID) (bool, error) {
 	err := r.collection.FindOne(ctx,
-		bson.D{{Key: "suggestedReply.kind", Value: model.ReplyAnswer}, {Key: "suggestedReply.syncId", Value: syncID}},
+		bson.D{{Key: "suggestedReply.kind", Value: model.ReplyAnswer}, {Key: "suggestedReply.syncId", Value: syncID}, notMarkedReplied},
 		options.FindOne().SetProjection(bson.D{{Key: "_id", Value: 1}}),
 	).Err()
 	if errors.Is(err, mongo.ErrNoDocuments) {
@@ -243,6 +266,7 @@ func (r conversations) WaitingRecruiters(ctx context.Context, since time.Time) (
 		{Key: "recruiterId", Value: bson.D{{Key: "$exists", Value: true}}},
 		{Key: "suggestedReply.kind", Value: bson.D{{Key: "$in", Value: model.WaitingReplyKinds}}},
 		{Key: "suggestedReply.answers", Value: bson.D{{Key: "$gte", Value: since}}},
+		notMarkedReplied,
 	}).Raw()
 	if err != nil {
 		return 0, err

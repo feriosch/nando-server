@@ -22,6 +22,8 @@ type recruiterPageJSON struct {
 			Language string             `json:"language"`
 			Kind     string             `json:"kind"`
 			Notes    []languageNoteJSON `json:"notes"`
+			// MarkedRepliedAt is when the Owner marked it replied, or nil.
+			MarkedRepliedAt *time.Time `json:"markedRepliedAt"`
 		} `json:"suggestedReply"`
 	} `json:"conversations"`
 }

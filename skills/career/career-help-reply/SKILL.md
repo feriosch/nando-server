@@ -38,7 +38,7 @@ Show the new text and iterate until the Owner is happy. Explain a Japanese phras
 
 - `conversationId`, `text` and `language`;
 - `kind`: the same as before (`answer`, `late` or `follow_up`). A new one is an `answer` if the Recruiter wrote last within 30 days, `late` if their message is older, and `follow_up` if the Owner wrote last;
-- `answers`: the `sentAt` of the message it answers: the Recruiter's newest for an `answer` or a `late` one, the Owner's last for a `follow_up`;
+- `answers`: the `sentAt` of the message it answers: the Recruiter's newest for an `answer` or a `late` one, the Owner's last for a `follow_up`, or the old Suggested Reply's `markedRepliedAt` when it has one (the Owner sent it in LinkedIn, and no Sync has brought it yet);
 - `notes`: the existing notes on the Owner's last message, unless the Owner asks to change them (up to 3 `{"wrote", "natural", "why"}`).
 
-It replaces the old Suggested Reply. Tell the Owner it's saved and waiting in the app to copy. Nando removes it by itself once a Sync brings the Owner's own reply.
+It replaces the old Suggested Reply. Tell the Owner it's saved and waiting in the app to copy. Nando removes it by itself once a Sync brings the Owner's own reply, and hides it from the lists as soon as the Owner marks it replied in the app.

@@ -64,7 +64,9 @@ func (s *TickRulesService) Apply(ctx context.Context) error {
 // process or at an offer, each of its Recruiter's Conversations whose last
 // message is the Owner's, at least followUpAfter old, with no Suggested
 // Reply, gets a follow_up Item: one for each such message, ever, even if no
-// run writes it.
+// run writes it. A Suggested Reply the Owner marked replied counts as their
+// last message, sent when they marked it, until a Sync brings the real one,
+// which the mark's follow_up Item, sent after it, already covers.
 func (s *TickRulesService) fadeOrFollowUp(ctx context.Context, o model.Opportunity) error {
 	var filed []model.Conversation
 	if o.RecruiterID != nil {
@@ -92,8 +94,13 @@ func (s *TickRulesService) fadeOrFollowUp(ctx context.Context, o model.Opportuni
 	}
 	for _, c := range filed {
 		last, ok := lastMessage(c)
-		if !ok || last.From != model.MessageFromOwner || now.Sub(last.SentAt) < followUpAfter ||
-			c.SuggestedReply != nil || sameTime(c.FollowedUp, last.SentAt) {
+		if c.SuggestedReply != nil {
+			if c.SuggestedReply.MarkedRepliedAt.IsZero() {
+				continue
+			}
+			last, ok = model.Message{From: model.MessageFromOwner, SentAt: c.SuggestedReply.MarkedRepliedAt}, true
+		}
+		if !ok || last.From != model.MessageFromOwner || now.Sub(last.SentAt) < followUpAfter || !followedUpBefore(c, last.SentAt) {
 			continue
 		}
 		// The Item first: if marking the message then fails, the open Item
@@ -106,6 +113,12 @@ func (s *TickRulesService) fadeOrFollowUp(ctx context.Context, o model.Opportuni
 		}
 	}
 	return nil
+}
+
+// followedUpBefore reports whether c's last follow_up Item was queued for a
+// message sent before sentAt, or none was.
+func followedUpBefore(c model.Conversation, sentAt time.Time) bool {
+	return c.FollowedUp.Truncate(time.Millisecond).Before(sentAt.Truncate(time.Millisecond))
 }
 
 // lastMessage is c's newest message, if it has any.

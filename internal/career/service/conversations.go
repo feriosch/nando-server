@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -18,7 +19,8 @@ import (
 )
 
 // ConversationsService serves the Tools that sort Conversations: ignoring a
-// thread that isn't about a role, or filing it under its Recruiter.
+// thread that isn't about a role, or filing it under its Recruiter. It also
+// serves the app's mark that the Owner replied.
 type ConversationsService struct {
 	// scheduledTask learns when a run did an Item.
 	scheduledTask *coreutils.ScheduledTask
@@ -42,6 +44,42 @@ func (s *ConversationsService) complete(ctx context.Context, id bson.ObjectID, k
 	}
 	s.scheduledTask.RunWorking(ctx)
 	return nil
+}
+
+// Routes adds the routes that mark a Conversation's Suggested Reply replied
+// to mux, under /api/career/conversations.
+func (s *ConversationsService) Routes(mux *http.ServeMux) {
+	mux.HandleFunc("POST /api/career/conversations/{id}/replied", s.markReplied)
+	mux.HandleFunc("DELETE /api/career/conversations/{id}/replied", s.unmarkReplied)
+}
+
+// unmarkReplied is Undo: it clears the mark on the Conversation's Suggested
+// Reply, if any.
+func (s *ConversationsService) unmarkReplied(w http.ResponseWriter, r *http.Request) {
+	unmark := func(ctx context.Context, id bson.ObjectID) (struct{}, error) {
+		return struct{}{}, s.conversations.UnmarkReplied(ctx, id)
+	}
+	if _, ok := careerutils.FromPath(w, r, "Conversation", unmark); ok {
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// markReplied marks the Conversation's Suggested Reply replied, now: the
+// Owner sent it in LinkedIn.
+func (s *ConversationsService) markReplied(w http.ResponseWriter, r *http.Request) {
+	conversation, ok := careerutils.FromPath(w, r, "Conversation", s.conversations.GetByID)
+	if !ok {
+		return
+	}
+	if conversation.SuggestedReply == nil {
+		http.Error(w, "that Conversation has no Suggested Reply", http.StatusConflict)
+		return
+	}
+	if err := s.conversations.MarkReplied(r.Context(), conversation.ID, s.now()); err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Tools are what the run, and the Owner's chat, sort Conversations with.
@@ -73,8 +111,10 @@ func (s *ConversationsService) Tools() []coremodel.Tool {
 			`"required":["conversationId"]}`),
 		Handle: s.fileTool,
 	}, {
-		Name:        "career_get_conversation",
-		Description: "A Conversation, with its messages, the Recruiter it is filed under (recruiterId) and its current Suggested Reply. Answers the Conversation.",
+		Name: "career_get_conversation",
+		Description: "A Conversation, with its messages, the Recruiter it is filed under (recruiterId) and its current Suggested Reply. " +
+			"A Suggested Reply's markedRepliedAt is when the Owner marked it replied: they already sent it in LinkedIn, and no Sync has brought it yet. " +
+			"Answers the Conversation.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 		ReadOnly:    true,
 		Handle:      s.getTool,
@@ -83,7 +123,8 @@ func (s *ConversationsService) Tools() []coremodel.Tool {
 		Description: "Sets a Conversation's Suggested Reply, Claude's draft of the Owner's next message, replacing any earlier one. " +
 			"Only the Owner ever sends it. language is ja or en, the language the Recruiter wrote in. " +
 			"kind is answer (to the Recruiter's last message), follow_up (after 14 days of silence following the Owner's message) " +
-			"or late (to a Recruiter's message more than 30 days old). answers is the sentAt of the message it answers, as the Conversation shows it. " +
+			"or late (to a Recruiter's message more than 30 days old). answers is the sentAt of the message it answers, as the Conversation shows it; " +
+			"a follow_up may instead answer the current Suggested Reply's markedRepliedAt, which stands for the Owner's message until a Sync brings it. " +
 			"notes are up to 3 real mistakes in the Owner's last message: what they wrote, what is natural, and why. " +
 			"It is removed once a Sync brings a newer message from the Owner. It does the Conversation's reply, late_reply or follow_up Item. " +
 			"Answers the Conversation.",
@@ -132,8 +173,10 @@ func (s *ConversationsService) setSuggestedReplyTool(ctx context.Context, argume
 		return nil, errors.New("a Suggested Reply's language is ja or en")
 	case !slices.Contains([]string{model.ReplyAnswer, model.ReplyFollowUp, model.ReplyLate}, reply.Kind):
 		return nil, errors.New("a Suggested Reply's kind is answer, follow_up or late")
-	case !slices.ContainsFunc(held.Messages, func(m model.Message) bool { return sameTime(m.SentAt, args.Answers) }):
-		return nil, errors.New("answers is the sentAt of a message in the Conversation, as career_get_conversation shows it")
+	case !slices.ContainsFunc(held.Messages, func(m model.Message) bool { return sameTime(m.SentAt, args.Answers) }) &&
+		!(reply.Kind == model.ReplyFollowUp && followsUpMark(held, args.Answers)):
+		return nil, errors.New("answers is the sentAt of a message in the Conversation, or for a follow_up the markedRepliedAt of its Suggested Reply, " +
+			"as career_get_conversation shows them")
 	case reply.Kind != model.ReplyFollowUp && !sameTime(args.Answers, newestFrom(held, model.MessageFromOther)):
 		return nil, fmt.Errorf("an answer or late reply answers the Recruiter's newest message, sent at %s: read the Conversation again with career_get_conversation",
 			newestFrom(held, model.MessageFromOther).Format(time.RFC3339))
@@ -165,6 +208,13 @@ func (s *ConversationsService) setSuggestedReplyTool(ctx context.Context, argume
 		return nil, err
 	}
 	return careerutils.ToConversationJSON(conversation), nil
+}
+
+// followsUpMark reports whether answers is when the Owner marked c's
+// Suggested Reply replied: a follow-up may answer the mark, which stands for
+// the Owner's message until a Sync brings it.
+func followsUpMark(c model.Conversation, answers time.Time) bool {
+	return c.SuggestedReply != nil && !c.SuggestedReply.MarkedRepliedAt.IsZero() && sameTime(c.SuggestedReply.MarkedRepliedAt, answers)
 }
 
 // newestFrom is when the newest of c's messages from sender was sent, or the
