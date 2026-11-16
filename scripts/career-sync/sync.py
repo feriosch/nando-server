@@ -25,7 +25,7 @@ import sys
 import time as clock
 import unicodedata
 import webbrowser
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import date, datetime, time, tzinfo
 from pathlib import Path
 from typing import Any
@@ -77,28 +77,22 @@ class ToolError(Exception):
         self.code = code
 
 
-async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None:
-    """One hourly run: a Sync, if Nando says one is due."""
+async def run_sync(nando: Client, start_reader, *, now: datetime, pause, import_session) -> None:
+    """One hourly run: a Sync, if Nando says one is due. import_session
+    imports the LinkedIn session of the Owner's Chrome and says whether it
+    did (import_chrome_session)."""
     status = await call(nando, "career_sync_status")
     if not status["due"]:
         log.info("No Sync is due.")
         return
     log.info("A Sync is due: starting the reader.")
-    async with start_reader() as client:
-        reader = Reader(client)
-        session = await reader.call("get_session_status")
-        # The reader checks only that a session is saved, never LinkedIn. With
-        # none, such as after LinkedIn ended the last one, get_inbox first
-        # imports the session of the Owner's Chrome, if it has one. If not, it
-        # answers auth_required, reported below.
-        if not session["session"]["stored"]:
-            log.info("No LinkedIn session is saved: the reader will try to import Chrome's.")
-        try:
-            inbox = await reader.call("get_inbox", {"limit": INBOX_LIMIT})
-        except ToolError as e:
-            log.warning("The reader couldn't read the inbox: %s", e)
-            await call(nando, "career_record_sync", {"threads": [], "problem": reader_problem(e)})
+    async with AsyncExitStack() as stack:
+        opened_inbox = await open_inbox(stack, start_reader, import_session)
+        if isinstance(opened_inbox, dict):
+            log.warning("Reporting a problem to Nando: %s", opened_inbox)
+            await call(nando, "career_record_sync", {"threads": [], "problem": opened_inbox})
             return
+        reader, inbox = opened_inbox
         held = {t["threadId"]: t for t in status["threads"]}
         since = datetime.combine(date.fromisoformat(status["since"]), time(), now.tzinfo)
         updates = []
@@ -273,6 +267,49 @@ BATCH = 10
 # The only reader Tools a Sync calls. Every other one, such as send_message,
 # is refused here before it reaches the reader (ADR 0007).
 READER_TOOLS = frozenset({"get_session_status", "get_inbox", "get_conversation"})
+
+
+async def open_inbox(stack: AsyncExitStack, start_reader, import_session) -> tuple["Reader", Any] | dict[str, str]:
+    """Starts the reader, signed in to LinkedIn, on stack, and reads the
+    inbox. Answers the reader and the inbox, or the problem to tell Nando.
+
+    With no session saved, or a saved one LinkedIn turns away, it imports the
+    session of the Owner's Chrome, at most once, and starts the reader again
+    on it. It never asks for the inbox with no session saved: the reader would
+    open a LinkedIn login window on the Mac, every hour."""
+    imported = False
+    while True:
+        attempt = AsyncExitStack()
+        kept = False
+        try:
+            reader = Reader(await attempt.enter_async_context(start_reader()))
+            # The reader checks only that a session is saved, never LinkedIn.
+            session = await reader.call("get_session_status")
+            if session["session"]["stored"]:
+                try:
+                    inbox = await reader.call("get_inbox", {"limit": INBOX_LIMIT})
+                except ToolError as e:
+                    if e.code != "auth_required" or imported:
+                        log.warning("The reader couldn't read the inbox: %s", e)
+                        return reader_problem(e)
+                    # The reader moves the dead session aside.
+                    log.info("LinkedIn turned the saved session away.")
+                else:
+                    stack.push_async_exit(attempt)
+                    kept = True
+                    return reader, inbox
+            elif imported:
+                return {"kind": "session_expired"}
+            else:
+                log.info("No LinkedIn session is saved.")
+        finally:
+            if not kept:
+                await attempt.aclose()
+        log.info("Importing the LinkedIn session of the Owner's Chrome.")
+        if not await import_session():
+            log.warning("Chrome has no LinkedIn session to import: log in with the reader's --login.")
+            return {"kind": "session_expired"}
+        imported = True
 
 
 class ReaderToolRefused(Exception):
@@ -471,28 +508,53 @@ READER = "mcp-server-linkedin==4.30.0"
 NANDO_MCP = os.environ.get("NANDO_MCP_URL", "https://api.nanders.app/mcp")
 
 
+# How the reader is started for a Sync. Never --import-from-browser or its
+# auto-import: left to itself, a failed import falls back to a LinkedIn login
+# window. The Sync imports Chrome's session itself (import_chrome_session).
+# Never waiting on a login window either: the Owner logs in with --login.
+READER_ARGS = [READER, "--transport", "stdio", "--no-auto-import", "--login-inline-wait", "0"]
+
+# No remote tool catalog or update check: the script calls only its three
+# Tools, and an update note would be added to their answers.
+READER_ENV = {"LINKEDIN_MCP_REMOTE_TOOLS": "off", "LINKEDIN_MCP_CHECK_FOR_UPDATES": "off"}
+
+# The reader's one-shot import of the LinkedIn session in the Owner's Chrome,
+# and only Chrome: never another browser's, perhaps another account's. It runs
+# once and exits, 0 when it imported a session LinkedIn accepts, and never
+# opens a login window.
+IMPORT_ARGS = [READER, "--import-from-browser", "chrome"]
+
+# How long the import may take: it may download its browser on a first run,
+# and the Keychain may wait on the Owner's answer.
+IMPORT_TIMEOUT = 180
+
+
 @asynccontextmanager
 async def start_reader():
     """Starts the reader over stdio, for one Sync."""
-    params = StdioServerParameters(
-        command="uvx",
-        args=[
-            READER,
-            "--transport",
-            "stdio",
-            # With no session saved, the reader imports the one in the
-            # Owner's Chrome (its auto-import, on by default). It never waits
-            # on a login window: without Chrome's, the Owner logs in with
-            # --login themselves.
-            "--login-inline-wait",
-            "0",
-        ],
-        # No remote tool catalog or update check: the script calls only its
-        # three Tools, and an update note would be added to their answers.
-        env={"LINKEDIN_MCP_REMOTE_TOOLS": "off", "LINKEDIN_MCP_CHECK_FOR_UPDATES": "off"},
-    )
+    params = StdioServerParameters(command="uvx", args=READER_ARGS, env=READER_ENV)
     async with Client(params) as client:
         yield client
+
+
+async def import_chrome_session() -> bool:
+    """Imports the LinkedIn session of the Owner's Chrome into the reader's
+    profile, and says whether it did. The first time, macOS may ask to let it
+    read "Chrome Safe Storage" from the Keychain."""
+    proc = await asyncio.create_subprocess_exec(
+        "uvx", *IMPORT_ARGS, env={**os.environ, **READER_ENV}, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+    )
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), IMPORT_TIMEOUT)
+    except TimeoutError:
+        proc.kill()
+        await proc.wait()
+        log.warning("Importing Chrome's LinkedIn session took over %d s: stopped it.", IMPORT_TIMEOUT)
+        return False
+    for line in out.decode(errors="replace").splitlines():
+        if line.strip():
+            log.info("Import: %s", line.strip())
+    return proc.returncode == 0
 
 
 async def random_pause() -> None:
@@ -722,7 +784,7 @@ def local_zone() -> tzinfo:
 
 async def hourly() -> None:
     async with nando_client(interactive=False) as nando:
-        await run_sync(nando, start_reader, now=datetime.now(local_zone()), pause=random_pause)
+        await run_sync(nando, start_reader, now=datetime.now(local_zone()), pause=random_pause, import_session=import_chrome_session)
 
 
 def main() -> int:

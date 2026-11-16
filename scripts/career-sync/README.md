@@ -8,8 +8,8 @@ The script on the Owner's MacBook that hands their new LinkedIn messages to Nand
 
 1. Exits quietly if Nando can't be reached. The next hour tries again.
 2. Asks Nando `career_sync_status`. Nando decides when a Sync is due: at most twice a Day, 6 hours apart, not before 07:00. Nearly every run stops here, without starting the reader.
-3. Starts the reader over stdio and calls `get_session_status`. With no LinkedIn session saved, such as after LinkedIn ended the last one, it carries on: the next step makes the reader import the session of the Owner's Chrome (see Logging in to LinkedIn).
-4. Calls `get_inbox` for the 50 most recent threads. If LinkedIn turns the session away, or there was none and Chrome had none to import, it tells Nando `session_expired` and stops.
+3. Starts the reader over stdio and calls `get_session_status`. With no LinkedIn session saved, such as after LinkedIn ended the last one, it imports the session of the Owner's Chrome (see Logging in to LinkedIn) and starts the reader again. If Chrome has none, it tells Nando `session_expired` and stops, without asking the reader for anything: with no session, the reader would open a login window.
+4. Calls `get_inbox` for the 50 most recent threads. If LinkedIn turns the session away, it imports Chrome's and tries once more, the same way. If Chrome has none, or LinkedIn turns that one away too, it tells Nando `session_expired` and stops.
 5. Opens the threads with `get_conversation`, most recent first, at most 30, waiting 3–10 s between them. It skips threads Nando marked ignored. Once a thread Nando holds has nothing newer than what Nando has, it skips the held threads after it too: the inbox is in order of activity, so none of them has anything new either. It still opens the threads Nando doesn't hold yet, the backlog an earlier Sync didn't reach, so the backlog fills in about 30 threads a Sync. It keeps only messages since 2025-01-01, and stops at a thread with none: every thread after it is older still.
 6. Sends the new messages with `career_record_sync`, 10 threads at a time. Every batch after the first names, as `sync`, the Sync the first batch started, so that Nando counts them as one. A Sync with nothing new is recorded too, so that it counts.
 
@@ -43,14 +43,23 @@ A browser window opens. Sign in to LinkedIn there. The session is saved under `~
 uvx mcp-server-linkedin==4.30.0 --status
 ```
 
-When LinkedIn ends the session, the reader moves it aside, and the next Sync imports a new one from the Owner's **Chrome**, if Chrome is signed in to LinkedIn: the reader's auto-import, on the first Tool call that needs a session. Nothing is asked of the Owner, so `--login` is needed only when Chrome is signed out too. Then the Sync tells Nando, the Owner gets the "Log in to LinkedIn again" Notification, and logs in the same way. The reader may also open a LinkedIn login window by itself. Signing in there works too.
+When LinkedIn ends the session, the Sync imports a new one from the Owner's **Chrome**, if Chrome is signed in to LinkedIn, and reads the inbox with it in the same run. Nothing is asked of the Owner, so `--login` is needed only when Chrome is signed out too. Then the Sync tells Nando, the Owner gets the "Log in to LinkedIn again" Notification, and logs in the same way. The reader may also open a LinkedIn login window by itself when LinkedIn turns a session away. Signing in there works too.
 
-What the import does, from the reader's code at 4.30.0:
+The Sync imports with the reader's one-shot command, at most once a Sync:
 
-- It reads only Chrome-family browsers (Chrome, Brave, Edge, Arc and the like), never Safari or Firefox, picking the one with the most recently used LinkedIn session.
+```bash
+uvx mcp-server-linkedin==4.30.0 --import-from-browser chrome
+```
+
+What it does, from the reader's code:
+
+- It reads only Chrome, never another browser, which might hold another LinkedIn account. It has no option for a Chrome profile: with several, it takes the one whose LinkedIn session was used most recently.
 - It copies Chrome's LinkedIn cookies into `~/.linkedin-mcp/`, checks them against the feed, and leaves Chrome as it is. Both then hold the same LinkedIn session, from the same address. If LinkedIn ends it, both are signed out.
-- To decrypt Chrome's cookies, it reads "Chrome Safe Storage" from the Keychain. macOS may ask once: choose **Always Allow**. The reader gives up after 10 seconds when the Keychain doesn't answer, which can happen when run from `launchd`. The Sync then reports `session_expired` like any other failed import, and the next hour tries again. Watch the first import in the log.
+- It runs once and exits: `0` when it imported a session LinkedIn accepts, `1` otherwise, and its output goes to the log. It never opens a login window. When it fails, it puts back the session it replaced.
+- To decrypt Chrome's cookies, it reads "Chrome Safe Storage" from the Keychain. macOS may ask once: choose **Always Allow**. The reader gives up after 10 seconds when the Keychain doesn't answer, which can happen when run from `launchd`. The Sync then reports `session_expired`, and the next hour tries again. Watch the first import in the log.
 - It reads most reliably with Chrome closed. With Chrome open, an import may fail, and the next hour tries again.
+
+The reader's own auto-import stays off (`--no-auto-import`): when it fails, the reader falls back to opening a login window.
 
 ## `--connect`
 
@@ -99,7 +108,7 @@ Read from the source of `mcp-server-linkedin` 4.30.0. When updating the reader, 
 - **`get_conversation(thread_id)`** doesn't check that LinkedIn opened that thread, so the script compares the answer's `url` with it. It answers `{"url", "sections": {"conversation": text}, "references": {"conversation": [...]}}`. The text is the page's text, from the line after the conversation's header to the compose box. The references are links to the people in it, `{"kind": "person", "url": "/in/<id>/", "text": ...}`, the Owner included. It gives **no message IDs**, so the script sends none, and Nando tells messages apart by sender, time and text. It scrolls up only three times, so a long thread's oldest messages may be missing. Opening a thread marks it as read.
 - **Thread IDs** look like `2-<base64url>==`. A thread's URL is `https://www.linkedin.com/messaging/thread/<id>/`, with `=` written as `%3D`.
 - **Rate limits.** The reader doesn't pace itself. A rate-limited page gives the code `rate_limited`.
-- **Started for a Sync** with `--login-inline-wait 0`, so it never waits on a login, with its auto-import left on, so a Sync with no session saved imports Chrome's, and with `LINKEDIN_MCP_REMOTE_TOOLS=off` and `LINKEDIN_MCP_CHECK_FOR_UPDATES=off`, so it fetches no remote Tool catalog and adds no update notes to answers.
+- **Started for a Sync** with `--no-auto-import --login-inline-wait 0`, so it never imports a session by itself or waits on a login (the Sync imports Chrome's with `--import-from-browser chrome`), and with `LINKEDIN_MCP_REMOTE_TOOLS=off` and `LINKEDIN_MCP_CHECK_FOR_UPDATES=off`, so it fetches no remote Tool catalog and adds no update notes to answers.
 
 ### Reading a conversation's text
 
