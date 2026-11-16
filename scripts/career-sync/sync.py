@@ -34,9 +34,21 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 import httpx2
 from mcp import Client, StdioServerParameters
 from mcp.client.auth import OAuthClientProvider
+from mcp.client.auth.utils import (
+    build_oauth_authorization_server_metadata_discovery_urls,
+    create_oauth_metadata_request,
+    handle_auth_metadata_response,
+    issuers_match,
+)
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
-from mcp.shared.auth import AuthorizationCodeResult, OAuthClientInformationFull, OAuthClientMetadata, OAuthToken
+from mcp.shared.auth import (
+    AuthorizationCodeResult,
+    OAuthClientInformationFull,
+    OAuthClientMetadata,
+    OAuthMetadata,
+    OAuthToken,
+)
 
 log = logging.getLogger("nando-career-sync")
 
@@ -448,11 +460,21 @@ class StoredTokens:
 
 
 class NandoAuth(OAuthClientProvider):
-    """OAuth with Nando that restores when the access token expires: the SDK
-    reloads saved tokens without it, and would use an expired one until
-    Nando turned it away, then start over in the browser."""
+    """OAuth with Nando that a later run, a new process, can carry on with.
+    The SDK reloads saved tokens, but neither when the access token expires
+    nor Nando's authorization server metadata, which it reads only on the way
+    to the browser. Without the expiry it would use an expired token until
+    Nando turned it away. Without the metadata it would refresh at the
+    origin's /token, which Nando doesn't serve: its token endpoint is
+    /oauth/token. Either way it would start over in the browser, which an
+    hourly run can't. So it reads the metadata itself before a refresh.
 
-    def __init__(self, storage: StoredTokens, *, interactive: bool) -> None:
+    It leans on mcp 2.3.0's internals (_initialize, _refresh_token and
+    context): test_auth.py checks them when the SDK is updated."""
+
+    def __init__(
+        self, storage: StoredTokens, *, interactive: bool, transport: httpx2.AsyncBaseTransport | None = None
+    ) -> None:
         super().__init__(
             server_url=NANDO_MCP,
             client_metadata=OAuthClientMetadata(
@@ -467,14 +489,42 @@ class NandoAuth(OAuthClientProvider):
             callback_handler=wait_for_callback if interactive else needs_connect_callback,
         )
         self._storage = storage
+        self._transport = transport
 
     async def _initialize(self) -> None:
         await super()._initialize()
         self.context.token_expiry_time = self._storage.expires_at()
 
+    async def _refresh_token(self) -> httpx2.Request:
+        if self.context.oauth_metadata is None:
+            self.context.oauth_metadata = await self._read_metadata()
+        return await super()._refresh_token()
+
+    async def _read_metadata(self) -> OAuthMetadata:
+        """Nando's authorization server metadata, as the SDK reads it on the
+        way to the browser."""
+        issuer = self.context.get_authorization_base_url(NANDO_MCP)
+        url = build_oauth_authorization_server_metadata_discovery_urls(None, NANDO_MCP)[0]
+        try:
+            async with httpx2.AsyncClient(transport=self._transport, timeout=30) as http:
+                response = await http.send(create_oauth_metadata_request(url))
+                _, metadata = await handle_auth_metadata_response(response)
+        except httpx2.HTTPError as e:
+            raise NandoUnavailable(f"Couldn't read Nando's OAuth metadata ({e}): the next hour tries again.") from e
+        if metadata is None or not issuers_match(str(metadata.issuer), issuer):
+            raise NandoUnavailable(
+                f"Couldn't read Nando's OAuth metadata ({response.status_code} at {url}): the next hour tries again."
+            )
+        return metadata
+
 
 class NotConnected(Exception):
     """Nando needs the Owner to approve the script again."""
+
+
+class NandoUnavailable(Exception):
+    """Nando couldn't be asked how to refresh the access token. The tokens
+    are kept, and the next hour tries again."""
 
 
 async def needs_connect(url: str) -> None:
@@ -560,13 +610,25 @@ def main() -> int:
         return 0
     try:
         asyncio.run(hourly())
-    except NotConnected as e:
-        log.error("%s", e)
-        return 1
-    except Exception:
-        log.exception("The run failed.")
+    except Exception as e:
+        errors = list(leaves(e))
+        if all(isinstance(error, (NotConnected, NandoUnavailable)) for error in errors):
+            for message in dict.fromkeys(str(error) for error in errors):
+                log.error("%s", message)
+        else:
+            log.exception("The run failed.")
         return 1
     return 0
+
+
+def leaves(e: BaseException):
+    """The errors that ended a run, out of the ExceptionGroups the MCP
+    client's task groups wrap them in."""
+    if isinstance(e, BaseExceptionGroup):
+        for inner in e.exceptions:
+            yield from leaves(inner)
+    else:
+        yield e
 
 
 if __name__ == "__main__":
