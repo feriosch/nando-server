@@ -12,6 +12,9 @@ type SearchJSON struct {
 type FoundRecruiterJSON struct {
 	RecruiterJSON
 	Conversations []FoundConversationJSON `json:"conversations"`
+	// Opportunities are the ones the Recruiter brought, in short; none for a
+	// Lead.
+	Opportunities []OpportunityJSON `json:"opportunities"`
 }
 
 // FoundConversationJSON is one of a found Recruiter's Conversations, in short.

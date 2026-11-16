@@ -36,9 +36,10 @@ func (s *SearchService) Tools() []coremodel.Tool {
 		Name: "career_search",
 		Description: "Finds Recruiters (by name or their agency or Company), Companies (by name) and Opportunities " +
 			"(by role, or by their Company's name), open or closed, ignoring case. A Recruiter comes with their Conversations, " +
-			"each with whether it has a Suggested Reply; career_get_conversation reads one. " +
+			"each with whether it has a Suggested Reply (career_get_conversation reads one), and the Opportunities they brought, " +
+			"in short (none for a Lead; career_get_opportunity reads one). " +
 			"Answers {\"recruiters\": [{\"id\", \"name\", \"profileUrl\", \"kind\", \"organisation\", " +
-			"\"conversations\": [{\"id\", \"hasSuggestedReply\"}]}], \"companies\": [{\"id\", \"name\"}], " +
+			"\"conversations\": [{\"id\", \"hasSuggestedReply\"}], \"opportunities\": [{\"id\", \"company\", \"role\", \"recruiterId\", \"stage\", \"outcome\", \"interest\"}]}], \"companies\": [{\"id\", \"name\"}], " +
 			"\"opportunities\": [{\"id\", \"company\", \"role\", \"recruiterId\", \"stage\", \"outcome\", \"interest\"}]}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`),
 		ReadOnly:    true,
@@ -70,6 +71,9 @@ func (s *SearchService) searchTool(ctx context.Context, arguments json.RawMessag
 		j := model.FoundRecruiterJSON{RecruiterJSON: careerutils.ToRecruiterJSON(r), Conversations: []model.FoundConversationJSON{}}
 		for _, c := range filed {
 			j.Conversations = append(j.Conversations, model.FoundConversationJSON{ID: c.ID.Hex(), HasSuggestedReply: c.SuggestedReply != nil})
+		}
+		if j.Opportunities, err = s.opportunitiesService.ByRecruiter(ctx, r.ID); err != nil {
+			return nil, err
 		}
 		found.Recruiters = append(found.Recruiters, j)
 	}
