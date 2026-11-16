@@ -8,7 +8,7 @@ description: >-
 
 A Sync from the Owner's MacBook hands Nando their new LinkedIn messages, and Nando queues them as Items for this run. This run is unattended: the Owner is not reading it. They see only what you write through the Career Tools of the Nando Connector: Conversations filed under Recruiters, Opportunities, Company Briefs and Suggested Replies, which they read in the app and copy into LinkedIn themselves. Nothing you write is ever sent for them.
 
-If the Owner is in the chat with you, this skill isn't for that: follow `career-help-reply` or `career-opportunity-update` with them.
+If the Owner is in the chat with you, this skill isn't for that: follow `career-draft-reply` or `career-opportunity-update` with them.
 
 ## 1. Claim
 

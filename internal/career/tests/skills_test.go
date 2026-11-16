@@ -17,7 +17,7 @@ const skillsDir = "../../../skills/career"
 
 // chatSkills are the skills the Owner uses in chat, which the nando plugin
 // carries.
-var chatSkills = []string{"career-help-reply", "career-interview-prep", "career-opportunity-update", "career-profile-update"}
+var chatSkills = []string{"career-draft-reply", "career-interview-prep", "career-opportunity-update", "career-profile-update"}
 
 // requiredSkills are the skills that must exist: the chat skills and the
 // cloud run's career-sync, which the plugin leaves out.

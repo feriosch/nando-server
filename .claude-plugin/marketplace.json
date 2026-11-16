@@ -8,7 +8,7 @@
       "source": "./",
       "description": "The Owner's chat skills for Nando's Career Module. Needs the Nando Connector.",
       "skills": [
-        "./skills/career/career-help-reply",
+        "./skills/career/career-draft-reply",
         "./skills/career/career-interview-prep",
         "./skills/career/career-opportunity-update",
         "./skills/career/career-profile-update"
