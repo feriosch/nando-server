@@ -39,7 +39,7 @@ func (s *SearchService) Tools() []coremodel.Tool {
 			"each with whether it has a Suggested Reply (career_get_conversation reads one), and the Opportunities they brought, " +
 			"in short (none for a Lead; career_get_opportunity reads one). " +
 			"Answers {\"recruiters\": [{\"id\", \"name\", \"profileUrl\", \"kind\", \"organisation\", " +
-			"\"conversations\": [{\"id\", \"hasSuggestedReply\"}], \"opportunities\": [{\"id\", \"company\", \"role\", \"stage\", \"outcome\", \"interest\"}]}], \"companies\": [{\"id\", \"name\"}], " +
+			"\"conversations\": [{\"id\", \"hasSuggestedReply\"}], \"opportunities\": [{\"id\", \"company\", \"role\", \"recruiterId\", \"stage\", \"outcome\", \"interest\"}]}], \"companies\": [{\"id\", \"name\"}], " +
 			"\"opportunities\": [{\"id\", \"company\", \"role\", \"recruiterId\", \"stage\", \"outcome\", \"interest\"}]}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}`),
 		ReadOnly:    true,

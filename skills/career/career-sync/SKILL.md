@@ -79,7 +79,7 @@ Stop where only the Owner could add more, such as what the team is like inside o
 
 **An Opportunity the Recruiter takes further** changes with what they say, all through `career_save_opportunity` (only the fields you send change; `pay` and `conditions` are replaced whole, so start from `career_get_opportunity`) and `career_save_step`:
 
-- a date set for an interview, a call or an assignment is a Step: `kind` as they name it ("Casual interview", "Coding test"), `date`, `time` if they gave one, and short `notes`;
+- a date set for an interview, a call or an assignment is a Step: `kind` as they name it ("Casual interview", "Coding test"), `date`, `time` if they gave one, and short `notes`. The Owner may have saved it already in chat, before this Sync: a Step the Opportunity already has on that date is the same one, so update it with its `stepId` rather than adding a second;
 - the first Step makes it `in_process`; an offer makes it `offer`. The Stage skips ahead but never goes back;
 - an offered salary goes in `pay.offered`;
 - the Company saying no goes in `details`, dated, leaving the Opportunity open: closing it as `rejected` is the Owner's, in chat.

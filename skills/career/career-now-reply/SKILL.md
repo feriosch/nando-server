@@ -16,13 +16,13 @@ The Owner pastes it as text, shares a screenshot of LinkedIn, or both. Read it a
 
 - `career_search` with the Recruiter's name, or their agency or Company. Each Recruiter it finds comes with their `conversations` and the `opportunities` they brought. Several Recruiters or Conversations match: ask which.
 - `career_get_conversation` with the Conversation's `id`: its messages (`from` `"owner"` is the Owner's, `"other"` the Recruiter's) and its `url`, the LinkedIn thread.
-- `career_get_opportunity` for each of the Recruiter's open `opportunities`: its Stage and Steps. `career_get_company` with its Company's `id` gives the Company Brief.
+- `career_get_opportunity` for each of the Recruiter's `opportunities` that is open or `faded` (closed after 30 quiet days, so this message may take it up again): its Stage and Steps. `career_get_company` with its Company's `id` gives the Company Brief.
 - `career_get_settings` for whether the Owner is Looking.
 - `career_get_profile` for the Career Profile: what the Owner wants, won't accept, and when they can meet.
 
 A Recruiter whose `opportunities` is empty is a **Lead**, such as one who wants a casual talk to introduce roles. Build the reply from the Conversation, Looking and the Profile alone. A Recruiter Nando doesn't hold at all: say so, and work from the message and the Profile.
 
-Done when you hold the Conversation, Looking and the Profile, and every open Opportunity of this Recruiter.
+Done when you hold the Conversation, Looking and the Profile, and every open or `faded` Opportunity of this Recruiter.
 
 ## 3. Find times, when they ask to meet
 
@@ -53,7 +53,7 @@ Show it and iterate until the Owner is happy, explaining a Japanese phrase if th
 When the Recruiter or the Owner confirms a meeting time:
 
 1. **Ask the Owner** whether to put it in their calendar. Only with their yes, create the Google Calendar event: a title such as "Casual talk · Tanaka Yui (Hays)", the agreed time, and the Conversation's `url` in the description.
-2. If the meeting belongs to an Opportunity, offer to save it as a Step: `career_save_step` with `opportunityId`, `kind` (such as `casual interview`), `date`, `time` and short `notes`. Nando's Notification the evening before needs the Step.
+2. If the meeting belongs to an Opportunity, offer to save it as a Step (with several open, ask which): `career_save_step` with `opportunityId`, `kind` (such as `casual interview`), `date`, `time` and short `notes`. Nando's Notification the evening before needs the Step. Its first Step makes the Opportunity `in_process`: `career_save_opportunity` with the `id` and `stage`, when it is still `introduced`.
 
 A meeting with a Lead gets the calendar event only: Steps belong to Opportunities.
 
@@ -62,7 +62,8 @@ A meeting with a Lead gets the calendar event only: Steps belong to Opportunitie
 Once the reply is settled, check whether the message changes anything Nando holds, and offer it once, writing only with the Owner's yes, the way `career-opportunity-update` does:
 
 - an Opportunity's Stage, Outcome or a salary figure, with `career_save_opportunity` (`pay` is replaced whole: start from what `career_get_opportunity` answered);
-- for a Lead whose message now names a Company and a role, a new Opportunity: `career_save_opportunity` with `company`, `role`, the `recruiterId`, and a `fitNote` of two or three sentences on how the role fits the Career Profile: what matches, what clashes with a deal-breaker, what's unknown. It starts `introduced`.
+- a `faded` Opportunity the message takes up again: `career_reopen_opportunity` with its `id`;
+- a Company and role that none of the Recruiter's `opportunities` covers, such as a Lead's first or a second pitch, a new Opportunity: `career_save_opportunity` with `company`, `role`, the `recruiterId`, and a `fitNote` of two or three sentences on how the role fits the Career Profile: what matches, what clashes with a deal-breaker, what's unknown. It starts `introduced`.
 
 Nothing to change: say so, and you're done.
 
