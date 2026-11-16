@@ -445,3 +445,14 @@ async def test_the_other_persons_profile_is_found_by_its_link_label():
 
     [thread] = nando.recorded[0]["threads"]
     assert thread["person"] == {"name": "Yash Tamang (ヤシュ・タマン)", "profileUrl": "https://www.linkedin.com/in/yash/"}
+
+
+async def test_the_owners_own_profile_link_isnt_taken_for_a_name_it_starts_with():
+    # The Owner's link comes first, and "Sam" starts "Sam Owner".
+    nando = FakeNando(due=True)
+    reader = FakeReader(inbox=[Thread("2-sam==", "Sam", today_message("Sam", "10:00 AM", "Hi"), profile="/in/sam/")])
+
+    await sync(nando, reader)
+
+    [thread] = nando.recorded[0]["threads"]
+    assert thread["person"]["profileUrl"] == "https://www.linkedin.com/in/sam/"

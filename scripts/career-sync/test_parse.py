@@ -379,3 +379,17 @@ No thanks...
         ("other", "2026-03-10T10:47:00+09:00", "Explore QA roles in Tokyo\n\nDear Owner,\nI would love to talk."),
         ("other", "2026-03-13T10:47:00+09:00", "Just checking in\n\nAny interest?"),
     ]
+
+
+def test_quick_replies_with_straight_quotes_are_left_out_too():
+    text = """TODAY
+Jane Recruiter sent the following message at 10:00 AM
+View Jane’s profile
+Jane Recruiter   10:00 AM
+Any interest?
+
+Reply to conversation with "Yes, interested..."
+Yes, interested...
+"""
+
+    assert [m["text"] for m in parse(text)] == ["Any interest?"]

@@ -225,9 +225,12 @@ def landed_on(conversation: dict[str, Any]) -> str | None:
     return unquote(path["id"]) if path else None
 
 
-# How the page labels a link to someone's profile: "Open Jane Recruiter’s
-# profile", as on 2026-11-16 (#94).
-PROFILE_LABEL = re.compile(r"^(?:Open |View )?(?P<name>.+?)[’'](?:s)? profile$")
+# The end of a link to someone's profile: "Jane’s profile", or "Chris’
+# profile" for a name ending in s.
+POSSESSIVE_PROFILE = r"[’']s? profile$"
+# How the references label a link to someone's profile: "Open Jane
+# Recruiter’s profile", as on 2026-11-16 (#94).
+PROFILE_LABEL = re.compile(r"^(?:Open |View )?(?P<name>.+?)" + POSSESSIVE_PROFILE)
 
 
 def person(conversation: dict[str, Any], name: str) -> dict[str, str]:
@@ -237,11 +240,17 @@ def person(conversation: dict[str, Any], name: str) -> dict[str, str]:
     if not name:
         # Every reference would match, the Owner's own profile first.
         return found
+    people = []
     for ref in conversation.get("references", {}).get("conversation", []):
-        label = PROFILE_LABEL.match(ref.get("text", ""))
-        if ref.get("kind") == "person" and same_person(label["name"] if label else ref.get("text", ""), name):
-            found["profileUrl"] = urljoin(LINKEDIN, ref["url"])
-            break
+        if ref.get("kind") == "person":
+            label = PROFILE_LABEL.match(ref.get("text", ""))
+            people.append((label["name"] if label else ref.get("text", ""), ref["url"]))
+    # The same name first: the Owner's own link comes first, and their name
+    # may start with the other person's.
+    match = next((url for label, url in people if normal_name(label) == normal_name(name)), None)
+    match = match or next((url for label, url in people if same_person(label, name)), None)
+    if match:
+        found["profileUrl"] = urljoin(LINKEDIN, match)
     return found
 
 
@@ -294,10 +303,10 @@ GROUP_HEADING = re.compile(r"sent the following messages? at \d{1,2}:\d{2}\s?[AP
 # them, and the time, two spaces or more apart.
 SENDER_LINE = re.compile(r"^(?P<name>\S.*?)\s{2,}(?:\([^)]*\)\s{2,})?(?P<time>\d{1,2}:\d{2}\s?[AP]M)$", re.IGNORECASE)
 # The link to the sender's profile, right above their line.
-# "View Jane’s profile", or "View Chris’ profile" for a name ending in s.
-PROFILE_LINK = re.compile(r"^View .+[’'](?:s)? profile$")
+# "View Jane’s profile", or "View Chris’ profile".
+PROFILE_LINK = re.compile(r"^View .+" + POSSESSIVE_PROFILE)
 # LinkedIn's quick replies under an InMail: this line, then the reply itself.
-QUICK_REPLY = re.compile(r"^Reply to conversation with “(?P<reply>.*)”$")
+QUICK_REPLY = re.compile(r"^Reply to conversation with [“\"](?P<reply>.*)[”\"]$")
 # The Owner's reaction under a message: this line, then the emoji and a count.
 REACTIONS = "Remove reaction"
 # The text of a message that has none on the page, such as an image.
