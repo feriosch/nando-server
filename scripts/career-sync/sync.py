@@ -104,10 +104,13 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
         updates = []
         problem = None
         opened = 0
+        # Set once a thread Nando holds has nothing new. The inbox is in order
+        # of activity, so the held threads after it have nothing new either.
+        caught_up = False
         names = inbox_names(inbox)
         for thread_id, name in names.items():
             thread = held.get(thread_id)
-            if thread and thread["ignored"]:
+            if thread and (thread["ignored"] or caught_up):
                 continue
             if opened == MAX_OPENED:
                 break
@@ -145,8 +148,12 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause) -> None
                 if ad:
                     # LinkedIn keeps ads near the top, out of order.
                     continue
-                # The inbox lists the most recent threads first, so no later
-                # one has anything new either.
+                if thread:
+                    # Threads Nando doesn't hold yet after it are the backlog
+                    # an earlier Sync didn't reach: still read them.
+                    caught_up = True
+                    continue
+                # Nothing since `since`: every thread after it is older still.
                 break
             updates.append(
                 {
