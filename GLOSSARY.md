@@ -189,7 +189,7 @@ One message thread between the Owner and exactly one Recruiter, such as a Linked
 _Avoid_: Thread, chat, inbox, message (for the whole thread)
 
 **Suggested Reply**:
-Claude's draft of the Owner's next message in a Conversation, written to sound like the Owner: an answer when the last message is the Recruiter's, or a follow-up when an open Opportunity has had no message for 14 days after the Owner's. It follows whether the Owner is Looking. Only the Owner ever sends it; Claude never sends anything.
+Claude's draft of the Owner's next message in a Conversation, written to sound like the Owner: an answer when the last message is the Recruiter's, or a follow-up when an open Opportunity has had no message for 14 days after the Owner's. It follows whether the Owner is Looking. Only the Owner ever sends it; Claude never sends anything. It is gone from the Owner's lists once they mark it replied in the app, and for good once a Sync sees the Owner's reply.
 _Avoid_: Draft, auto-reply, response, answer
 
 **Late Reply**:

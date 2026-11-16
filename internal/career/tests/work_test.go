@@ -74,6 +74,8 @@ type suggestedReplyJSON struct {
 	Answers   time.Time          `json:"answers"`
 	Notes     []languageNoteJSON `json:"notes"`
 	WrittenAt time.Time          `json:"writtenAt"`
+	// MarkedRepliedAt is when the Owner marked it replied, or nil.
+	MarkedRepliedAt *time.Time `json:"markedRepliedAt"`
 }
 
 type languageNoteJSON struct {

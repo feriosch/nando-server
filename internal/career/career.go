@@ -89,6 +89,7 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	m.settings.Routes(mux)
 	m.opportunities.Routes(mux)
 	m.recruiters.Routes(mux)
+	m.conversations.Routes(mux)
 	m.overview.Routes(mux)
 }
 

@@ -52,7 +52,7 @@ The Recruiter's message is now over 30 days old. Rewrite the Suggested Reply as 
 
 ### `follow_up`: an open Opportunity silent since the Owner's message
 
-The Owner wrote last, 14 days ago or more, on an Opportunity In Process or at Offer. Write a `follow_up`: a short, friendly nudge asking where things stand, in the Owner's voice (step 4), with nothing about being late. `answers` is the `sentAt` of the Owner's message it follows up.
+The Owner wrote last, 14 days ago or more, on an Opportunity In Process or at Offer. Write a `follow_up`: a short, friendly nudge asking where things stand, in the Owner's voice (step 4), with nothing about being late. `answers` is the `sentAt` of the Owner's message it follows up. When the Conversation's `suggestedReply` has a `markedRepliedAt`, the Owner sent that reply in LinkedIn and no Sync has brought it yet: follow up that reply, with `answers` set to its `markedRepliedAt`.
 
 ## 3. Opportunities
 

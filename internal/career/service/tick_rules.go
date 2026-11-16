@@ -64,7 +64,9 @@ func (s *TickRulesService) Apply(ctx context.Context) error {
 // process or at an offer, each of its Recruiter's Conversations whose last
 // message is the Owner's, at least followUpAfter old, with no Suggested
 // Reply, gets a follow_up Item: one for each such message, ever, even if no
-// run writes it.
+// run writes it. A Suggested Reply the Owner marked replied counts as their
+// last message, sent when they marked it, until a Sync brings the real one,
+// which the mark's follow_up Item, sent after it, already covers.
 func (s *TickRulesService) fadeOrFollowUp(ctx context.Context, o model.Opportunity) error {
 	var filed []model.Conversation
 	if o.RecruiterID != nil {
@@ -91,9 +93,8 @@ func (s *TickRulesService) fadeOrFollowUp(ctx context.Context, o model.Opportuni
 		return nil
 	}
 	for _, c := range filed {
-		last, ok := lastMessage(c)
-		if !ok || last.From != model.MessageFromOwner || now.Sub(last.SentAt) < followUpAfter ||
-			c.SuggestedReply != nil || sameTime(c.FollowedUp, last.SentAt) {
+		ownerLast, ok := ownersLastWord(c)
+		if !ok || now.Sub(ownerLast) < followUpAfter || !followedUpBefore(c, ownerLast) {
 			continue
 		}
 		// The Item first: if marking the message then fails, the open Item
@@ -101,11 +102,29 @@ func (s *TickRulesService) fadeOrFollowUp(ctx context.Context, o model.Opportuni
 		if err := s.work.Add(ctx, model.ItemFollowUp, c.ID, bson.ObjectID{}, now); err != nil {
 			return err
 		}
-		if err := s.conversations.MarkFollowedUp(ctx, c.ID, last.SentAt); err != nil {
+		if err := s.conversations.MarkFollowedUp(ctx, c.ID, ownerLast); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ownersLastWord is when the Owner last wrote in c, if c is waiting on the
+// Recruiter: its last message is the Owner's and it has no Suggested Reply,
+// or the Owner marked its Suggested Reply replied, which counts as their
+// last message, sent at the mark, until a Sync brings the real one.
+func ownersLastWord(c model.Conversation) (time.Time, bool) {
+	if c.SuggestedReply != nil {
+		return c.SuggestedReply.MarkedRepliedAt, !c.SuggestedReply.MarkedRepliedAt.IsZero()
+	}
+	last, ok := lastMessage(c)
+	return last.SentAt, ok && last.From == model.MessageFromOwner
+}
+
+// followedUpBefore reports whether c's last follow_up Item was queued for a
+// message sent before sentAt, or none was.
+func followedUpBefore(c model.Conversation, sentAt time.Time) bool {
+	return c.FollowedUp.Truncate(time.Millisecond).Before(sentAt.Truncate(time.Millisecond))
 }
 
 // lastMessage is c's newest message, if it has any.

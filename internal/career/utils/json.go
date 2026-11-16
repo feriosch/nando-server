@@ -18,6 +18,15 @@ func OrNull(s string) *string {
 	return &s
 }
 
+// OrNullTime is t, or nil if t is zero: an optional time as the API and the
+// Tools write it.
+func OrNullTime(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
 // Trimmed is list with each item trimmed and the blank ones left out.
 func Trimmed(list []string) []string {
 	out := []string{}
@@ -50,6 +59,7 @@ func ToConversationJSON(c model.Conversation) model.ConversationJSON {
 		j.SuggestedReply = &model.SuggestedReplyJSON{
 			Text: r.Text, Language: r.Language, Kind: r.Kind, Answers: r.Answers,
 			Notes: append([]model.LanguageNote{}, r.Notes...), WrittenAt: r.WrittenAt,
+			MarkedRepliedAt: OrNullTime(r.MarkedRepliedAt),
 		}
 	}
 	return j
@@ -155,7 +165,10 @@ func ToRecruiterPageConversationJSON(c model.Conversation, n int) model.Recruite
 		j.Messages = append(j.Messages, model.MessageJSON{ID: m.LinkedInID, From: m.From, SentAt: m.SentAt, Text: m.Text})
 	}
 	if r := c.SuggestedReply; r != nil {
-		j.SuggestedReply = &model.RecruiterPageReplyJSON{Text: r.Text, Language: r.Language, Kind: r.Kind, Notes: append([]model.LanguageNote{}, r.Notes...)}
+		j.SuggestedReply = &model.RecruiterPageReplyJSON{
+			Text: r.Text, Language: r.Language, Kind: r.Kind, Notes: append([]model.LanguageNote{}, r.Notes...),
+			MarkedRepliedAt: OrNullTime(r.MarkedRepliedAt),
+		}
 	}
 	return j
 }
