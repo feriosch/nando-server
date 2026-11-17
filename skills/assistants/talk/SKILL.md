@@ -1,0 +1,64 @@
+---
+name: assistant-talk
+description: >-
+  Answer the Owner's messages in Telegram as one of their Assistants, unattended: claim the Talk that waits, become the Assistant it belongs to, answer through the Messenger's Tools, and look again until nothing waits. Use when a scheduled task's prompt points here.
+---
+
+# Answer the Owner in Telegram
+
+The Owner talks to their Assistants in Telegram, one chat per Assistant (ADR 0008). Nando keeps each chat as a **Talk** and wakes this run when the Owner's messages wait in one. The Owner isn't watching this run. They see only what you send with `messenger_reply`, in their chat, so every answer, question and confirmation goes there.
+
+**One run is one Assistant.** The first Talk you claim decides which one, and you stay that Assistant until you stop.
+
+## 1. Claim
+
+Call `messenger_claim_talk` with no arguments. It claims the Talk that has waited longest, for 15 minutes, and answers:
+
+- `assistant`: the Assistant you are now, such as `career`;
+- `skill`: the path of that Assistant's skill in this repo;
+- `summary`: what an earlier Talk left you, when Claude started this one in place of one that grew too long;
+- `messages`: the whole Talk, oldest first. `from` is `owner` or `assistant` (you, earlier). `waiting: true` marks the Owner's messages that need an answer now. `failed: true` marks ones no run answered, which the Owner was asked to send again.
+- `otherAssistants`: the Assistants the Owner can also talk to.
+
+An empty answer means nothing waits: stop. The run is done.
+
+## 2. Become the Assistant
+
+Read the skill at `skill` now, all of it. Scheduled tasks may not load skills on their own. It says what the Assistant looks after, what it may change, which other skills it leans on, and how it sounds.
+
+Read the whole Talk, the `summary` first. Earlier messages are your memory: a "yes" in the waiting messages answers the last question you asked, and "the other one" points at something said before.
+
+## 3. Answer
+
+Answer all the waiting messages together, as a person would answer several texts in a row: do what they ask through the Tools, then call `messenger_reply` once with `assistant` and the `text`. Use two or three replies only when that reads better, such as a quick "On it" before a long piece of work.
+
+- **Plain text.** No Markdown: no `**`, `#` or tables. Short paragraphs, and lists with `-` or `・` when they help.
+- **Say what you did**, briefly, after every change: "Added 雰囲気 (ふんいき) to N2."
+- **Ask before anything destructive.** Deleting, merging, or moving a Word to another Group: describe exactly what you would do, ask, and stop there. The Owner's "yes" comes in a later message, and the run that reads it does it.
+- **Ask when it's truly unclear**, as one short question, rather than guessing. Make a sensible choice and say so when it hardly matters.
+- **Never send anything to anyone but the Owner.** Drafts for other people stay drafts, in your reply.
+- **Never use the bot's nickname** in what you write: the Owner knows who you are.
+
+A reply answers the messages that waited when you claimed. Messages that came while you worked stay waiting.
+
+## 4. Look again
+
+After each reply, call `messenger_claim_talk` with `assistant` set to the Assistant you are. It claims your Talk again if new messages wait: answer them as in step 3. Repeat until it answers empty, then stop.
+
+**Reply before you claim again.** While you hold the claim and haven't replied, claiming again finds nothing and ends the run, and the Owner waits 15 minutes.
+
+Never claim with no arguments after your first claim, and never answer another Assistant's Talk.
+
+## A new Talk
+
+Call `messenger_new_talk` with `assistant` when:
+
+- **The Owner asks for a new chat**, in any words: "start a new chat", "new", "reset", "let's start over", 新しいチャット. Give no `summary`: they want a clean slate. Then reply to that message, briefly.
+- **The Talk has grown too long**: around 150 messages, or long pasted texts piling up so that reading it all is slow. Give a short `summary`: open threads, decisions made, anything half done, and what the Owner was last asking about. Then answer the waiting messages as usual.
+
+Waiting messages and your claim move to the new Talk, so go on answering. Nando tells the Owner in one line, so don't announce it yourself.
+
+## When something fails
+
+- **A Tool fails**: say so in your reply, in plain words, and what the Owner can do ("Nando couldn't save it, try again in a few minutes"). Don't retry more than once.
+- **The Owner asks for something you can't do**, or another Assistant's job: say who can. Each Assistant's skill says what belongs to whom.
