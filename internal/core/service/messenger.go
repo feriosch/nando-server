@@ -259,14 +259,7 @@ func (s *MessengerService) received(ctx context.Context, token string, chatID, m
 			log.Printf("messenger: react to message %d: %v", messageID, err)
 		}
 	})
-	wg.Go(func() {
-		if err := s.telegram.call(ctx, token, "sendChatAction", map[string]any{
-			"chat_id": chatID,
-			"action":  "typing",
-		}); err != nil {
-			log.Printf("messenger: show typing: %v", err)
-		}
-	})
+	wg.Go(func() { s.typing(ctx, token) })
 	wg.Wait()
 }
 

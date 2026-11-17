@@ -176,6 +176,12 @@ func (s *MessengerService) mergeInto(ctx context.Context, assistant string, next
 // again.
 func (s *MessengerService) showTyping(ctx context.Context, assistant string) {
 	token, _ := s.bot(assistant)
+	s.typing(ctx, token)
+}
+
+// typing shows the typing status in the Owner's chat with the bot with token.
+// A failure is only logged.
+func (s *MessengerService) typing(ctx context.Context, token string) {
 	if err := s.telegram.call(ctx, token, "sendChatAction", map[string]any{
 		"chat_id": s.cfg.OwnerID,
 		"action":  "typing",
@@ -220,6 +226,9 @@ func (s *MessengerService) reply(ctx context.Context, assistant, text string) (r
 			From: model.FromAssistant, At: s.now(), Text: part, TelegramMessageID: sent.MessageID,
 		})
 	}
+	// Recorded before the claim is released, so that a message coming in
+	// between doesn't wake a second run while this one looks again.
+	s.tasks[assistant].RunWorking(ctx)
 	var answered []int64
 	for {
 		talk, err := s.talks.Open(ctx, assistant)
@@ -250,7 +259,6 @@ func (s *MessengerService) reply(ctx context.Context, assistant, text string) (r
 		}
 		break
 	}
-	s.tasks[assistant].RunWorking(ctx)
 	s.clearReactions(ctx, token, answered)
 	return replyJSON{Answered: len(answered)}, nil
 }
@@ -270,6 +278,9 @@ type messageJSON struct {
 	At      time.Time         `json:"at"`
 	Text    string            `json:"text"`
 	Waiting bool              `json:"waiting,omitempty"`
+	// Failed marks a message no run answered, which the Owner was asked to
+	// send again.
+	Failed bool `json:"failed,omitempty"`
 }
 
 // on is every Assistant with a bot, by name.
@@ -352,7 +363,10 @@ func (s *MessengerService) claimAnswer(talk model.Talk) claimJSON {
 		Messages:  []messageJSON{},
 	}
 	for _, m := range talk.Messages {
-		answer.Messages = append(answer.Messages, messageJSON{From: m.From, At: m.At, Text: m.Text, Waiting: m.State == model.MessageWaiting})
+		answer.Messages = append(answer.Messages, messageJSON{
+			From: m.From, At: m.At, Text: m.Text,
+			Waiting: m.State == model.MessageWaiting, Failed: m.State == model.MessageFailed,
+		})
 	}
 	for _, name := range s.on() {
 		if name != talk.Assistant {
@@ -397,7 +411,8 @@ func splitMessage(text string) []string {
 		parts = append(parts, string(runes[:end]))
 		runes = runes[end:]
 	}
-	return parts
+	// Telegram refuses a message of only spaces and line breaks.
+	return slices.DeleteFunc(parts, func(p string) bool { return strings.TrimSpace(p) == "" })
 }
 
 // RunAtTick is the Messenger's work at each tick: it wakes the runs of every
@@ -482,6 +497,10 @@ const notStarted = "Claude didn't start (maybe the usage limit). I'll keep tryin
 // when no run has claimed assistant's Talk since its oldest waiting message
 // came, notStartedAfter ago. The messages keep waiting, and their 👀.
 func (s *MessengerService) noticeNotStarted(ctx context.Context, assistant string) error {
+	if !s.tasks[assistant].CanFire() {
+		// Nothing would start a run, and nothing will retry.
+		return nil
+	}
 	for {
 		talk, err := s.talks.Open(ctx, assistant)
 		if err != nil {

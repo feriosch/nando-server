@@ -469,7 +469,7 @@ Every Assistant's runs come from one cloud scheduled task, woken through its API
 
 At each tick, for each Assistant:
 1. If 3 claims passed with no reply and the last one lapsed, the waiting messages fail. The bot says "Sorry, something went wrong and I couldn't answer that. Please send it again." and removes their 👀.
-2. If the oldest waiting message is 10 minutes old and no run has claimed it, the bot says, once for those messages, "Claude didn't start (maybe the usage limit). I'll keep trying." The 👀 stays.
+2. If the oldest waiting message is 10 minutes old and no run has claimed it, the bot says, once for those messages, "Claude didn't start (maybe the usage limit). I'll keep trying." The 👀 stays. Without a trigger nothing would try, so nothing is said.
 3. Nando fires again if messages still wait, under the rules above.
 
 ### Tools for the run
@@ -479,7 +479,7 @@ Served to every Connector while any bot has a token (ADR 0004). Each one shows t
 - **`messenger_claim_talk`** (`assistant` optional): claims the Talk for 15 minutes and returns:
   - `assistant`, and `skill` (`skills/assistants/<assistant>/SKILL.md`);
   - `summary`;
-  - `messages` (`from`, `at`, `text`, and `waiting` on those waiting);
+  - `messages` (`from`, `at`, `text`; `waiting` on those waiting, and `failed` on those no run answered);
   - `otherAssistants`, those with a bot.
 
   Without `assistant`, it takes the Talk whose oldest waiting message is oldest; with it, only that Assistant's. `{}` means nothing waits, and with `assistant` it records that the run stopped. A claim that lapses leaves the Talk claimable again, until its third.

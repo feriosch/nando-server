@@ -140,6 +140,12 @@ func (s *ScheduledTask) Wake(ctx context.Context) {
 	}
 }
 
+// CanFire reports whether the scheduled task has a usable trigger, so that
+// Wake can start a run at all.
+func (s *ScheduledTask) CanFire() bool {
+	return s.trigger.URL != "" && s.trigger.Token != ""
+}
+
 // WakeAtTick is Wake for Core's tick, which also wakes the scheduled task for
 // work whose run stopped, such as when the Owner's usage ran out. It returns
 // the error of reading the queue or recording the fire, so that the tick is

@@ -51,6 +51,7 @@ type claimJSON struct {
 		From    string `json:"from"`
 		Text    string `json:"text"`
 		Waiting bool   `json:"waiting"`
+		Failed  bool   `json:"failed"`
 	} `json:"messages"`
 	OtherAssistants []string `json:"otherAssistants"`
 }
@@ -371,6 +372,13 @@ func TestMessagesFailAfterThreeClaimsWithoutAReply(t *testing.T) {
 	if got := len(trigger.Received()); got != fires {
 		t.Errorf("fires after the message failed = %d, want still %d", got, fires)
 	}
+
+	// The Owner sends it again: the next run sees which one failed.
+	n.mustPostUpdate("career", ownerSays(5002, 43, "recruiter X wrote"))
+	got := n.startRun().claim("")
+	if len(got.Messages) != 2 || !got.Messages[0].Failed || got.Messages[0].Waiting || !got.Messages[1].Waiting || got.Messages[1].Failed {
+		t.Errorf("claim after a resend = %+v; want the first marked failed, the resend waiting", got.Messages)
+	}
 }
 
 func TestTheOwnerHearsOnceWhenNoRunStarts(t *testing.T) {
@@ -421,6 +429,10 @@ func TestWithoutATriggerMessagesWaitAndNothingFails(t *testing.T) {
 
 	if got := n.talk("core").Messages; len(got) != 1 || got[0].State != model.MessageWaiting {
 		t.Errorf("Core Talk = %+v; want the message waiting", got)
+	}
+	// Nothing would start a run or try again, so the Owner isn't told so.
+	if sent := telegram.CallsTo("sendMessage"); len(sent) != 0 {
+		t.Errorf("sendMessage calls = %+v; want none", sent)
 	}
 	// A run started by hand still works through it.
 	r := n.startRun()
