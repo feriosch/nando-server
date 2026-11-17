@@ -238,6 +238,28 @@ _Avoid_: Login, token, device
 An outside app, such as Claude, that the Owner allowed, with a Passkey, to use Nando's Tools on their behalf. A Connector never signs in and has no Session; removing it cuts it off at once.
 _Avoid_: Integration, client, app, bot, token
 
+## Messenger
+
+**Messenger**:
+The outside chat app (Telegram) in which the Owner talks to Claude about their daily life in Nando, with one chat for each Assistant.
+_Avoid_: Chat app, channel, integration
+
+**Talk**:
+The running exchange between the Owner and one Assistant in its chat in the Messenger. It goes on until the Owner asks for a new one, or until Claude decides it has grown too long and starts a new one to replace it.
+_Avoid_: Conversation (that is a Recruiter thread), chat, thread, session
+
+**Assistant**:
+Claude in one of the Owner's chats in the Messenger, looking after one Module, such as the Career Assistant. It can read everything in Nando and in the Outside Services, but changes only its own Module, Core and the Outside Services, and points the Owner to another Assistant for anything else.
+_Avoid_: Bot, agent, Connector
+
+**Core Assistant**:
+The Assistant for Core, and for anything the Owner asks that belongs to no Module, such as adding a friend's birthday to their calendar.
+_Avoid_: Nando Assistant, general bot, main bot
+
+**Outside Service**:
+An app outside Nando that serves the Owner's whole life rather than one Module, such as their calendar, mail or documents. Every Assistant shares the Outside Services.
+_Avoid_: Integration, external app, Connector (that is the reverse: an outside app using Nando)
+
 ## Notifications
 
 **Notification**:
