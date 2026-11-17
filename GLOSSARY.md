@@ -248,6 +248,14 @@ _Avoid_: Chat app, channel, integration
 The running exchange between the Owner and Claude in one Module's chat in the Messenger. It goes on until the Owner asks for a new one, or until Claude decides it has grown too long and starts a new one to replace it.
 _Avoid_: Conversation (that is a Recruiter thread), chat, thread, session
 
+**Assistant**:
+Claude in one of the Owner's chats in the Messenger, looking after one Module, such as the Career Assistant. It can read everything in Nando, but changes only its own Module, Core and the Owner's calendar, and points the Owner to another Assistant for anything else.
+_Avoid_: Bot, agent, Connector
+
+**Nando Assistant**:
+The Assistant for Core, and for the Owner's life outside any Module, such as their calendar.
+_Avoid_: General bot, main bot
+
 ## Notifications
 
 **Notification**:
