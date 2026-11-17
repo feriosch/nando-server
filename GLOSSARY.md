@@ -249,12 +249,16 @@ The running exchange between the Owner and Claude in one Module's chat in the Me
 _Avoid_: Conversation (that is a Recruiter thread), chat, thread, session
 
 **Assistant**:
-Claude in one of the Owner's chats in the Messenger, looking after one Module, such as the Career Assistant. It can read everything in Nando, but changes only its own Module, Core and the Owner's calendar, and points the Owner to another Assistant for anything else.
+Claude in one of the Owner's chats in the Messenger, looking after one Module, such as the Career Assistant. It can read everything in Nando and in the Outside Services, but changes only its own Module, Core and the Outside Services, and points the Owner to another Assistant for anything else.
 _Avoid_: Bot, agent, Connector
 
-**Nando Assistant**:
-The Assistant for Core, and for the Owner's life outside any Module, such as their calendar.
-_Avoid_: General bot, main bot
+**Core Assistant**:
+The Assistant for Core, and for anything the Owner asks that belongs to no Module, such as adding a friend's birthday to their calendar.
+_Avoid_: Nando Assistant, general bot, main bot
+
+**Outside Service**:
+An app outside Nando that serves the Owner's whole life rather than one Module, such as their calendar, mail or documents. Every Assistant shares the Outside Services.
+_Avoid_: Integration, external app, Connector (that is the reverse: an outside app using Nando)
 
 ## Notifications
 
