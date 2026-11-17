@@ -50,6 +50,13 @@ type nando struct {
 
 func newNando(t *testing.T) *nando {
 	t.Helper()
+	return newNandoWith(t, nil)
+}
+
+// newNandoWith is newNando with Core's Config changed by configure first,
+// such as to point the Messenger at a fake Telegram.
+func newNandoWith(t *testing.T, configure func(*core.Config)) *nando {
+	t.Helper()
 	ctx := context.Background()
 	client, err := mongo.Connect(options.Client().ApplyURI(testmongo.URI(t)))
 	if err != nil {
@@ -63,7 +70,7 @@ func newNando(t *testing.T) *nando {
 	}
 	// Real time to start with: go-webauthn checks its ceremony timeouts against it.
 	clk := &clock{now: time.Now()}
-	c, err := core.New(ctx, client.Database("core"), core.Config{
+	cfg := core.Config{
 		Domain:               "example.com",
 		Origins:              allowedOrigins,
 		Now:                  clk.Now,
@@ -73,7 +80,11 @@ func newNando(t *testing.T) *nando {
 			PrivateKey: vapidPrivate,
 			Contact:    "mailto:owner@example.com",
 		},
-	})
+	}
+	if configure != nil {
+		configure(&cfg)
+	}
+	c, err := core.New(ctx, client.Database("core"), cfg)
 	if err != nil {
 		t.Fatalf("core.New: %v", err)
 	}

@@ -436,3 +436,31 @@ A Connector's access token works only here; under `/api/` it gets `401`.
 ### `DELETE /api/connectors/{id}`
 
 `204`: removes the Connector and its tokens. Its next call to `/mcp` gets `401`, and its refresh token `invalid_grant`. If no other Connector uses its registration, the registration expires a day later, so the app can be connected again with the same `client_id` until then. Deleting one that doesn't exist also answers `204`.
+
+## Messenger
+
+The Owner talks to Assistants in Telegram, one bot per Assistant ([ADR 0008](../../docs/adr/0008-assistants-on-telegram.md)). Telegram, not the web app, calls this route. It needs no Session.
+
+At startup, `main` points every Assistant's bot at its webhook with `setWebhook`, for messages only, keeping the updates still waiting. It does so every time, because Telegram never says which secret a webhook already has.
+
+### `POST /messenger/telegram/{assistant}`
+
+One update from the bot of `{assistant}`, such as `career`.
+
+- `404` if there's no such Assistant, or its bot has no token.
+- `401` unless `X-Telegram-Bot-Api-Secret-Token` is the webhook secret.
+- `500` if the message couldn't be kept. Telegram delivers it again later.
+- `200` otherwise, once the update is dealt with, since Telegram re-delivers anything else.
+
+The update is dropped, with nothing kept and nothing sent, when:
+- it isn't a message in the Owner's private chat with the bot, from the Owner;
+- it is `/start`;
+- the bot has already had it (the same `update_id`, remembered for 7 days).
+
+A message with no text, such as a photo or sticker, gets "I can only read text for now." from the bot, and is not kept.
+
+Anything else waits in the Assistant's open Talk, which is opened if there is none. The bot reacts to it with 👀 and shows the typing status. If Telegram refuses either, that is logged and the message is still kept.
+
+Core's database holds:
+- `talks`: one document per Talk, with its messages, and at most one open Talk per Assistant;
+- `telegram_updates`: each bot's updates, until they expire.
