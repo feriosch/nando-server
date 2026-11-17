@@ -2,7 +2,10 @@ package model
 
 import (
 	"context"
+	"errors"
 	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 // Assistant is Claude in one of the Owner's chats in the Messenger, looking
@@ -34,6 +37,8 @@ const (
 	MessageWaiting MessageState = "waiting"
 	// MessageAnswered is a message a reply has answered.
 	MessageAnswered MessageState = "answered"
+	// MessageFailed is a message MaxClaims runs claimed without answering.
+	MessageFailed MessageState = "failed"
 )
 
 // TalkMessage is one message in a Talk.
@@ -49,12 +54,75 @@ type TalkMessage struct {
 
 // Talk is the running exchange between the Owner and one Assistant.
 type Talk struct {
+	ID bson.ObjectID `bson:"_id,omitempty"`
+	// Version counts the Talk's changes, so that a change made from what was
+	// read is saved only if nothing changed the Talk since.
+	Version   int    `bson:"version,omitempty"`
 	Assistant string `bson:"assistant"`
+	// Open is true for each Assistant's one open Talk.
+	Open bool `bson:"open"`
 	// Summary is what the Talk opens with when Claude started it in place of
 	// one that grew too long; empty otherwise.
 	Summary  string        `bson:"summary,omitempty"`
 	Messages []TalkMessage `bson:"messages"`
+	// ClaimedUntil is when a run's claim on the Talk lapses; zero if none
+	// ever claimed it.
+	ClaimedUntil time.Time `bson:"claimedUntil,omitempty"`
+	// Claims counts the claims since the Talk's last reply.
+	Claims int `bson:"claims,omitempty"`
+	// ClaimedUpTo is the Telegram message ID of the Owner's last message when
+	// the Talk was last claimed: a reply answers the messages up to it.
+	ClaimedUpTo int64 `bson:"claimedUpTo,omitempty"`
+	// NoticedFor is the Telegram message ID of the oldest waiting message
+	// when the Owner was last told that no run started.
+	NoticedFor int64 `bson:"noticedFor,omitempty"`
 }
+
+// LastOwnerMessageID is the Telegram message ID of the Owner's latest message
+// in the Talk, or 0.
+func (t Talk) LastOwnerMessageID() int64 {
+	var id int64
+	for _, m := range t.Messages {
+		if m.From == FromOwner {
+			id = max(id, m.TelegramMessageID)
+		}
+	}
+	return id
+}
+
+// OldestWaiting is the Talk's oldest waiting message, and false if none waits.
+func (t Talk) OldestWaiting() (TalkMessage, bool) {
+	for _, m := range t.Messages {
+		if m.State == MessageWaiting {
+			return m, true
+		}
+	}
+	return TalkMessage{}, false
+}
+
+// Waiting reports whether some message in the Talk waits for a reply.
+func (t Talk) Waiting() bool {
+	for _, m := range t.Messages {
+		if m.State == MessageWaiting {
+			return true
+		}
+	}
+	return false
+}
+
+// MaxClaims is how many claims a Talk's waiting messages get without a reply
+// before they fail.
+const MaxClaims = 3
+
+// Claimable reports whether a run may claim the Talk at now: some message
+// waits, no claim holds it, and it has claims left.
+func (t Talk) Claimable(now time.Time) bool {
+	return t.Waiting() && !t.ClaimedUntil.After(now) && t.Claims < MaxClaims
+}
+
+// ErrTalkChanged is a Talk changed by someone else since it was read: read it
+// again and redo the change.
+var ErrTalkChanged = errors.New("the Talk changed since it was read")
 
 // TalksRepository reads and writes the talks collection, and remembers which
 // of Telegram's updates each bot has had.
@@ -64,6 +132,12 @@ type TalksRepository interface {
 	// AddOwnerMessage adds m to assistant's open Talk, opening one if there
 	// is none.
 	AddOwnerMessage(ctx context.Context, assistant string, m TalkMessage) error
+	// Save replaces talk, an open Talk read earlier, with its Version one
+	// higher. It returns ErrTalkChanged if the Talk changed since it was read.
+	Save(ctx context.Context, talk Talk) error
+	// Insert stores talk, a new open Talk. It returns ErrTalkChanged if its
+	// Assistant has an open Talk already.
+	Insert(ctx context.Context, talk Talk) error
 	// MarkUpdate remembers, until expiresAt, that assistant's bot had the
 	// update with updateID. It reports false if it already had it, as when
 	// Telegram re-delivers an update.

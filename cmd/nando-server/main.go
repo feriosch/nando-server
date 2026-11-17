@@ -61,6 +61,9 @@ type config struct {
 	// webhook is set with; and TELEGRAM_BOT_TOKEN_<ASSISTANT>, such as
 	// TELEGRAM_BOT_TOKEN_CAREER, each Assistant's bot token. An Assistant
 	// without a token is off; with any token, the other two are required.
+	// MESSENGER_TRIGGER_URL and MESSENGER_TRIGGER_TOKEN, optional: the API
+	// trigger of the cloud scheduled task whose runs answer the Owner, and
+	// its bearer token. Without both, Claude is never woken for them.
 	messenger core.MessengerConfig
 }
 
@@ -131,6 +134,8 @@ func loadMessenger(m *core.MessengerConfig) error {
 		m.BotTokens[a] = token
 	}
 	m.WebhookSecret = env("TELEGRAM_WEBHOOK_SECRET")
+	// The trigger is checked, and trimmed, as the others are.
+	m.TriggerURL, m.TriggerToken = os.Getenv("MESSENGER_TRIGGER_URL"), os.Getenv("MESSENGER_TRIGGER_TOKEN")
 	if len(m.BotTokens) == 0 {
 		return nil
 	}

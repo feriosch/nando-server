@@ -233,11 +233,18 @@ var Never = time.Unix(0, 0).UTC()
 // sets firedAt on the document it matches, or inserts the first document if
 // there is none.
 func ClaimFireFilter(startingSince, activeSince time.Time) bson.D {
+	return ClaimFireFilterFor(LastFireID, startingSince, activeSince)
+}
+
+// ClaimFireFilterFor is ClaimFireFilter for a collection holding one such
+// document per scheduled task woken, the one whose _id is id, such as the
+// Messenger's, with one per Assistant.
+func ClaimFireFilterFor(id string, startingSince, activeSince time.Time) bson.D {
 	firedAt := bson.D{{Key: "$ifNull", Value: bson.A{"$firedAt", Never}}}
 	activeAt := bson.D{{Key: "$ifNull", Value: bson.A{"$activeAt", Never}}}
 	endedAt := bson.D{{Key: "$ifNull", Value: bson.A{"$endedAt", Never}}}
 	return bson.D{
-		{Key: "_id", Value: LastFireID},
+		{Key: "_id", Value: id},
 		{Key: "$expr", Value: bson.D{{Key: "$and", Value: bson.A{
 			// No fire in flight: the last one is old, or a run worked or
 			// stopped since it.
