@@ -14,6 +14,7 @@ import (
 	"github.com/feriosch/nando-server/internal/core"
 	"github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/testtelegram"
+	"github.com/feriosch/nando-server/internal/testtrigger"
 )
 
 const (
@@ -29,18 +30,29 @@ const (
 // Japanese Assistant's has none.
 func messengerNando(t *testing.T) (*nando, *testtelegram.Telegram) {
 	t.Helper()
+	n, telegram, _ := messengerNandoWithTrigger(t)
+	return n, telegram
+}
+
+// messengerNandoWithTrigger is messengerNando with the Assistants' scheduled
+// task's API trigger, a fake.
+func messengerNandoWithTrigger(t *testing.T) (*nando, *testtelegram.Telegram, *testtrigger.Trigger) {
+	t.Helper()
 	telegram := testtelegram.New(t)
+	trigger := testtrigger.New(t)
 	n := newNandoWith(t, func(cfg *core.Config) {
 		cfg.Messenger = core.MessengerConfig{
 			TelegramURL:   telegram.URL,
 			OwnerID:       ownerTelegramID,
 			WebhookSecret: webhookSecret,
 			BotTokens:     map[string]string{"core": coreBotToken, "career": careerBotToken},
+			TriggerURL:    trigger.URL,
+			TriggerToken:  testtrigger.Token,
 		}
 	})
 	n.core.AddAssistant(model.Assistant{Name: "career"})
 	n.core.AddAssistant(model.Assistant{Name: "japanese"})
-	return n, telegram
+	return n, telegram, trigger
 }
 
 // telegramUpdate is an update as Telegram posts it to a bot's webhook.

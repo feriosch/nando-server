@@ -19,6 +19,7 @@ import (
 	"github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/core/repository"
 	"github.com/feriosch/nando-server/internal/core/service"
+	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // Config is what Core needs to know about where Nando is served.
@@ -144,8 +145,15 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
 		mcp:               mcp,
 		connectors:        service.NewConnectors(connectors, oauthClients, now),
-		messenger:         service.NewMessenger(talks, cfg.Messenger, apiURL, now),
-		oauth:             service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, mcp.ToolsDescriptions, now),
+		messenger: service.NewMessenger(talks, func(assistant string) utils.FireRecord {
+			return repository.NewMessengerFires(db, assistant)
+		}, cfg.Messenger, apiURL, now),
+		oauth: service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, mcp.ToolsDescriptions, now),
+	}
+	// Without a bot, no Assistant can be answered, so no Connector is
+	// offered the Messenger's Tools or told of them.
+	if len(cfg.Messenger.BotTokens) > 0 {
+		mcp.AddToolProvider(c.messenger)
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns, now: now}
@@ -159,6 +167,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
+	c.notifications.AddTickJob(c.messenger)
 	return c, nil
 }
 

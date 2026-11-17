@@ -459,8 +459,34 @@ The update is dropped, with nothing kept and nothing sent, when:
 
 A message with no text, such as a photo or sticker, gets "I can only read text for now." from the bot, and is not kept.
 
-Anything else waits in the Assistant's open Talk, which is opened if there is none. The bot reacts to it with 👀 and shows the typing status. If Telegram refuses either, that is logged and the message is still kept.
+Anything else waits in the Assistant's open Talk, which is opened if there is none. The bot reacts to it with 👀 and shows the typing status. If Telegram refuses either, that is logged and the message is still kept. Then Nando wakes that Assistant's runs (below).
+
+### Waking Claude
+
+Every Assistant's runs come from one cloud scheduled task, woken through its API trigger (`MESSENGER_TRIGGER_URL`, `MESSENGER_TRIGGER_TOKEN`). Each Assistant is woken on its own, under ADR 0006's rules:
+- Nando fires when a message waits, unless that Assistant's run is in flight (fired in the last 10 minutes, and no run has claimed or answered its Talk since) or working (claimed or answered it in the last 2 minutes, and hasn't stopped).
+- The fire's body is `{}`: a run claims whichever Talk is waiting, so two Assistants can run at once.
+
+At each tick, for each Assistant:
+1. If 3 claims passed with no reply and the last one lapsed, the waiting messages fail. The bot says "Sorry, something went wrong and I couldn't answer that. Please send it again." and removes their 👀.
+2. If the oldest waiting message is 10 minutes old and no run has claimed it, the bot says, once for those messages, "Claude didn't start (maybe the usage limit). I'll keep trying." The 👀 stays. Without a trigger nothing would try, so nothing is said.
+3. Nando fires again if messages still wait, under the rules above.
+
+### Tools for the run
+
+Served to every Connector while any bot has a token (ADR 0004). Each one shows the typing status again in the Assistant's chat while messages still wait there.
+
+- **`messenger_claim_talk`** (`assistant` optional): claims the Talk for 15 minutes and returns:
+  - `assistant`, and `skill` (`skills/assistants/<assistant>/SKILL.md`);
+  - `summary`;
+  - `messages` (`from`, `at`, `text`; `waiting` on those waiting, and `failed` on those no run answered);
+  - `otherAssistants`, those with a bot.
+
+  Without `assistant`, it takes the Talk whose oldest waiting message is oldest; with it, only that Assistant's. `{}` means nothing waits, and with `assistant` it records that the run stopped. A claim that lapses leaves the Talk claimable again, until its third.
+- **`messenger_reply`** (`assistant`, `text`): sends `text` as plain text, split at the last line break that fits Telegram's 4096 characters. It answers the messages waiting when the Talk was claimed, removes their 👀, and releases the claim. Messages that came since keep waiting. It answers `{"answered": n}`.
+- **`messenger_new_talk`** (`assistant`, `summary` optional): closes the open Talk and opens one starting from `summary`. Waiting messages and the run's claim move to it. The bot says "Started a new chat.", or "Started a new chat (kept a short summary)." with a summary. It answers `{"moved": n}`.
 
 Core's database holds:
 - `talks`: one document per Talk, with its messages, and at most one open Talk per Assistant;
-- `telegram_updates`: each bot's updates, until they expire.
+- `telegram_updates`: each bot's updates, until they expire;
+- `messenger_scheduled_task`: one document per Assistant, holding its last fire and when its runs last worked or stopped.

@@ -54,6 +54,7 @@ func (r talks) AddOwnerMessage(ctx context.Context, assistant string, m model.Ta
 	push := func() error {
 		_, err := r.collection.UpdateOne(ctx, openTalk(assistant), bson.D{
 			{Key: "$push", Value: bson.D{{Key: "messages", Value: m}}},
+			{Key: "$inc", Value: bson.D{{Key: "version", Value: 1}}},
 		}, options.UpdateOne().SetUpsert(true))
 		return err
 	}
@@ -61,6 +62,29 @@ func (r talks) AddOwnerMessage(ctx context.Context, assistant string, m model.Ta
 	if mongo.IsDuplicateKeyError(err) {
 		// Another message opened the Talk at the same moment: it exists now.
 		err = push()
+	}
+	return err
+}
+
+func (r talks) Save(ctx context.Context, talk model.Talk) error {
+	filter := bson.D{{Key: "_id", Value: talk.ID}, {Key: "version", Value: talk.Version}}
+	if talk.Version == 0 {
+		// A Talk that never had a version matches too.
+		filter = bson.D{{Key: "_id", Value: talk.ID}, {Key: "version", Value: bson.D{{Key: "$in", Value: bson.A{0, nil}}}}}
+	}
+	talk.Version++
+	result, err := r.collection.ReplaceOne(ctx, filter, talk)
+	if err == nil && result.MatchedCount == 0 {
+		return model.ErrTalkChanged
+	}
+	return err
+}
+
+func (r talks) Insert(ctx context.Context, talk model.Talk) error {
+	talk.ID, talk.Open, talk.Version = bson.NewObjectID(), true, 1
+	_, err := r.collection.InsertOne(ctx, talk)
+	if mongo.IsDuplicateKeyError(err) {
+		return model.ErrTalkChanged
 	}
 	return err
 }

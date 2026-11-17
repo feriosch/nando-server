@@ -32,6 +32,10 @@ type MessengerConfig struct {
 	// BotTokens is each Assistant's bot token, by Assistant name. An Assistant
 	// without one is off.
 	BotTokens map[string]string
+	// TriggerURL and TriggerToken are the API trigger of the cloud scheduled
+	// task whose runs answer the Owner, and its bearer token. Without both,
+	// Claude is never woken.
+	TriggerURL, TriggerToken string
 }
 
 // updateMemory is how long Nando remembers each update a bot had. Telegram
@@ -47,6 +51,10 @@ type MessengerService struct {
 	// assistants is every Assistant's name, the Core Assistant's included.
 	assistants map[string]bool
 	talks      model.TalksRepository
+	// fires is the fire record of an Assistant's runs.
+	fires func(assistant string) utils.FireRecord
+	// tasks wakes each Assistant's runs.
+	tasks map[string]*utils.ScheduledTask
 	// apiURL is the API's own URL, which Telegram reaches the webhooks at.
 	apiURL   string
 	cfg      MessengerConfig
@@ -56,19 +64,24 @@ type MessengerService struct {
 
 // NewMessenger returns the MessengerService, with now as its clock.
 // Telegram reaches the webhooks under apiURL, the API's own URL.
-func NewMessenger(talks model.TalksRepository, cfg MessengerConfig, apiURL string, now func() time.Time) *MessengerService {
+// fires gives each Assistant's fire record.
+func NewMessenger(talks model.TalksRepository, fires func(assistant string) utils.FireRecord, cfg MessengerConfig, apiURL string, now func() time.Time) *MessengerService {
 	baseURL := cfg.TelegramURL
 	if baseURL == "" {
 		baseURL = "https://api.telegram.org"
 	}
-	return &MessengerService{
-		assistants: map[string]bool{model.CoreAssistant: true},
+	s := &MessengerService{
+		assistants: map[string]bool{},
 		talks:      talks,
+		fires:      fires,
+		tasks:      map[string]*utils.ScheduledTask{},
 		apiURL:     apiURL,
 		cfg:        cfg,
 		telegram:   telegramClient{baseURL: baseURL, http: &http.Client{Timeout: 10 * time.Second}},
 		now:        now,
 	}
+	s.AddAssistant(model.Assistant{Name: model.CoreAssistant})
+	return s
 }
 
 // Routes adds each bot's webhook to mux, under /messenger/telegram/.
@@ -80,6 +93,24 @@ func (s *MessengerService) Routes(mux *http.ServeMux) {
 // Module with an Assistant adds it once, at startup, before serving.
 func (s *MessengerService) AddAssistant(a model.Assistant) {
 	s.assistants[a.Name] = true
+	s.tasks[a.Name] = utils.NewScheduledTask(s.fires(a.Name), talkQueue{talks: s.talks, assistant: a.Name},
+		utils.Trigger{URL: s.cfg.TriggerURL, Token: s.cfg.TriggerToken, Env: "MESSENGER_TRIGGER"}, s.now)
+}
+
+// talkQueue is one Assistant's waiting messages, as the work its runs do.
+type talkQueue struct {
+	talks     model.TalksRepository
+	assistant string
+}
+
+func (q talkQueue) AnyClaimable(ctx context.Context, now time.Time) (bool, error) {
+	talk, err := q.talks.Open(ctx, q.assistant)
+	return err == nil && talk.Claimable(now), err
+}
+
+func (q talkQueue) AnyClaimed(ctx context.Context, now time.Time) (bool, error) {
+	talk, err := q.talks.Open(ctx, q.assistant)
+	return err == nil && talk.ClaimedUntil.After(now), err
 }
 
 // bot is the token of assistant's bot, and false if assistant has none, so
@@ -196,6 +227,7 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.received(ctx, token, m.Chat.ID, m.MessageID)
+	s.tasks[assistant].Wake(ctx)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -227,14 +259,7 @@ func (s *MessengerService) received(ctx context.Context, token string, chatID, m
 			log.Printf("messenger: react to message %d: %v", messageID, err)
 		}
 	})
-	wg.Go(func() {
-		if err := s.telegram.call(ctx, token, "sendChatAction", map[string]any{
-			"chat_id": chatID,
-			"action":  "typing",
-		}); err != nil {
-			log.Printf("messenger: show typing: %v", err)
-		}
-	})
+	wg.Go(func() { s.typing(ctx, token) })
 	wg.Wait()
 }
 
@@ -246,6 +271,11 @@ type telegramClient struct {
 
 // call calls method as the bot with token, with params as its JSON body.
 func (c telegramClient) call(ctx context.Context, token, method string, params any) error {
+	return c.callFor(ctx, token, method, params, nil)
+}
+
+// callFor is call, decoding the call's result into result if it isn't nil.
+func (c telegramClient) callFor(ctx context.Context, token, method string, params, result any) error {
 	body, err := json.Marshal(params)
 	if err != nil {
 		return err
@@ -263,11 +293,17 @@ func (c telegramClient) call(ctx context.Context, token, method string, params a
 	}
 	defer resp.Body.Close()
 	var answer struct {
-		OK          bool   `json:"ok"`
-		Description string `json:"description"`
+		OK          bool            `json:"ok"`
+		Description string          `json:"description"`
+		Result      json.RawMessage `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&answer); err != nil || !answer.OK {
 		return fmt.Errorf("%s: %d %s", method, resp.StatusCode, answer.Description)
+	}
+	if result != nil {
+		if err := json.Unmarshal(answer.Result, result); err != nil {
+			return fmt.Errorf("%s: %w", method, err)
+		}
 	}
 	return nil
 }
