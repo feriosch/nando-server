@@ -241,11 +241,11 @@ _Avoid_: Integration, client, app, bot, token
 ## Messenger
 
 **Messenger**:
-The outside chat app (Telegram) in which the Owner talks to Claude about their daily life in Nando, with one chat for each Module.
+The outside chat app (Telegram) in which the Owner talks to Claude about their daily life in Nando, with one chat for each Assistant.
 _Avoid_: Chat app, channel, integration
 
 **Talk**:
-The running exchange between the Owner and Claude in one Module's chat in the Messenger. It goes on until the Owner asks for a new one, or until Claude decides it has grown too long and starts a new one to replace it.
+The running exchange between the Owner and one Assistant in its chat in the Messenger. It goes on until the Owner asks for a new one, or until Claude decides it has grown too long and starts a new one to replace it.
 _Avoid_: Conversation (that is a Recruiter thread), chat, thread, session
 
 **Assistant**:
