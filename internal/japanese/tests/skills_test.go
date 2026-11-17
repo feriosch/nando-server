@@ -119,3 +119,50 @@ func TestTheUnattendedSkillBansEveryDestructiveTool(t *testing.T) {
 		}
 	}
 }
+
+// TestTheJapaneseAssistantUsesOnlyServedToolsAndAsksBeforeDestructiveOnes
+// keeps the Japanese Assistant's skill (ADR 0008) in step with the Tools:
+// every Japanese Tool it names is served, and its "ask the Owner first"
+// sentence names every Japanese Tool Nando marks destructive, including any
+// added later, as its run may call them only after the Owner's yes.
+func TestTheJapaneseAssistantUsesOnlyServedToolsAndAsksBeforeDestructiveOnes(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	listed, err := phone.connect().ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("tools/list: %v", err)
+	}
+	served := map[string]bool{}
+	var destructive []string
+	for _, tool := range listed.Tools {
+		served[tool.Name] = true
+		if strings.HasPrefix(tool.Name, "japanese_") && tool.Annotations != nil && tool.Annotations.DestructiveHint != nil &&
+			*tool.Annotations.DestructiveHint {
+			destructive = append(destructive, tool.Name)
+		}
+	}
+
+	b, err := os.ReadFile(filepath.Join("../../../skills", "assistants", "japanese", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read the Japanese Assistant's skill: %v", err)
+	}
+	text := string(b)
+	for _, name := range skillToolName.FindAllString(text, -1) {
+		if !served[name] {
+			t.Errorf("the Japanese Assistant's skill names %s, which Nando doesn't serve", name)
+		}
+	}
+	var ask string
+	for line := range strings.SplitSeq(text, "\n") {
+		if strings.Contains(line, "ask the Owner first") {
+			ask = line
+		}
+	}
+	if ask == "" {
+		t.Fatal("the Japanese Assistant's skill has no \"ask the Owner first\" sentence for the destructive Tools")
+	}
+	for _, name := range destructive {
+		if !strings.Contains(ask, "`"+name+"`") {
+			t.Errorf("the Japanese Assistant's \"ask the Owner first\" sentence doesn't name %s", name)
+		}
+	}
+}

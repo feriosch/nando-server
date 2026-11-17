@@ -23,7 +23,20 @@ Skills Claude follows to work with the Owner's data in Nando, through the Nando 
 
 Each name carries `career-` because skills uploaded to the Claude app have no prefix.
 
-`internal/japanese/tests/skills_test.go` and `internal/career/tests/skills_test.go` check that every Tool a skill names is one Nando serves, so a renamed Tool fails the build until its skills follow. They also check that each unattended skill bans every destructive Tool, and that the `nando` plugin carries exactly the five Career chat skills.
+### Assistants
+
+The Owner's Assistants answer them in Telegram ([ADR 0008](../docs/adr/0008-assistants-on-telegram.md)). These skills are for the cloud scheduled task that Nando wakes; they are never uploaded.
+
+| Skill | What it does |
+| --- | --- |
+| [`assistants/talk`](assistants/talk/SKILL.md) | The loop every run follows: claims the Talk that waits, becomes its Assistant, answers through the Messenger's Tools, and looks again until nothing waits (scheduled task) |
+| [`assistants/core`](assistants/core/SKILL.md) | The Core Assistant: the Owner's calendar, and their life outside any Module |
+| [`assistants/career`](assistants/career/SKILL.md) | The Career Assistant: Recruiters, Opportunities and replies, leaning on the `career-*` chat skills |
+| [`assistants/japanese`](assistants/japanese/SKILL.md) | The Japanese Assistant: adds and improves Words right in the chat, leaning on `add-word` and `suggest-related` |
+
+Each Assistant reads anything in Nando and the calendar, but changes only its own Module and the calendar, and points the Owner to another Assistant for the rest. It may call a destructive Tool only after asking the Owner and getting their yes in a later message, so its skill names those Tools in an "ask the Owner first" sentence.
+
+`internal/japanese/tests/skills_test.go` and `internal/career/tests/skills_test.go` check that every Tool a skill names is one Nando serves, so a renamed Tool fails the build until its skills follow. They also check that each unattended skill bans every destructive Tool, and that the `nando` plugin carries exactly the five Career chat skills. For the Assistants, the same files check that the Career and Japanese Assistants name only served Tools and ask before every destructive one of their Module. `internal/core/tests/assistant_skills_test.go` checks that the Talk skill uses the Messenger's Tools and that each Assistant names the others.
 
 `career-now-reply` reads the Owner's calendar to propose times, and adds an agreed meeting to it, through the **Google Calendar** connector. Without it the skill asks the Owner for times.
 
@@ -97,6 +110,21 @@ The Owner's MacBook hands each Sync's LinkedIn messages to Nando, and Nando wake
   ```
 
 With no Owner present, it never deletes a Step or an Opportunity, and closes an Opportunity only as `withdrawn` once the Owner's own message declines it. It stops after 30 Items, and Nando wakes another run for the rest. Setting the task up is issue #94.
+
+## Use the Assistants in a scheduled task
+
+The Owner messages their Assistants' bots in Telegram, and Nando wakes a third cloud scheduled task through its API trigger to answer ([ADR 0008](../docs/adr/0008-assistants-on-telegram.md)), as for Word Requests:
+
+- **No schedule**, only the API trigger. Nando calls it with `MESSENGER_TRIGGER_URL` and `MESSENGER_TRIGGER_TOKEN` (see [Core's API](../internal/core/API.md)).
+- **This repo attached**, so the run reads the skills from it, and nothing is uploaded.
+- **The Nando and Google Calendar connectors**, and no others.
+- **Its prompt** points at the Talk skill:
+
+  ```text
+  Follow skills/assistants/talk/SKILL.md
+  ```
+
+One run is one Assistant. It replies to the Owner only through `messenger_reply`, never sends anything to anyone else, and asks before anything destructive, acting on the Owner's yes in a later run. Setting the task up is issue #125.
 
 ## Add the Nando Connector
 
