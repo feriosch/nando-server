@@ -13,9 +13,11 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/golobby/container/v3"
 
@@ -54,6 +56,12 @@ type config struct {
 	// LinkedIn Syncs bring, and its bearer token. Without both, Claude is
 	// never woken for them.
 	careerSyncTriggerURL, careerSyncTriggerToken string
+	// The Messenger (ADR 0008), optional: TELEGRAM_OWNER_ID, the Owner's
+	// Telegram user ID; TELEGRAM_WEBHOOK_SECRET, the secret every bot's
+	// webhook is set with; and TELEGRAM_BOT_TOKEN_<ASSISTANT>, such as
+	// TELEGRAM_BOT_TOKEN_CAREER, each Assistant's bot token. An Assistant
+	// without a token is off; with any token, the other two are required.
+	messenger core.MessengerConfig
 }
 
 func loadConfig() (config, error) {
@@ -73,6 +81,9 @@ func loadConfig() (config, error) {
 		wordRequestsTriggerToken: os.Getenv("WORD_REQUESTS_TRIGGER_TOKEN"),
 		careerSyncTriggerURL:     os.Getenv("CAREER_SYNC_TRIGGER_URL"),
 		careerSyncTriggerToken:   os.Getenv("CAREER_SYNC_TRIGGER_TOKEN"),
+	}
+	if err := loadMessenger(&cfg.messenger); err != nil {
+		return config{}, err
 	}
 	if cfg.mongoURI == "" {
 		return config{}, errors.New("MONGO_URI is required")
@@ -95,6 +106,58 @@ func loadConfig() (config, error) {
 		return config{}, errors.New("ALLOWED_ORIGINS is required")
 	}
 	return cfg, nil
+}
+
+// assistants is every Assistant's name: the Core Assistant's and each
+// Module's.
+var assistants = []string{"core", "japanese", "career"}
+
+// loadMessenger reads the Messenger's settings into m.
+func loadMessenger(m *core.MessengerConfig) error {
+	// Each value without the spaces and newlines around it, as pasted or as
+	// `openssl rand -hex` prints it.
+	env := func(name string) string { return strings.TrimSpace(os.Getenv(name)) }
+	m.BotTokens = map[string]string{}
+	for _, a := range assistants {
+		name := "TELEGRAM_BOT_TOKEN_" + strings.ToUpper(a)
+		token := env(name)
+		if token == "" {
+			continue
+		}
+		// A bot token is "<bot id>:<secret>", and goes in every Bot API URL.
+		if strings.ContainsFunc(token, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) || r == '/' }) {
+			return fmt.Errorf("%s isn't a bot token: store it again as @BotFather gave it", name)
+		}
+		m.BotTokens[a] = token
+	}
+	m.WebhookSecret = env("TELEGRAM_WEBHOOK_SECRET")
+	if len(m.BotTokens) == 0 {
+		return nil
+	}
+	id, err := strconv.ParseInt(env("TELEGRAM_OWNER_ID"), 10, 64)
+	if err != nil || id <= 0 {
+		return errors.New("TELEGRAM_OWNER_ID is required with a bot token, as the Owner's numeric Telegram user ID")
+	}
+	m.OwnerID = id
+	// Telegram allows 1-256 characters: letters, digits, _ and -.
+	if !validWebhookSecret(m.WebhookSecret) {
+		return errors.New("TELEGRAM_WEBHOOK_SECRET is required with a bot token: 1-256 letters, digits, _ or -")
+	}
+	return nil
+}
+
+// validWebhookSecret reports whether Telegram accepts secret as a webhook's
+// secret_token.
+func validWebhookSecret(secret string) bool {
+	if len(secret) == 0 || len(secret) > 256 {
+		return false
+	}
+	for _, r := range secret {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // checkNotifications reports a missing Notifications setting. Only serving
@@ -167,6 +230,7 @@ func run() error {
 
 		VerifySchedulerToken: core.VerifyGoogleSchedulerToken(cfg.tickAudience, cfg.schedulerServiceAccount),
 		VAPID:                cfg.vapid,
+		Messenger:            cfg.messenger,
 	})
 	if err != nil {
 		return err
@@ -185,6 +249,7 @@ func run() error {
 	}
 	nandoCore.AddToolProvider(japaneseModule.ToolProvider())
 	nandoCore.AddNotificationProvider(japaneseModule.NotificationProvider())
+	nandoCore.AddAssistant(japaneseModule.Assistant())
 	nandoCore.AddTickJob(japaneseModule.TickJob())
 	careerModule, err := career.NewCareerModule(connectCtx, dbs.Career, nandoCore.Service(), career.Config{
 		SyncTriggerURL:   cfg.careerSyncTriggerURL,
@@ -195,6 +260,7 @@ func run() error {
 	}
 	nandoCore.AddToolProvider(careerModule.ToolProvider())
 	nandoCore.AddNotificationProvider(careerModule.NotificationProvider())
+	nandoCore.AddAssistant(careerModule.Assistant())
 	nandoCore.AddTickJob(careerModule.TickJob())
 
 	switch args := os.Args[1:]; {
@@ -211,6 +277,14 @@ func run() error {
 	if err := cfg.checkNotifications(); err != nil {
 		return err
 	}
+
+	// A bot Telegram refuses now keeps its earlier webhook, if any: worth a
+	// log, not worth refusing to serve.
+	webhooksCtx, cancelWebhooks := context.WithTimeout(ctx, 15*time.Second)
+	if err := nandoCore.RegisterWebhooks(webhooksCtx); err != nil {
+		log.Printf("register Telegram webhooks: %v", err)
+	}
+	cancelWebhooks()
 
 	srv := &http.Server{
 		Addr: ":" + cfg.port,

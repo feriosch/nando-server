@@ -92,6 +92,12 @@ func NewJapaneseModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	}, nil
 }
 
+// Assistant is the Module's Assistant, for Core to receive the Owner's
+// messages to it in the Messenger (ADR 0008).
+func (m *Module) Assistant() coremodel.Assistant {
+	return coremodel.Assistant{Name: "japanese"}
+}
+
 // ToolProvider is what the Module offers Connectors: its Tools, for
 // Core.AddToolProvider.
 func (m *Module) ToolProvider() coremodel.ToolProvider {

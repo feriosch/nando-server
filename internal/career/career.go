@@ -116,6 +116,12 @@ func (j tickJob) RunAtTick(ctx context.Context) error {
 	return errors.Join(j.m.tickRules.Apply(ctx), j.m.work.RunAtTick(ctx))
 }
 
+// Assistant is the Module's Assistant, for Core to receive the Owner's
+// messages to it in the Messenger (ADR 0008).
+func (m *Module) Assistant() coremodel.Assistant {
+	return coremodel.Assistant{Name: "career"}
+}
+
 // ToolProvider gathers the Module's Tools, for Core to serve to Connectors.
 func (m *Module) ToolProvider() coremodel.ToolProvider {
 	return toolProvider{m}

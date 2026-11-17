@@ -37,7 +37,13 @@ type Config struct {
 	VerifySchedulerToken func(ctx context.Context, token string) error
 	// VAPID signs every push message.
 	VAPID VAPID
+	// Messenger is how Nando reaches the Owner in Telegram (ADR 0008).
+	Messenger MessengerConfig
 }
+
+// MessengerConfig is how Nando reaches the Owner in Telegram: the Owner's
+// Telegram user ID, the webhook secret and each Assistant's bot token.
+type MessengerConfig = service.MessengerConfig
 
 // VAPID is the key pair and contact that sign every push message.
 type VAPID = service.VAPID
@@ -73,6 +79,7 @@ type Core struct {
 	mcp               *service.MCPService
 	connectors        *service.ConnectorsService
 	oauth             *service.OAuthService
+	messenger         *service.MessengerService
 	// coreService is what Modules' services are handed.
 	coreService coreService
 }
@@ -115,6 +122,10 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
+	talks, err := repository.NewTalks(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	passkeys := repository.NewPasskeys(db)
 	weighIns := repository.NewWeighIns(db)
 	pushSubscriptions, err := repository.NewPushSubscriptions(ctx, db)
@@ -133,6 +144,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
 		mcp:               mcp,
 		connectors:        service.NewConnectors(connectors, oauthClients, now),
+		messenger:         service.NewMessenger(talks, cfg.Messenger, apiURL, now),
 		oauth:             service.NewOAuth(oauthClients, authorizationRequests, connectors, authorizationCodes, apiURL, webURL, mcp.ToolsDescriptions, now),
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
@@ -172,6 +184,7 @@ func (c *Core) Routes(mux *http.ServeMux) {
 	c.mcp.Routes(mux)
 	c.connectors.Routes(mux)
 	c.oauth.Routes(mux)
+	c.messenger.Routes(mux)
 }
 
 // Service is Core's service, which Modules' services call for Core's data.
@@ -225,6 +238,24 @@ func (c *Core) AddTickJob(j model.TickJob) {
 // already has.
 func (c *Core) AddToolProvider(p model.ToolProvider) {
 	c.mcp.AddToolProvider(p)
+}
+
+// AddAssistant has Core receive the Owner's messages to a, in a's own chat
+// in the Messenger. Each Module with an Assistant adds it once, at startup,
+// before serving. Core adds the Core Assistant itself.
+func (c *Core) AddAssistant(a model.Assistant) {
+	c.messenger.AddAssistant(a)
+}
+
+// RegisterWebhooks points every Assistant's bot at its webhook. main calls
+// it once, after every Module has added its Assistant.
+func (c *Core) RegisterWebhooks(ctx context.Context) error {
+	return c.messenger.RegisterWebhooks(ctx)
+}
+
+// Talk is assistant's open Talk: an empty one if it has none yet.
+func (c *Core) Talk(ctx context.Context, assistant string) (model.Talk, error) {
+	return c.messenger.Talk(ctx, assistant)
 }
 
 // RequireSession lets a request through to next only if it carries a valid
