@@ -447,8 +447,8 @@ At startup, `main` points every Assistant's bot at its webhook with `setWebhook`
 
 One update from the bot of `{assistant}`, such as `career`.
 
+- `401` unless `X-Telegram-Bot-Api-Secret-Token` is the webhook secret, checked first, so that no one without it learns which bots exist.
 - `404` if there's no such Assistant, or its bot has no token.
-- `401` unless `X-Telegram-Bot-Api-Secret-Token` is the webhook secret.
 - `500` if the message couldn't be kept. Telegram delivers it again later.
 - `200` otherwise, once the update is dealt with, since Telegram re-delivers anything else.
 

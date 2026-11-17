@@ -17,6 +17,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode"
 
 	"github.com/golobby/container/v3"
 
@@ -113,17 +114,27 @@ var assistants = []string{"core", "japanese", "career"}
 
 // loadMessenger reads the Messenger's settings into m.
 func loadMessenger(m *core.MessengerConfig) error {
+	// Each value without the spaces and newlines around it, as pasted or as
+	// `openssl rand -hex` prints it.
+	env := func(name string) string { return strings.TrimSpace(os.Getenv(name)) }
 	m.BotTokens = map[string]string{}
 	for _, a := range assistants {
-		if token := os.Getenv("TELEGRAM_BOT_TOKEN_" + strings.ToUpper(a)); token != "" {
-			m.BotTokens[a] = token
+		name := "TELEGRAM_BOT_TOKEN_" + strings.ToUpper(a)
+		token := env(name)
+		if token == "" {
+			continue
 		}
+		// A bot token is "<bot id>:<secret>", and goes in every Bot API URL.
+		if strings.ContainsFunc(token, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) || r == '/' }) {
+			return fmt.Errorf("%s isn't a bot token: store it again as @BotFather gave it", name)
+		}
+		m.BotTokens[a] = token
 	}
-	m.WebhookSecret = os.Getenv("TELEGRAM_WEBHOOK_SECRET")
+	m.WebhookSecret = env("TELEGRAM_WEBHOOK_SECRET")
 	if len(m.BotTokens) == 0 {
 		return nil
 	}
-	id, err := strconv.ParseInt(os.Getenv("TELEGRAM_OWNER_ID"), 10, 64)
+	id, err := strconv.ParseInt(env("TELEGRAM_OWNER_ID"), 10, 64)
 	if err != nil || id <= 0 {
 		return errors.New("TELEGRAM_OWNER_ID is required with a bot token, as the Owner's numeric Telegram user ID")
 	}

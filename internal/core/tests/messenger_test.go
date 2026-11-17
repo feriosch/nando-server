@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.mongodb.org/mongo-driver/v2/bson"
+
 	"github.com/feriosch/nando-server/internal/core"
 	"github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/testtelegram"
@@ -318,5 +320,33 @@ func TestRegisterWebhooksReportsABotTelegramRefused(t *testing.T) {
 		if strings.Contains(err.Error(), token) {
 			t.Errorf("RegisterWebhooks error %q reveals a bot token", err)
 		}
+	}
+}
+
+func TestAMessageNandoFailedToKeepIsKeptWhenTelegramDeliversItAgain(t *testing.T) {
+	n, telegram := messengerNando(t)
+	ctx := context.Background()
+	// Have MongoDB refuse every Talk, as when it is briefly unavailable.
+	setTalksValidator := func(validator bson.D) {
+		t.Helper()
+		if err := n.db.RunCommand(ctx, bson.D{{Key: "collMod", Value: "talks"}, {Key: "validator", Value: validator}}).Err(); err != nil {
+			t.Fatalf("collMod talks: %v", err)
+		}
+	}
+	setTalksValidator(bson.D{{Key: "assistant", Value: "no Talk is ever this"}})
+
+	if rec := n.postUpdate("career", webhookSecret, ownerSays(5001, 42, "ate curry")); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("update Nando can't keep: status = %d, want 500 so Telegram delivers it again", rec.Code)
+	}
+	if reactions := telegram.CallsTo("setMessageReaction"); len(reactions) != 0 {
+		t.Errorf("setMessageReaction calls = %+v; want none for a message not kept", reactions)
+	}
+
+	setTalksValidator(bson.D{})
+	n.mustPostUpdate("career", ownerSays(5001, 42, "ate curry"))
+
+	got := n.talk("career").Messages
+	if len(got) != 1 || got[0].Text != "ate curry" || got[0].State != model.MessageWaiting {
+		t.Errorf("Career Talk's messages = %+v; want the re-delivered message, waiting", got)
 	}
 }

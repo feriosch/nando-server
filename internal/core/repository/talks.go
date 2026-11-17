@@ -51,9 +51,17 @@ func (r talks) Open(ctx context.Context, assistant string) (model.Talk, error) {
 }
 
 func (r talks) AddOwnerMessage(ctx context.Context, assistant string, m model.TalkMessage) error {
-	_, err := r.collection.UpdateOne(ctx, openTalk(assistant), bson.D{
-		{Key: "$push", Value: bson.D{{Key: "messages", Value: m}}},
-	}, options.UpdateOne().SetUpsert(true))
+	push := func() error {
+		_, err := r.collection.UpdateOne(ctx, openTalk(assistant), bson.D{
+			{Key: "$push", Value: bson.D{{Key: "messages", Value: m}}},
+		}, options.UpdateOne().SetUpsert(true))
+		return err
+	}
+	err := push()
+	if mongo.IsDuplicateKeyError(err) {
+		// Another message opened the Talk at the same moment: it exists now.
+		err = push()
+	}
 	return err
 }
 

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/feriosch/nando-server/internal/core/model"
@@ -135,15 +136,16 @@ type update struct {
 // postUpdate takes one update from assistant's bot. It always answers 200
 // once the update is dealt with, since Telegram re-delivers anything else.
 func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
+	// The secret first, so that no one without it learns which bots exist.
+	secret := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
+	if s.cfg.WebhookSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.WebhookSecret)) != 1 {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 	assistant := r.PathValue("assistant")
 	token, ok := s.bot(assistant)
 	if !ok {
 		http.NotFound(w, r)
-		return
-	}
-	secret := r.Header.Get("X-Telegram-Bot-Api-Secret-Token")
-	if s.cfg.WebhookSecret == "" || subtle.ConstantTimeCompare([]byte(secret), []byte(s.cfg.WebhookSecret)) != 1 {
-		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
 	var u update
@@ -156,7 +158,10 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	isNew, err := s.talks.MarkUpdate(r.Context(), assistant, u.UpdateID, s.now().Add(updateMemory))
+	// Telegram may give up on the request midway: once an update is marked,
+	// it must be kept or unmarked, or its re-delivery would be dropped.
+	ctx := context.WithoutCancel(r.Context())
+	isNew, err := s.talks.MarkUpdate(ctx, assistant, u.UpdateID, s.now().Add(updateMemory))
 	if err != nil {
 		utils.ServerError(w, err)
 		return
@@ -167,7 +172,7 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if m.Text == "" {
 		// A photo, sticker, voice note or anything else without text.
-		if err := s.telegram.call(r.Context(), token, "sendMessage", map[string]any{
+		if err := s.telegram.call(ctx, token, "sendMessage", map[string]any{
 			"chat_id": m.Chat.ID,
 			"text":    textOnly,
 		}); err != nil {
@@ -176,7 +181,7 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if err := s.talks.AddOwnerMessage(r.Context(), assistant, model.TalkMessage{
+	if err := s.talks.AddOwnerMessage(ctx, assistant, model.TalkMessage{
 		From:              model.FromOwner,
 		At:                s.now(),
 		Text:              m.Text,
@@ -184,13 +189,13 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 		State:             model.MessageWaiting,
 	}); err != nil {
 		// Forget the update, so that Telegram's re-delivery is kept.
-		if err := s.talks.UnmarkUpdate(r.Context(), assistant, u.UpdateID); err != nil {
+		if err := s.talks.UnmarkUpdate(ctx, assistant, u.UpdateID); err != nil {
 			log.Printf("messenger: forget update %d to %s: %v", u.UpdateID, assistant, err)
 		}
 		utils.ServerError(w, err)
 		return
 	}
-	s.received(r.Context(), token, m.Chat.ID, m.MessageID)
+	s.received(ctx, token, m.Chat.ID, m.MessageID)
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -209,20 +214,28 @@ func isStart(text string) bool {
 
 // received shows the Owner that their message arrived: a 👀 reaction on it,
 // and the typing status. Neither is worth failing for.
+// Both are asked for at once, so a slow Telegram holds the webhook's answer
+// no longer than one call.
 func (s *MessengerService) received(ctx context.Context, token string, chatID, messageID int64) {
-	if err := s.telegram.call(ctx, token, "setMessageReaction", map[string]any{
-		"chat_id":    chatID,
-		"message_id": messageID,
-		"reaction":   []map[string]string{{"type": "emoji", "emoji": "👀"}},
-	}); err != nil {
-		log.Printf("messenger: react to message %d: %v", messageID, err)
-	}
-	if err := s.telegram.call(ctx, token, "sendChatAction", map[string]any{
-		"chat_id": chatID,
-		"action":  "typing",
-	}); err != nil {
-		log.Printf("messenger: show typing: %v", err)
-	}
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		if err := s.telegram.call(ctx, token, "setMessageReaction", map[string]any{
+			"chat_id":    chatID,
+			"message_id": messageID,
+			"reaction":   []map[string]string{{"type": "emoji", "emoji": "👀"}},
+		}); err != nil {
+			log.Printf("messenger: react to message %d: %v", messageID, err)
+		}
+	})
+	wg.Go(func() {
+		if err := s.telegram.call(ctx, token, "sendChatAction", map[string]any{
+			"chat_id": chatID,
+			"action":  "typing",
+		}); err != nil {
+			log.Printf("messenger: show typing: %v", err)
+		}
+	})
+	wg.Wait()
 }
 
 // telegramClient calls the Telegram Bot API.
@@ -239,7 +252,8 @@ func (c telegramClient) call(ctx context.Context, token, method string, params a
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/bot"+token+"/"+method, bytes.NewReader(body))
 	if err != nil {
-		return err
+		// As below: a URL error repeats the URL, token and all.
+		return fmt.Errorf("%s: the bot token or the API URL isn't usable", method)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
