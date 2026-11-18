@@ -20,7 +20,7 @@ Everything in Nando's Calories Module, through the Calories Tools of the Nando C
 
 ## Logging
 
-1. **Which Day.** What the Owner "just" ate, or ate today, goes on today: leave `day` out. For an earlier meal ("yesterday's dinner", "Saturday's ramen"), work out the Day from the message's time, in the Owner Time Zone. Only today and the 7 Days before it can be changed. For an older Day, say that it can't be logged any more.
+1. **Which Day.** What the Owner "just" ate, or ate today, goes on today: leave `day` out. For an earlier meal ("yesterday's dinner", "Saturday's ramen"), count back from today as Nando knows it: the `day` that `calories_get_day` answers when you leave `day` out, which is in the Owner Time Zone. Never work it out from a message's `at`, which is UTC. Only today and the 7 Days before it can be changed. For an older Day, say that it can't be logged any more.
 2. **A saved Meal first.** Call `calories_list_meals` and look for what the Owner ate, allowing for other words and spellings ("the 7-Eleven onigiri" is "Tuna mayo onigiri"). If one matches, log it with `mealId` and the Servings eaten. Its kcal is the Owner's own, so don't second-guess it.
 3. **Otherwise, the kcal.** In this order:
    - **A label.** A photo of the package, or numbers the Owner typed, give the kcal. Japanese labels say エネルギー or 熱量, per 1袋, 1個 or 100g. Work out one serving as the Owner ate it, such as the whole bag when the label is per 100 g, and say how.

@@ -325,3 +325,27 @@ func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
 		t.Errorf("Tools and their hints =\n%v\nwant\n%v", got, want)
 	}
 }
+
+func TestAConnectorLogsServingsOfASavedMealOnAnEarlierDay(t *testing.T) {
+	_, phone := signedInBrowser(t, wednesday)
+	phone.must(http.MethodPut, "/api/calories/daily-limit", map[string]int{"kcal": 2000}, http.StatusNoContent)
+	mealID := phone.createMeal(onigiri)
+	session := phone.connect()
+
+	// "Had 2 of the 7-Eleven onigiri yesterday."
+	got := callTool[loggedJSON](t, session, "calories_log_entry", map[string]any{"day": "2026-10-20", "mealId": mealID, "servings": 2})
+
+	want := entryJSON{ID: got.Entry.ID, MealID: &mealID, Name: "Tuna mayo onigiri", KcalPerServing: 230, Servings: 2, Kcal: 460}
+	if !equalEntries([]entryJSON{got.Entry}, []entryJSON{want}) {
+		t.Errorf("entry = %+v, want %+v", got.Entry, want)
+	}
+	if want := (caloriesJSON{Day: "2026-10-20", ConsumedCalories: ptr(460), DailyLimit: ptr(2000), Remaining: ptr(1540), OverLimit: ptr(false)}); !reflect.DeepEqual(got.Day, want) {
+		t.Errorf("day = %+v, want %+v", got.Day, want)
+	}
+	if entries := phone.entries("2026-10-20"); !equalEntries(entries, []entryJSON{want}) {
+		t.Errorf("the web app's Entries for 2026-10-20 = %+v, want %+v", entries, want)
+	}
+	if entries := phone.entries("2026-10-21"); len(entries) != 0 {
+		t.Errorf("today's Entries = %+v, want none", entries)
+	}
+}
