@@ -177,7 +177,7 @@ Logs the Weigh-in for `week`, replacing any it already has.
 ## Notifications
 
 Core sends every Notification, for a Module or for itself, in the Messenger whenever some Assistant has a bot ([#128](https://github.com/feriosch/nando-server/issues/128), ADR 0008):
-- It goes to the chat of the Assistant its ID's area names, such as the Career Assistant's for `career:…`. When that Assistant has no bot (Calories, for now), it goes to the Core Assistant's chat, or, if Core has no bot either, to any Assistant's that has one.
+- It goes to the chat of the Assistant its ID's area names, such as the Career Assistant's for `career:…`. When that Assistant has no bot, it goes to the Core Assistant's chat, or, if Core has no bot either, to any Assistant's that has one.
 - It is sent as plain text: the title, a line break and the body, leaving out either if it is empty.
 - It joins that Assistant's Talk as a message from the Assistant, so the Owner can answer it there. It wakes no run on its own.
 
