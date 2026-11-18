@@ -174,10 +174,12 @@ def today_message(name: str, at: str, text: str) -> str:
 
 async def test_after_a_held_thread_with_nothing_new_only_threads_nando_doesnt_hold_are_opened():
     # The inbox is in order of activity: once a thread Nando holds has nothing
-    # new, neither have the held threads after it. Threads it doesn't hold yet
-    # are the backlog an earlier Sync didn't reach, and are still read.
+    # new, neither have the held threads after it, when the last Sync read
+    # through. Threads it doesn't hold yet are the backlog an earlier Sync
+    # didn't reach, and are still read.
     nando = FakeNando(
         due=True,
+        read_through=True,
         threads=[
             {"threadId": "2-old==", "newest": "2026-11-15T09:00:00+09:00", "ignored": False},
             {"threadId": "2-older==", "newest": "2026-11-14T09:00:00+09:00", "ignored": False},
@@ -196,6 +198,32 @@ async def test_after_a_held_thread_with_nothing_new_only_threads_nando_doesnt_ho
 
     assert reader.opened == ["2-fresh==", "2-old==", "2-backlog=="]
     assert [t["threadId"] for t in nando.recorded[0]["threads"]] == ["2-fresh==", "2-backlog=="]
+
+
+async def test_after_a_sync_that_stopped_early_held_threads_after_one_with_nothing_new_are_opened():
+    # The last Sync stopped before reaching 2-below==, after taking 2-above=='s
+    # newer message: 2-below== may hold a message older than that, which
+    # Nando hasn't got.
+    nando = FakeNando(
+        due=True,
+        read_through=False,
+        threads=[
+            {"threadId": "2-above==", "newest": "2026-11-15T10:00:00+09:00", "ignored": False},
+            {"threadId": "2-below==", "newest": "2026-11-14T09:00:00+09:00", "ignored": False},
+        ],
+    )
+    reader = FakeReader(
+        inbox=[
+            Thread("2-above==", "Kim Hunter", today_message("Kim Hunter", "10:00 AM", "Already in Nando.")),
+            Thread("2-below==", "Lee Agent", today_message("Lee Agent", "8:00 AM", "Missed by the last Sync.")),
+        ]
+    )
+
+    await sync(nando, reader)
+
+    assert reader.opened == ["2-above==", "2-below=="]
+    [thread] = nando.recorded[0]["threads"]
+    assert (thread["threadId"], [m["text"] for m in thread["messages"]]) == ("2-below==", ["Missed by the last Sync."])
 
 
 async def test_a_thread_with_nothing_since_2025_ends_the_sync():
@@ -230,6 +258,60 @@ async def test_at_most_30_threads_are_opened_with_a_pause_between_each():
 
     assert reader.opened == [f"2-t{n}==" for n in range(30)]
     assert pauses == list(range(1, 30))
+
+
+async def test_a_sync_that_stops_at_30_threads_before_one_nando_holds_tells_nando_it_stopped_early():
+    nando = FakeNando(due=True, threads=[{"threadId": "2-held==", "newest": "2026-11-14T09:00:00+09:00", "ignored": False}])
+    reader = FakeReader(
+        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", today_message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(35)]
+        + [Thread("2-held==", "Lee Agent", today_message("Lee Agent", "8:00 AM", "Not reached."))]
+    )
+
+    await sync(nando, reader)
+
+    # On the first batch: it starts the Sync.
+    assert [call.get("stoppedEarly") for call in nando.recorded] == [True, None, None]
+
+
+async def test_a_sync_that_stops_at_30_threads_with_only_threads_nando_doesnt_hold_left_reads_through():
+    # Every Sync opens those anyway: the next needn't open held threads again.
+    nando = FakeNando(due=True)
+    reader = FakeReader(
+        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", today_message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(40)]
+    )
+
+    await sync(nando, reader)
+
+    assert [call.get("stoppedEarly") for call in nando.recorded] == [None, None, None]
+
+
+async def test_a_sync_that_reaches_30_threads_after_a_held_one_with_nothing_new_counts_as_read_through():
+    # After a Sync that stopped early, held threads after one with nothing new
+    # are opened too, and the 30 may run out among them. Another such Sync
+    # would only open the same 30 again, every Sync: so it reads through.
+    held = [{"threadId": f"2-t{n}==", "newest": "2026-11-15T11:00:00+09:00", "ignored": False} for n in range(40)]
+    nando = FakeNando(due=True, read_through=False, threads=held)
+    reader = FakeReader(
+        inbox=[Thread(f"2-t{n}==", f"Recruiter {n}", today_message(f"Recruiter {n}", "11:00 AM", "Hi")) for n in range(40)]
+    )
+
+    await sync(nando, reader)
+
+    assert len(reader.opened) == 30
+    assert nando.recorded == [{"threads": []}]
+
+
+async def test_a_sync_that_reaches_30_threads_before_any_held_one_with_nothing_new_stopped_early_even_with_nothing_to_send():
+    # Ads with nothing new don't count as caught up: LinkedIn keeps them near
+    # the top, out of order.
+    held = [{"threadId": f"2-ad{n}==", "newest": "2026-11-13T00:00:00+09:00", "ignored": False} for n in range(31)]
+    nando = FakeNando(due=True, threads=held)
+    reader = FakeReader(inbox=[Thread(f"2-ad{n}==", "Sam Admissions, PhD", SPONSORED) for n in range(31)])
+
+    await sync(nando, reader)
+
+    assert len(reader.opened) == 30
+    assert nando.recorded == [{"threads": [], "stoppedEarly": True}]
 
 
 async def test_new_messages_are_sent_in_batches_of_10_threads():
@@ -347,8 +429,10 @@ async def test_a_reader_error_is_reported_after_what_was_read():
 
     await sync(nando, reader)
 
+    # The threads it read are marked stopped early too, should the problem
+    # never reach Nando.
     assert nando.recorded == [
-        {"threads": [nando.recorded[0]["threads"][0]]},
+        {"threads": [nando.recorded[0]["threads"][0]], "stoppedEarly": True},
         {"threads": [], "problem": {"kind": "other", "text": "get_conversation: Rate limit detected. Wait 30 seconds before trying again."}},
     ]
     assert nando.recorded[0]["threads"][0]["threadId"] == "2-fresh=="

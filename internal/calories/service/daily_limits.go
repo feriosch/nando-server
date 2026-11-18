@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -67,4 +68,30 @@ func (s *DailyLimitsService) putDailyLimit(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// Tools are what the DailyLimitsService offers Connectors.
+func (s *DailyLimitsService) Tools() []coremodel.Tool {
+	return []coremodel.Tool{{
+		Name: "calories_get_daily_limit",
+		Description: "The Daily Limit in force now: the most kcal the Owner intends to consume in a Day, a ceiling to stay under, " +
+			"and the Day it applies from. null if the Owner never set one.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
+		ReadOnly:    true,
+		Handle:      s.getDailyLimitTool,
+	}}
+}
+
+func (s *DailyLimitsService) getDailyLimitTool(ctx context.Context, _ json.RawMessage) (any, error) {
+	limits, err := s.dailyLimits.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var answer struct {
+		DailyLimit *model.DailyLimitJSON `json:"dailyLimit"`
+	}
+	if latest, ok := limits.Latest(); ok {
+		answer.DailyLimit = &model.DailyLimitJSON{Kcal: latest.Kcal, EffectiveFrom: latest.EffectiveFrom}
+	}
+	return answer, nil
 }

@@ -1,7 +1,7 @@
 // Package calories is the Module for tracking what the Owner eats each Day.
 //
 // The Module is split in three layers: model declares its data and one
-// repository interface per collection, service handles requests and
+// repository interface per collection, service handles requests, Tools and
 // validation (MealsService, EntriesService, DailyLimitsService,
 // SettingsService, DaysService for how each Day went, and
 // NotificationsService, the Module's Notification provider), and repository
@@ -12,6 +12,7 @@ package calories
 import (
 	"context"
 	"net/http"
+	"slices"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -52,7 +53,7 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	}
 	meals := repository.NewMeals(db)
 	dailyLimits := repository.NewDailyLimits(db)
-	entriesService := service.NewEntries(entries, meals, core, now)
+	entriesService := service.NewEntries(entries, meals, dailyLimits, core, now)
 	days := service.NewDays(entries, dailyLimits, entriesService, core)
 	settings := service.NewSettings(repository.NewSettings(db))
 	return &Module{
@@ -78,4 +79,29 @@ func (m *Module) Routes(mux *http.ServeMux) {
 // at every tick.
 func (m *Module) NotificationProvider() coremodel.NotificationProvider {
 	return m.notifications
+}
+
+// Assistant is the Module's Assistant, for Core to receive the Owner's
+// messages to it in the Messenger (ADR 0008).
+func (m *Module) Assistant() coremodel.Assistant {
+	return coremodel.Assistant{Name: "calories"}
+}
+
+// ToolProvider is what the Module offers Connectors: its Tools, for
+// Core.AddToolProvider.
+func (m *Module) ToolProvider() coremodel.ToolProvider {
+	return toolProvider{m}
+}
+
+// toolProvider gathers the Tools of the Module's services.
+type toolProvider struct{ m *Module }
+
+// ToolsDescription says what the Module's Tools let a Connector do, for the
+// consent page.
+func (p toolProvider) ToolsDescription() string {
+	return "read your Days and Daily Limit, log, correct and delete what you eat, and save, change and archive your Meals"
+}
+
+func (p toolProvider) Tools() []coremodel.Tool {
+	return slices.Concat(p.m.meals.Tools(), p.m.entries.Tools(), p.m.days.Tools(), p.m.dailyLimits.Tools())
 }

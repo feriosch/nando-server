@@ -55,7 +55,9 @@ func (s *SyncsService) Tools() []coremodel.Tool {
 			"the oldest Day whose messages it reads (since, YYYY-MM-DD), and every thread Nando holds " +
 			"with when its newest message was sent, so the script opens only threads with newer ones. " +
 			"An ignored thread isn't about a role: never send its messages. " +
-			"Answers {\"due\": bool, \"since\", \"threads\": [{\"threadId\", \"newest\", \"ignored\"}]}.",
+			"readThrough is false when the newest Sync that read LinkedIn stopped early: then also open the held threads " +
+			"after one with nothing new, as that Sync may not have reached them. " +
+			"Answers {\"due\": bool, \"since\", \"threads\": [{\"threadId\", \"newest\", \"ignored\"}], \"readThrough\": bool}.",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		ReadOnly:    true,
 		Handle:      s.statusTool,
@@ -66,6 +68,7 @@ func (s *SyncsService) Tools() []coremodel.Tool {
 			"Messages Nando already holds are skipped. If the script couldn't read LinkedIn, it sends only a problem: " +
 			"session_expired when LinkedIn wants the Owner to log in again. " +
 			"A Sync sent in batches is one Sync: send each batch after the first, within 10 minutes of it, with sync, the id the first was answered with. " +
+			"If it stopped before reading every thread it had to, at its cap or at a problem, send stoppedEarly with the first batch, or with no threads, not with the problem. " +
 			"Answers {\"sync\": id, \"stored\": how many new messages were stored}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"sync":{"type":"string","description":"On every batch after a Sync's first, within 10 minutes of it: the id the first was answered with, so the batches count as one Sync."},` +
@@ -83,7 +86,8 @@ func (s *SyncsService) Tools() []coremodel.Tool {
 			`"problem":{"type":"object","description":"Only when the script couldn't read LinkedIn. Such a Sync doesn't count towards when the next is due.","properties":{` +
 			`"kind":{"type":"string","enum":["session_expired","other"]},` +
 			`"text":{"type":"string","description":"For other: what went wrong."}},` +
-			`"required":["kind"]}}}`),
+			`"required":["kind"]},` +
+			`"stoppedEarly":{"type":"boolean","description":"On a Sync's first batch only: true when the script stopped before reading every thread it had to, so that the next Sync reads the threads this one may not have reached."}}}`),
 		Handle: s.recordTool,
 	}}
 }
@@ -93,8 +97,9 @@ func (s *SyncsService) statusTool(ctx context.Context, _ json.RawMessage) (any, 
 	if err != nil {
 		return nil, err
 	}
-	now := s.core.Now().In(loc)
-	due, err := s.due(ctx, now)
+	// The newest syncsPerDay Syncs that read LinkedIn settle whether one is
+	// due, and the newest of them whether it read through.
+	latest, err := s.syncs.LatestRead(ctx, syncsPerDay)
 	if err != nil {
 		return nil, err
 	}
@@ -107,31 +112,39 @@ func (s *SyncsService) statusTool(ctx context.Context, _ json.RawMessage) (any, 
 		threads = append(threads, model.ThreadJSON{ThreadID: c.ThreadID, Newest: c.Newest, Ignored: c.Ignored})
 	}
 	return model.SyncStatusJSON{
-		Due:     due,
-		Since:   syncSince,
-		Threads: threads,
+		Due:         due(s.core.Now().In(loc), latest),
+		Since:       syncSince,
+		Threads:     threads,
+		ReadThrough: readThrough(latest),
 	}, nil
 }
 
-// due reports whether a Sync is due at now, a time in the Owner Time Zone.
-func (s *SyncsService) due(ctx context.Context, now time.Time) (bool, error) {
+// readThrough reports whether the newest Sync that read LinkedIn read every
+// thread it had to, given the newest Syncs that did, newest first. The script
+// skips the held threads after one with nothing new only then: the inbox is in
+// order of activity, but a Sync that stopped early may have taken a newer
+// message from a thread above one it never reached. A Sync that only reported
+// a problem read nothing, so it leaves every thread as the one before left it.
+func readThrough(latest []model.Sync) bool {
+	return len(latest) == 0 || !latest[0].StoppedEarly
+}
+
+// due reports whether a Sync is due at now, a time in the Owner Time Zone,
+// given the newest syncsPerDay Syncs that read LinkedIn, newest first.
+func due(now time.Time, latest []model.Sync) bool {
 	if now.Hour() < firstSyncHour {
-		return false, nil
+		return false
 	}
-	// The newest syncsPerDay Syncs settle both other rules: the newest must
-	// be syncGap ago, and the oldest of them must be before today.
-	latest, err := s.syncs.LatestRead(ctx, syncsPerDay)
-	if err != nil {
-		return false, err
-	}
+	// They settle both other rules: the newest must be syncGap ago, and the
+	// oldest of them must be before today.
 	if len(latest) > 0 && now.Sub(latest[0].At) < syncGap {
-		return false, nil
+		return false
 	}
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	if len(latest) == syncsPerDay && !latest[syncsPerDay-1].At.Before(startOfDay) {
-		return false, nil
+		return false
 	}
-	return true, nil
+	return true
 }
 
 func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (any, error) {
@@ -170,7 +183,7 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 		}
 	}
 	if isNew {
-		err = s.syncs.Insert(ctx, model.Sync{ID: id, At: s.core.Now(), Threads: len(updates), Problem: problem})
+		err = s.syncs.Insert(ctx, model.Sync{ID: id, At: s.core.Now(), Threads: len(updates), Problem: problem, StoppedEarly: j.StoppedEarly})
 	} else {
 		err = s.syncs.AddThreads(ctx, id, len(updates))
 	}
@@ -224,6 +237,12 @@ func (s *SyncsService) queue(ctx context.Context, added model.Added, syncID bson
 // check.
 func fromRecordSyncJSON(j model.RecordSyncJSON) ([]model.ThreadUpdate, *model.SyncProblem, error) {
 	var problem *model.SyncProblem
+	if j.StoppedEarly && j.Sync != "" {
+		return nil, nil, errors.New("stoppedEarly is sent with a Sync's first batch, which starts it: send it without sync")
+	}
+	if j.StoppedEarly && j.Problem != nil {
+		return nil, nil, errors.New("stoppedEarly is sent with the threads a Sync read, not with its problem, which says so already")
+	}
 	if j.Problem != nil {
 		if j.Sync != "" {
 			return nil, nil, errors.New("a problem is a Sync of its own: send it without sync")

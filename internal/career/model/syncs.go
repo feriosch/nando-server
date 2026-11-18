@@ -17,6 +17,10 @@ type Sync struct {
 	// Problem is why the script couldn't read LinkedIn, if it couldn't. A
 	// Sync with a problem doesn't count towards when the next is due.
 	Problem *SyncProblem `bson:"problem,omitempty"`
+	// StoppedEarly is whether the script stopped before reading every thread
+	// it had to, at its cap on threads or at a problem. The next Sync then
+	// reads the threads Nando holds that this one may not have reached.
+	StoppedEarly bool `bson:"stoppedEarly,omitempty"`
 }
 
 // SyncProblem is why a Sync couldn't read LinkedIn.
@@ -68,6 +72,9 @@ type SyncStatusJSON struct {
 	// Since is the oldest Day, as YYYY-MM-DD, whose messages a Sync reads.
 	Since   string       `json:"since"`
 	Threads []ThreadJSON `json:"threads"`
+	// ReadThrough is whether the newest Sync that read LinkedIn read every
+	// thread it had to: false when it stopped early.
+	ReadThrough bool `json:"readThrough"`
 }
 
 // ThreadJSON is one LinkedIn thread Nando holds, for the Sync script to
@@ -87,6 +94,9 @@ type RecordSyncJSON struct {
 	Threads []ThreadUpdateJSON `json:"threads"`
 	// Problem is why the script couldn't read LinkedIn, if it couldn't.
 	Problem *SyncProblemJSON `json:"problem"`
+	// StoppedEarly, on a Sync's first batch, is whether the script stopped
+	// before reading every thread it had to.
+	StoppedEarly bool `json:"stoppedEarly"`
 }
 
 // SyncProblemJSON is why a Sync couldn't read LinkedIn.

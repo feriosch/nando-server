@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"slices"
 
@@ -60,15 +61,23 @@ func (s *DaysService) dayView(ctx context.Context, day coremodel.Day) (model.Day
 // dayCalories returns day's Consumed Calories against the Daily Limit it had,
 // and the Entries they come from.
 func (s *DaysService) dayCalories(ctx context.Context, day coremodel.Day) (model.DayCalories, []model.Entry, error) {
-	entries, err := s.entries.ListOnDay(ctx, day)
+	return dayCalories(ctx, s.entries, s.dailyLimits, day)
+}
+
+// dayCalories returns day's Consumed Calories, read from entries, against
+// the Daily Limit it had, read from dailyLimits, and the Entries they come
+// from.
+func dayCalories(ctx context.Context, entries model.EntriesRepository, dailyLimits model.DailyLimitsRepository,
+	day coremodel.Day) (model.DayCalories, []model.Entry, error) {
+	list, err := entries.ListOnDay(ctx, day)
 	if err != nil {
 		return model.DayCalories{}, nil, err
 	}
-	limits, err := s.dailyLimits.List(ctx)
+	limits, err := dailyLimits.List(ctx)
 	if err != nil {
 		return model.DayCalories{}, nil, err
 	}
-	return limits.Calories(day, model.ConsumedCalories(entries)), entries, nil
+	return limits.Calories(day, model.ConsumedCalories(list)), list, nil
 }
 
 // getDay answers the Day view: the Day's Entries, its Consumed Calories, its
@@ -186,4 +195,31 @@ func (s *DaysService) history(w http.ResponseWriter, r *http.Request) {
 		list = append(list, toCaloriesJSON(limits.Calories(day, kcal)))
 	}
 	coreutils.WriteJSON(w, http.StatusOK, list)
+}
+
+// Tools are what the DaysService offers Connectors.
+func (s *DaysService) Tools() []coremodel.Tool {
+	return []coremodel.Tool{{
+		Name: "calories_get_day",
+		Description: "A Day as the Nando app shows it: its Entries in the order they were logged, and its Consumed Calories " +
+			"against the Daily Limit it had. An Unlogged Day has no Entries, and null Consumed Calories: not recorded, never 0 kcal.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"day":{"type":"string","description":"YYYY-MM-DD in the Owner Time Zone; leave out for today."}}}`),
+		ReadOnly: true,
+		Handle:   s.getDayTool,
+	}}
+}
+
+func (s *DaysService) getDayTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		Day string `json:"day"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	day, err := toolDay(ctx, s.core, args.Day)
+	if err != nil {
+		return nil, err
+	}
+	return s.dayView(ctx, day)
 }
