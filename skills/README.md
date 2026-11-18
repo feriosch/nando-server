@@ -33,10 +33,11 @@ The Owner's Assistants answer them in Telegram ([ADR 0008](../docs/adr/0008-assi
 | [`assistants/core`](assistants/core/SKILL.md) | The Core Assistant: the Owner's calendar, and their life outside any Module |
 | [`assistants/career`](assistants/career/SKILL.md) | The Career Assistant: Recruiters, Opportunities and replies, leaning on the `career-*` chat skills |
 | [`assistants/japanese`](assistants/japanese/SKILL.md) | The Japanese Assistant: adds and improves Words right in the chat, leaning on `add-word` and `suggest-related` |
+| [`assistants/calories`](assistants/calories/SKILL.md) | The Calories Assistant: logs what the Owner eats from a saved Meal, a label or its own estimate, says how the Day stands against the Daily Limit, and offers to save new Meals |
 
 Each Assistant reads anything in Nando and the calendar, but changes only its own Module and the calendar, and points the Owner to another Assistant for the rest. It may call a destructive Tool only after asking the Owner and getting their yes in a later message, so its skill names those Tools in an "ask the Owner first" sentence.
 
-`internal/japanese/tests/skills_test.go` and `internal/career/tests/skills_test.go` check that every Tool a skill names is one Nando serves, so a renamed Tool fails the build until its skills follow. They also check that each unattended skill bans every destructive Tool, and that the `nando` plugin carries exactly the five Career chat skills. For the Assistants, the same files check that the Career and Japanese Assistants name only served Tools and ask before every destructive one of their Module. `internal/core/tests/assistant_skills_test.go` checks that the Talk skill uses the Messenger's Tools and that each Assistant names the others.
+`internal/japanese/tests/skills_test.go` and `internal/career/tests/skills_test.go` check that every Tool a skill names is one Nando serves, so a renamed Tool fails the build until its skills follow. They also check that each unattended skill bans every destructive Tool, and that the `nando` plugin carries exactly the five Career chat skills. For the Assistants, the same files, and `internal/calories/tests/skills_test.go`, check that the Career, Japanese and Calories Assistants name only served Tools and ask before every destructive one of their Module. `internal/core/tests/assistant_skills_test.go` checks that the Talk skill uses the Messenger's Tools and that each Assistant names the others.
 
 `career-now-reply` reads the Owner's calendar to propose times, and adds an agreed meeting to it, through the **Google Calendar** connector. Without it the skill asks the Owner for times.
 
@@ -142,6 +143,7 @@ The skills need the Connector to reach the Tools. Connecting sends you to Nando'
 In the Connector's settings in claude.ai, set the destructive Tools to ask every time:
 
 - Japanese: `japanese_delete_word`, `japanese_merge_words` and `japanese_change_group`;
-- Career: `career_delete_step` and `career_delete_opportunity`.
+- Career: `career_delete_step` and `career_delete_opportunity`;
+- Calories: `calories_delete_entry` and `calories_archive_meal`.
 
 A Connector is listed in Nando's Settings, where removing it cuts it off at once.

@@ -1,6 +1,6 @@
 # Calories API
 
-The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, the Calories Home Card and Settings Section, and the Calories Notifications. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
+The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, the Calories Home Card and Settings Section, and the Calories Notifications. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message. Claude reads and changes the same data through the Module's [Tools](#tools).
 
 A Day is a date in the Owner Time Zone, written `YYYY-MM-DD`.
 
@@ -261,3 +261,38 @@ Core's tick asks the Calories Module for its Notifications every 5 minutes, for 
 
 - **No-Entries reminder** (`noEntriesReminder`): `Nothing logged yet today`, only if today has no Entries at that time, and not if the evening summary is set for the same time (it says the same).
 - **Evening summary** (`eveningSummary`): today's Consumed Calories against the Daily Limit today has: `Today: 1460 / 2000 kcal`, or `Today: 1460 kcal` if no Daily Limit was ever set. On an Unlogged Day it is `Nothing logged today`, never 0 kcal.
+
+## Tools
+
+Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)), for the Calories Assistant in Telegram ([ADR 0008](../../docs/adr/0008-assistants-on-telegram.md)) and the Claude app. Arguments and answers are JSON. A `day` is `YYYY-MM-DD` in the Owner Time Zone, and leaving it out means today. They follow the same rules as the routes above: only Days in the Editable Window can be changed. A refused call is a Tool error that says what is wrong, and changes nothing.
+
+### The shapes they answer
+
+- **Entry**, **Meal**, **Day view** and **Daily Limit**: as the routes above answer them.
+- **Day**: the fields of a Day without its Entries, `{"day", "consumedCalories", "dailyLimit", "remaining", "overLimit"}`.
+
+### Look up (`readOnlyHint`)
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `calories_get_day` | `day` | Answers the Day view, as `GET /api/calories/days/{day}` does |
+| `calories_get_daily_limit` | none | Answers `{"dailyLimit": Daily Limit}`, `null` if none was ever set |
+| `calories_list_meals` | `archived` | The Meals in use, in the quick list's order, as `GET /api/calories/meals/quick` lists them. With `archived: true`, the archived ones by name. Answers `{"meals": [Meal]}` |
+
+### Write
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `calories_log_entry` | `day`, `servings`, and `mealId` or a one-off's `name` and `kcalPerServing`; `saveAsMeal` | Logs an Entry, as `POST /api/calories/days/{day}/entries` does. Answers `{"entry": Entry, "day": Day}` |
+| `calories_update_entry` | `id`; `name`, `kcalPerServing`, `servings` | Edits an Entry: only the values sent change. Answers `{"entry": Entry, "day": Day}` |
+| `calories_save_meal` | `id` to change one, or none to save a new one; `name`, `kcal`, `store`, `emoji`, `tags`, `pinned` | Saves a new Meal, which needs `name` and `kcal`, or changes one: only the fields sent change, and `tags` replaces all its Meal Tags. Entries already logged from it don't change. Answers the Meal |
+| `calories_restore_meal` | `id` | Brings an archived Meal back into use. Answers the Meal |
+
+### Delete (`destructiveHint`)
+
+The Calories Assistant asks the Owner before each of these.
+
+| Tool | Arguments | What it does |
+| --- | --- | --- |
+| `calories_delete_entry` | `id` | Deletes the Entry, which can't be undone. Answers `{"day": Day}`, the Day without it |
+| `calories_archive_meal` | `id` | Archives the Meal, as `DELETE /api/calories/meals/{id}` does: its Entries stay, and `calories_restore_meal` brings it back. Answers the Meal |
