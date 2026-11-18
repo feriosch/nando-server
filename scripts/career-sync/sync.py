@@ -4,16 +4,17 @@
 # ///
 """The Career Sync: hands the Owner's new LinkedIn messages to Nando (ADR 0007).
 
-launchd runs it every hour. It asks Nando whether a Sync is due and, only
+launchd runs it every 15 minutes. It asks Nando whether a Sync is due and, only
 then, reads LinkedIn with the reader (mcp-server-linkedin) and sends Nando the
 new messages. It calls no model. See README.md.
 
-    uv run --script sync.py            one hourly run
+    uv run --script sync.py            one run
     uv run --script sync.py --connect  approve it as a Connector, once
 """
 
 import argparse
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -21,10 +22,12 @@ import random
 import re
 import socket
 import stat
+import subprocess
 import sys
 import time as clock
 import unicodedata
 import webbrowser
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import date, datetime, time, tzinfo
 from pathlib import Path
@@ -78,7 +81,7 @@ class ToolError(Exception):
 
 
 async def run_sync(nando: Client, start_reader, *, now: datetime, pause, import_session) -> None:
-    """One hourly run: a Sync, if Nando says one is due. import_session
+    """One run: a Sync, if Nando says one is due. import_session
     imports the LinkedIn session of the Owner's Chrome and says whether it
     did (import_chrome_session)."""
     status = await call(nando, "career_sync_status")
@@ -276,7 +279,7 @@ async def open_inbox(stack: AsyncExitStack, start_reader, import_session) -> tup
     With no session saved, or a saved one LinkedIn turns away, it imports the
     session of the Owner's Chrome, at most once, and starts the reader again
     on it. It never asks for the inbox with no session saved: the reader would
-    open a LinkedIn login window on the Mac, every hour."""
+    open a LinkedIn login window on the Mac, every run."""
     imported = False
     while True:
         attempt = AsyncExitStack()
@@ -532,6 +535,7 @@ IMPORT_TIMEOUT = 180
 @asynccontextmanager
 async def start_reader():
     """Starts the reader over stdio, for one Sync."""
+    stay_awake()
     params = StdioServerParameters(command="uvx", args=READER_ARGS, env=READER_ENV)
     async with Client(params) as client:
         yield client
@@ -572,6 +576,39 @@ def online() -> bool:
         return False
 
 
+def awake() -> bool:
+    """Whether the Mac is fully awake, rather than in a dark wake: with the
+    lid closed, Power Nap wakes it every 15 to 20 minutes for a few seconds,
+    without its screen, and launchd starts the runs it missed then. A run
+    started there would carry on in slices of a few seconds over hours, the
+    reader's browser couldn't start without a screen, and the access token
+    could expire between checking it and using it. Only a full wake has the
+    Graphics capability. If pmset can't tell, the Mac counts as awake."""
+    try:
+        out = subprocess.run(["pmset", "-g", "systemstate"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return True
+    capabilities = re.search(r"Capabilities are:(.*)", out)
+    return capabilities is None or "Graphics" in capabilities.group(1).split()
+
+
+@functools.cache
+def stay_awake() -> None:
+    """Keeps the Mac from sleeping when idle until this run ends, so that a
+    Sync isn't cut into slices by sleep. Closing the lid still sleeps it.
+    Once a run, when the reader first starts: a run with no Sync due ends
+    in seconds."""
+    try:
+        subprocess.Popen(
+            ["caffeinate", "-i", "-w", str(os.getpid())],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as e:
+        log.info("Couldn't start caffeinate (%s): the Mac may sleep during this run.", e)
+
+
 # The Connector's tokens and registration, in the login Keychain, or in a
 # 0600 file if launchd can't reach the Keychain.
 KEYCHAIN_SERVICE = "app.nando.career-sync"
@@ -583,6 +620,9 @@ TOKEN_FILE = Path.home() / ".nando" / "career-sync.json"
 # authorization and the code exchange.
 CALLBACK_PORT = 8765
 REDIRECT_URI = f"http://127.0.0.1:{CALLBACK_PORT}/callback"
+
+# How long before the access token expires a run refreshes it, in seconds.
+EXPIRY_MARGIN = 300
 
 
 class Store:
@@ -660,10 +700,13 @@ class NandoAuth(OAuthClientProvider):
     Nando turned it away. Without the metadata it would refresh at the
     origin's /token, which Nando doesn't serve: its token endpoint is
     /oauth/token. Either way it would start over in the browser, which an
-    hourly run can't. So it reads the metadata itself before a refresh.
+    run from launchd can't. So it reads the metadata itself before a refresh. It
+    refreshes EXPIRY_MARGIN early, and once more if Nando turns a token away
+    anyway (_auth_flow), before asking for --connect.
 
-    It leans on mcp 2.3.0's internals (_initialize, _refresh_token and
-    context): test_auth.py checks them when the SDK is updated."""
+    It leans on mcp 2.3.0's internals (_initialize, _auth_flow,
+    _refresh_token and context): test_auth.py checks them when the SDK is
+    updated."""
 
     def __init__(
         self, storage: StoredTokens, *, interactive: bool, transport: httpx2.AsyncBaseTransport | None = None
@@ -687,6 +730,54 @@ class NandoAuth(OAuthClientProvider):
     async def _initialize(self) -> None:
         await super()._initialize()
         self.context.token_expiry_time = self._storage.expires_at()
+        self._expire_early()
+
+    async def _handle_token_response(self, response: httpx2.Response) -> None:
+        await super()._handle_token_response(response)
+        self._expire_early()
+
+    async def _handle_refresh_response(self, response: httpx2.Response) -> bool:
+        refreshed = await super()._handle_refresh_response(response)
+        self._expire_early()
+        return refreshed
+
+    def _expire_early(self) -> None:
+        """Takes the access token as expired EXPIRY_MARGIN early, however it
+        was got: loaded, exchanged or refreshed. Saved tokens keep the real
+        expiry."""
+        if self.context.token_expiry_time:
+            self.context.token_expiry_time -= EXPIRY_MARGIN
+
+    async def _auth_flow(self, request: httpx2.Request) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
+        """The SDK's flow, except that when Nando turns away an access token
+        the script took for valid, it refreshes the token and tries once
+        more before asking for --connect. The SDK would go straight to the
+        browser. A token expires unseen when the Mac sleeps between checking
+        it and sending it, or when the Mac's clock and Nando's disagree."""
+        retried = False
+        flow = super()._auth_flow(request)
+        try:
+            outgoing = await flow.__anext__()
+            while True:
+                response = yield outgoing
+                if not retried and outgoing is request and response.status_code == 401 and self.context.can_refresh_token():
+                    retried = True
+                    await flow.aclose()
+                    log.info("Nando turned the access token away: refreshing it.")
+                    # In the past, not 0: the SDK takes no expiry time as never expiring.
+                    self.context.token_expiry_time = clock.time() - 1
+                    # The SDK adds a header only for a token it holds as valid,
+                    # and never removes one: if the refresh fails, the request
+                    # goes without the token Nando just turned away.
+                    request.headers.pop("Authorization", None)
+                    flow = super()._auth_flow(request)
+                    outgoing = await flow.__anext__()
+                    continue
+                outgoing = await flow.asend(response)
+        except StopAsyncIteration:
+            return
+        finally:
+            await flow.aclose()
 
     async def _refresh_token(self) -> httpx2.Request:
         if self.context.oauth_metadata is None:
@@ -703,10 +794,10 @@ class NandoAuth(OAuthClientProvider):
                 response = await http.send(create_oauth_metadata_request(url))
                 _, metadata = await handle_auth_metadata_response(response)
         except httpx2.HTTPError as e:
-            raise NandoUnavailable(f"Couldn't read Nando's OAuth metadata ({e}): the next hour tries again.") from e
+            raise NandoUnavailable(f"Couldn't read Nando's OAuth metadata ({e}): the next run tries again.") from e
         if metadata is None or not issuers_match(str(metadata.issuer), issuer):
             raise NandoUnavailable(
-                f"Couldn't read Nando's OAuth metadata ({response.status_code} at {url}): the next hour tries again."
+                f"Couldn't read Nando's OAuth metadata ({response.status_code} at {url}): the next run tries again."
             )
         return metadata
 
@@ -717,7 +808,7 @@ class NotConnected(Exception):
 
 class NandoUnavailable(Exception):
     """Nando couldn't be asked how to refresh the access token. The tokens
-    are kept, and the next hour tries again."""
+    are kept, and the next run tries again."""
 
 
 async def needs_connect(url: str) -> None:
@@ -798,20 +889,36 @@ def main() -> int:
     if args.connect:
         asyncio.run(connect())
         return 0
+    if not awake():
+        log.info("The Mac is in a dark wake: the next run tries again.")
+        return 0
     if not online():
-        log.info("No network: the next hour tries again.")
+        log.info("No network: the next run tries again.")
         return 0
     try:
         asyncio.run(hourly())
     except Exception as e:
-        errors = list(leaves(e))
-        if all(isinstance(error, (NotConnected, NandoUnavailable)) for error in errors):
-            for message in dict.fromkeys(str(error) for error in errors):
+        messages = [why_nando_ended(error) for error in leaves(e)]
+        if all(messages):
+            for message in dict.fromkeys(messages):
                 log.error("%s", message)
         else:
             log.exception("The run failed.")
         return 1
     return 0
+
+
+def why_nando_ended(error: BaseException) -> str | None:
+    """One line for an error that only means Nando couldn't be used this
+    run, or None for any other, which is logged with its traceback."""
+    if isinstance(error, (NotConnected, NandoUnavailable)):
+        return str(error)
+    # Such as a connection reset just after a wake, before the network is
+    # back. Not a timeout reading an answer, a bad URL or a proxy: those
+    # won't pass by themselves, so they keep their traceback.
+    if isinstance(error, (httpx2.NetworkError, httpx2.RemoteProtocolError, httpx2.ConnectTimeout)):
+        return f"Lost the connection to Nando ({type(error).__name__}): the next run tries again."
+    return None
 
 
 def leaves(e: BaseException):

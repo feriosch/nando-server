@@ -400,7 +400,7 @@ Form-encoded (`application/x-www-form-urlencoded`). Every answer has `Cache-Cont
 { "access_token": "…", "token_type": "Bearer", "expires_in": 3600, "refresh_token": "…" }
 ```
 
-- `400` `invalid_grant`: the code or refresh token is unknown, used, expired, another client's, or its Connector was removed. A code exchanged again, or a refresh token used again after it was replaced, removes its Connector and every token it got, since it may have been stolen; the Owner then approves the app again.
+- `400` `invalid_grant`: the code or refresh token is unknown, used, expired, another client's, or its Connector was removed. A code exchanged again, or a refresh token used again after it was replaced, removes its Connector and every token it got, since it may have been stolen; the Owner then approves the app again. One exception: the refresh token replaced last, sent again by its own client while the tokens that replaced it were never used, gets new tokens once more, since the answer to its refresh was likely lost (a Mac that slept, a dropped connection). The tokens never used are retired, so using them later removes the Connector.
 - `400` `invalid_request`: no `grant_type`, or the body isn't a form.
 - `400` `unsupported_grant_type`: any other `grant_type`.
 

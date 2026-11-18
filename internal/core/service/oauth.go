@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -445,11 +446,20 @@ func (s *OAuthService) refreshTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 // refuseRefreshToken answers a refresh token that isn't any Connector's
-// current one. If it is a retired one, its Connector is removed.
+// current one. If it is a retired one, its Connector is removed, unless the
+// answer to its refresh was lost (lostRefreshAnswer): then the Connector
+// gets new tokens once more.
 func (s *OAuthService) refuseRefreshToken(w http.ResponseWriter, r *http.Request, hash []byte) {
 	connector, err := s.connectors.FindByRetiredRefreshToken(r.Context(), hash)
 	if errors.Is(err, utils.ErrNotFound) {
 		oauthError(w, http.StatusBadRequest, "invalid_grant", "the refresh token is unknown")
+		return
+	}
+	if err == nil && r.PostForm.Get("client_id") == connector.ClientID && lostRefreshAnswer(connector, hash, s.now()) {
+		log.Printf("Connector %s (%s) refreshed again: the answer to its last refresh was never used", connector.ID, connector.Name)
+		s.issueTokens(w, s.now(), func(tokens model.ConnectorTokens) error {
+			return s.connectors.Rotate(r.Context(), connector.ID, connector.Tokens.RefreshTokenHash, tokens)
+		})
 		return
 	}
 	if err == nil {
@@ -460,6 +470,22 @@ func (s *OAuthService) refuseRefreshToken(w http.ResponseWriter, r *http.Request
 		return
 	}
 	oauthError(w, http.StatusBadRequest, "invalid_grant", "the refresh token was already used, so the Connector is removed; connect the app again")
+}
+
+// lostRefreshAnswer reports whether hash, a retired refresh token of
+// connector, is sent again because the answer to its refresh never arrived,
+// as when a Mac sleeps or its connection drops mid-request: it is the token
+// retired last, and the tokens that replaced it, still current and
+// unexpired at now, were never used. A thief who refreshed first and never
+// used the tokens can't be told apart, but the tokens it got are retired
+// here, so using them later removes the Connector.
+func lostRefreshAnswer(connector model.Connector, hash []byte, now time.Time) bool {
+	retired := connector.RetiredRefreshTokenHashes
+	if len(retired) == 0 || !bytes.Equal(retired[len(retired)-1], hash) || !connector.Tokens.RefreshExpiresAt.After(now) {
+		return false
+	}
+	issuedAt := connector.Tokens.AccessExpiresAt.Add(-accessTokenLifetime)
+	return connector.LastUsedAt == nil || connector.LastUsedAt.Before(issuedAt)
 }
 
 // removeReusedConnector removes connector, whose refresh token was used twice.

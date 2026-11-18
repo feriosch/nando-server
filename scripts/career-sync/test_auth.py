@@ -2,6 +2,7 @@
 run as a new process, with only the tokens and registration saved."""
 
 import json
+import logging
 from urllib.parse import parse_qs, urlparse
 
 import httpx2
@@ -47,6 +48,10 @@ class FakeAuthServer:
         self.valid_access: set[str] = set()
         self.metadata_status = 200
         self.tokens_issued = 0
+        # False once the Connector is removed in Settings: refreshes fail.
+        self.refresh_ok = True
+        # The Authorization header of each /mcp request, or None.
+        self.bearers: list[str | None] = []
 
     def grants(self) -> list[str]:
         return [form for method, form in self.requests if method == "grant"]
@@ -78,6 +83,8 @@ class FakeAuthServer:
         if path == "/oauth/token" and request.method == "POST":
             grant = parse_qs(request.content.decode())["grant_type"][0]
             self.requests.append(("grant", grant))
+            if grant == "refresh_token" and not self.refresh_ok:
+                return httpx2.Response(400, json={"error": "invalid_grant", "error_description": "the Connector has been removed"})
             self.tokens_issued += 1
             n = self.tokens_issued
             self.valid_access.add(f"access-{n}")
@@ -86,6 +93,7 @@ class FakeAuthServer:
                 json={"access_token": f"access-{n}", "token_type": "Bearer", "expires_in": 3600, "refresh_token": f"refresh-{n}"},
             )
         if path == "/mcp":
+            self.bearers.append(request.headers.get("Authorization"))
             if request.headers.get("Authorization", "").removeprefix("Bearer ") in self.valid_access:
                 return httpx2.Response(200, json={})
             return httpx2.Response(
@@ -119,9 +127,9 @@ async def hourly_request(store: sync.Store, server: FakeAuthServer) -> httpx2.Re
         return await http.post(f"{ORIGIN}/mcp")
 
 
-def expire_access_token(store: MemoryStore) -> None:
+def expire_access_token(store: MemoryStore, at: float | None = None) -> None:
     state = store.state()
-    state["expiresAt"] = sync.clock.time() - 1
+    state["expiresAt"] = sync.clock.time() - 1 if at is None else at
     store.text = json.dumps(state)
 
 
@@ -187,27 +195,90 @@ async def test_metadata_nando_cant_serve_ends_the_run_and_keeps_the_tokens():
     assert store.text == saved
 
 
-async def test_a_run_nando_turns_away_asks_for_connect_again():
+async def test_a_token_about_to_expire_is_refreshed_before_it_is_used():
+    store, server = MemoryStore(), FakeAuthServer()
+    await connect(store, server)
+    expire_access_token(store, at=sync.clock.time() + 60)
+    server.requests.clear()
+
+    response = await hourly_request(store, server)
+
+    assert response.status_code == 200
+    assert server.grants() == ["refresh_token"]
+
+
+async def test_a_token_nando_turns_away_though_it_looked_valid_is_refreshed_and_sent_again():
+    """As when the Mac sleeps between checking the token and sending it."""
     store, server = MemoryStore(), FakeAuthServer()
     await connect(store, server)
     server.valid_access.clear()
+    server.requests.clear()
+
+    response = await hourly_request(store, server)
+
+    assert response.status_code == 200
+    assert server.requests == [
+        ("POST", "/mcp"),
+        ("GET", METADATA),
+        ("POST", "/oauth/token"),
+        ("grant", "refresh_token"),
+        ("POST", "/mcp"),
+    ]
+    assert store.state()["tokens"]["access_token"] == "access-2"
+
+
+async def test_a_token_refreshed_during_a_run_is_also_taken_as_expired_early():
+    """As in a Sync longer than the access token lasts."""
+    store, server = MemoryStore(), FakeAuthServer()
+    await connect(store, server)
+    expire_access_token(store)
+    auth = sync.NandoAuth(sync.StoredTokens(store), interactive=False, transport=httpx2.MockTransport(server))
+
+    async with httpx2.AsyncClient(auth=auth, transport=httpx2.MockTransport(server)) as http:
+        assert (await http.post(f"{ORIGIN}/mcp")).status_code == 200
+
+    assert server.grants() == ["authorization_code", "refresh_token"]
+    expected = store.state()["expiresAt"] - sync.EXPIRY_MARGIN
+    assert auth.context.token_expiry_time == pytest.approx(expected, abs=1)
+
+
+async def test_a_run_nando_turns_away_asks_for_connect_again():
+    """As when the Connector was removed in Settings: the refresh fails too."""
+    store, server = MemoryStore(), FakeAuthServer()
+    await connect(store, server)
+    server.valid_access.clear()
+    server.refresh_ok = False
+
+    server.bearers.clear()
 
     with pytest.raises(sync.NotConnected):
         await hourly_request(store, server)
 
+    assert server.grants().count("refresh_token") == 1
+    # Sent again without the token Nando turned away, not with it.
+    assert server.bearers == ["Bearer access-1", None]
+
 
 CONNECT = "Nando wants the Connector approved: run sync.py --connect"
-UNAVAILABLE = "Couldn't read Nando's OAuth metadata (503 at …): the next hour tries again."
+UNAVAILABLE = "Couldn't read Nando's OAuth metadata (503 at …): the next run tries again."
+LOST = "Lost the connection to Nando (ReadError): the next run tries again."
 
 
-def run_main(monkeypatch, error: BaseException) -> int:
+def run_main(monkeypatch, error: BaseException | None = None, *, awake: bool = True) -> tuple[int, bool]:
+    """main, with hourly raising error. Answers its exit code and whether
+    hourly ran."""
+    ran = []
+
     async def hourly() -> None:
-        raise error
+        ran.append(True)
+        if error:
+            raise error
 
+    monkeypatch.setattr(sync, "awake", lambda: awake)
     monkeypatch.setattr(sync, "online", lambda: True)
     monkeypatch.setattr(sync, "hourly", hourly)
     monkeypatch.setattr(sync.sys, "argv", ["sync.py"])
-    return sync.main()
+    return sync.main(), bool(ran)
 
 
 @pytest.mark.parametrize(
@@ -217,20 +288,82 @@ def run_main(monkeypatch, error: BaseException) -> int:
         # As it reaches main: the MCP client's task groups wrap it.
         (ExceptionGroup("unhandled errors in a TaskGroup", [ExceptionGroup("inner", [sync.NotConnected(CONNECT)])]), CONNECT),
         (ExceptionGroup("unhandled errors in a TaskGroup", [sync.NandoUnavailable(UNAVAILABLE)]), UNAVAILABLE),
+        # A connection reset just after a wake.
+        (ExceptionGroup("unhandled errors in a TaskGroup", [httpx2.ReadError("")]), LOST),
+        (httpx2.RemoteProtocolError(""), "Lost the connection to Nando (RemoteProtocolError): the next run tries again."),
     ],
 )
 def test_a_run_ended_by_nando_logs_one_line_saying_why(monkeypatch, caplog, error, message):
-    assert run_main(monkeypatch, error) == 1
+    assert run_main(monkeypatch, error) == (1, True)
 
     errors = [r for r in caplog.records if r.levelname == "ERROR"]
     assert [(r.getMessage(), r.exc_info) for r in errors] == [(message, None)]
 
 
+@pytest.mark.parametrize(
+    "error",
+    # Faults that won't pass by themselves: a slow answer, a bad URL.
+    [httpx2.ReadTimeout(""), httpx2.UnsupportedProtocol("")],
+)
+def test_a_lasting_fault_reaching_nando_is_logged_with_its_traceback(monkeypatch, caplog, error):
+    assert run_main(monkeypatch, error) == (1, True)
+
+    errors = [r for r in caplog.records if r.levelname == "ERROR"]
+    assert [(r.getMessage(), r.exc_info is not None) for r in errors] == [("The run failed.", True)]
+
+
 def test_any_other_error_beside_it_is_logged_with_its_traceback(monkeypatch, caplog):
     error = ExceptionGroup("unhandled errors in a TaskGroup", [sync.NotConnected(CONNECT), RuntimeError("the reader crashed")])
 
-    assert run_main(monkeypatch, error) == 1
+    assert run_main(monkeypatch, error) == (1, True)
 
     errors = [r for r in caplog.records if r.levelname == "ERROR"]
     assert [r.getMessage() for r in errors] == ["The run failed."]
     assert "the reader crashed" in caplog.text
+
+
+def test_a_run_in_a_dark_wake_does_nothing(monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
+
+    assert run_main(monkeypatch, awake=False) == (0, False)
+
+    assert "dark wake" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "out, awake",
+    [
+        ("Current System Capabilities are: CPU Graphics Audio Network \nCurrent Power State: 4\n", True),
+        ("Current System Capabilities are: CPU Network \nCurrent Power State: 4\n", False),
+        ("", True),
+    ],
+)
+def test_only_a_wake_with_graphics_is_a_full_wake(monkeypatch, out, awake):
+    monkeypatch.setattr(sync.subprocess, "run", lambda *a, **k: sync.subprocess.CompletedProcess(a, 0, stdout=out))
+
+    assert sync.awake() is awake
+
+
+def test_without_pmset_the_mac_counts_as_awake(monkeypatch):
+    def run(*a, **k):
+        raise FileNotFoundError("pmset")
+
+    monkeypatch.setattr(sync.subprocess, "run", run)
+
+    assert sync.awake() is True
+
+
+def test_the_mac_is_kept_awake_once_a_run_quietly(monkeypatch):
+    started = []
+    monkeypatch.setattr(sync.subprocess, "Popen", lambda args, **kwargs: started.append((args, kwargs)))
+    sync.stay_awake.cache_clear()
+    try:
+        sync.stay_awake()
+        sync.stay_awake()
+    finally:
+        sync.stay_awake.cache_clear()
+
+    assert len(started) == 1
+    args, kwargs = started[0]
+    assert args[:3] == ["caffeinate", "-i", "-w"]
+    assert kwargs["stdout"] == kwargs["stderr"] == sync.subprocess.DEVNULL

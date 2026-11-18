@@ -773,12 +773,61 @@ func TestReusingARotatedRefreshTokenRemovesTheConnector(t *testing.T) {
 	n := newNando(t)
 	client, first := connectorWithTokens(t, n)
 	second := n.mustRefresh(client, first.RefreshToken)
+	n.clock.Advance(time.Minute)
+	if rec := n.mcpWithToken(second.AccessToken); rec.Code != http.StatusOK {
+		t.Fatalf("tools/list with the new access token: status = %d, want %d", rec.Code, http.StatusOK)
+	}
 
 	refusedAsInvalidGrant(t, "refresh with the rotated token", n.token(refresh(client, first.RefreshToken)))
 
 	if rec := n.mcpWithToken(second.AccessToken); rec.Code != http.StatusUnauthorized {
 		t.Errorf("tools/list once the Connector is removed: status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+	refusedAsInvalidGrant(t, "refresh once the Connector is removed", n.token(refresh(client, second.RefreshToken)))
+}
+
+// A refresh whose answer was lost, as when the Mac running the Career Sync
+// sleeps mid-request, is sent again with the token it replaced.
+func TestARefreshWhoseAnswerWasLostIsAnsweredAgain(t *testing.T) {
+	n := newNando(t)
+	client, first := connectorWithTokens(t, n)
+	lost := n.mustRefresh(client, first.RefreshToken)
+	n.clock.Advance(time.Hour)
+
+	third := n.mustRefresh(client, first.RefreshToken)
+
+	if rec := n.mcpWithToken(third.AccessToken); rec.Code != http.StatusOK {
+		t.Errorf("tools/list with the tokens sent again: status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if rec := n.mcpWithToken(lost.AccessToken); rec.Code != http.StatusUnauthorized {
+		t.Errorf("tools/list with the lost access token: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	// The lost tokens are retired: whoever uses them now removes the Connector.
+	refusedAsInvalidGrant(t, "refresh with the lost token", n.token(refresh(client, lost.RefreshToken)))
+	if rec := n.mcpWithToken(third.AccessToken); rec.Code != http.StatusUnauthorized {
+		t.Errorf("tools/list once the Connector is removed: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestOnlyTheRefreshTokenRetiredLastIsAnsweredAgain(t *testing.T) {
+	n := newNando(t)
+	client, first := connectorWithTokens(t, n)
+	second := n.mustRefresh(client, first.RefreshToken)
+	third := n.mustRefresh(client, second.RefreshToken)
+
+	refusedAsInvalidGrant(t, "refresh with a token retired before the last", n.token(refresh(client, first.RefreshToken)))
+
+	refusedAsInvalidGrant(t, "refresh once the Connector is removed", n.token(refresh(client, third.RefreshToken)))
+}
+
+func TestALostRefreshSentAgainByAnotherClientRemovesTheConnector(t *testing.T) {
+	n := newNando(t)
+	client, first := connectorWithTokens(t, n)
+	second := n.mustRefresh(client, first.RefreshToken)
+	other := n.mustRegister(clientJSON{ClientName: "Other", RedirectURIs: []string{"https://other.example.org/callback"}})
+
+	refusedAsInvalidGrant(t, "refresh with the retired token as another client", n.token(refresh(other, first.RefreshToken)))
+
 	refusedAsInvalidGrant(t, "refresh once the Connector is removed", n.token(refresh(client, second.RefreshToken)))
 }
 

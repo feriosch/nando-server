@@ -28,4 +28,4 @@ plutil -lint "$agent" >/dev/null
 # bootout first, so running it again picks up a changed plist.
 launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
 launchctl bootstrap "gui/$(id -u)" "$agent"
-echo "Installed $label. It runs now, then every hour. Log: $log"
+echo "Installed $label. It runs now, then every 15 minutes. Log: $log"
