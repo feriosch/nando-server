@@ -70,6 +70,7 @@ func newNando(t *testing.T) *nando {
 		t.Fatalf("NewCaloriesModule: %v", err)
 	}
 	c.AddNotificationProvider(cal.NotificationProvider())
+	c.AddToolProvider(cal.ToolProvider())
 	return &nando{
 		t:    t,
 		core: c,
@@ -86,6 +87,8 @@ func newNando(t *testing.T) *nando {
 type browser struct {
 	nando   *nando
 	session *http.Cookie
+	// passkey is the Owner's Passkey on this iPhone, to approve a Connector.
+	passkey *testpasskey.Passkey
 }
 
 // signedInBrowser returns Nando with a browser on the Owner's iPhone that has
@@ -99,6 +102,7 @@ func signedInBrowser(t *testing.T, now time.Time) (*nando, *browser) {
 		t.Fatalf("IssueEnrollmentCode: %v", err)
 	}
 	passkey := testpasskey.New()
+	phone.passkey = passkey
 	rec := phone.must(http.MethodPost, "/auth/register/begin", map[string]string{"code": code}, http.StatusOK)
 	phone.must(http.MethodPost, "/auth/register/finish", json.RawMessage(passkey.Create(t, webOrigin, rec.Body.Bytes())), http.StatusNoContent)
 	n.clock.Set(now)

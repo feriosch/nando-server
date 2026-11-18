@@ -113,7 +113,7 @@ func loadConfig() (config, error) {
 
 // assistants is every Assistant's name: the Core Assistant's and each
 // Module's.
-var assistants = []string{"core", "japanese", "career"}
+var assistants = []string{"core", "japanese", "career", "calories"}
 
 // loadMessenger reads the Messenger's settings into m.
 func loadMessenger(m *core.MessengerConfig) error {
@@ -244,7 +244,9 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	nandoCore.AddToolProvider(caloriesModule.ToolProvider())
 	nandoCore.AddNotificationProvider(caloriesModule.NotificationProvider())
+	nandoCore.AddAssistant(caloriesModule.Assistant())
 	japaneseModule, err := japanese.NewJapaneseModule(connectCtx, dbs.Japanese, nandoCore.Service(), japanese.Config{
 		WordRequestsTriggerURL:   cfg.wordRequestsTriggerURL,
 		WordRequestsTriggerToken: cfg.wordRequestsTriggerToken,

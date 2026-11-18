@@ -26,7 +26,7 @@ type mealJSON struct {
 	Archived bool     `json:"archived"`
 }
 
-func ptr(s string) *string { return &s }
+func ptr[T any](v T) *T { return &v }
 
 // createMeal saves meal and returns its ID.
 func (d *browser) createMeal(meal mealJSON) string {

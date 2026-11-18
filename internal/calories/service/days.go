@@ -60,15 +60,23 @@ func (s *DaysService) dayView(ctx context.Context, day coremodel.Day) (model.Day
 // dayCalories returns day's Consumed Calories against the Daily Limit it had,
 // and the Entries they come from.
 func (s *DaysService) dayCalories(ctx context.Context, day coremodel.Day) (model.DayCalories, []model.Entry, error) {
-	entries, err := s.entries.ListOnDay(ctx, day)
+	return dayCalories(ctx, s.entries, s.dailyLimits, day)
+}
+
+// dayCalories returns day's Consumed Calories, read from entries, against
+// the Daily Limit it had, read from dailyLimits, and the Entries they come
+// from.
+func dayCalories(ctx context.Context, entries model.EntriesRepository, dailyLimits model.DailyLimitsRepository,
+	day coremodel.Day) (model.DayCalories, []model.Entry, error) {
+	list, err := entries.ListOnDay(ctx, day)
 	if err != nil {
 		return model.DayCalories{}, nil, err
 	}
-	limits, err := s.dailyLimits.List(ctx)
+	limits, err := dailyLimits.List(ctx)
 	if err != nil {
 		return model.DayCalories{}, nil, err
 	}
-	return limits.Calories(day, model.ConsumedCalories(entries)), entries, nil
+	return limits.Calories(day, model.ConsumedCalories(list)), list, nil
 }
 
 // getDay answers the Day view: the Day's Entries, its Consumed Calories, its

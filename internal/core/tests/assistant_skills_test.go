@@ -63,7 +63,9 @@ func TestTheTalkSkillUsesTheMessengersTools(t *testing.T) {
 }
 
 // assistants are the Assistants with a skill, and how the skills call each.
-var assistants = map[string]string{"core": "Core Assistant", "career": "Career Assistant", "japanese": "Japanese Assistant"}
+var assistants = map[string]string{
+	"core": "Core Assistant", "career": "Career Assistant", "japanese": "Japanese Assistant", "calories": "Calories Assistant",
+}
 
 func TestEachAssistantsSkillPointsToTheOthers(t *testing.T) {
 	for folder := range assistants {

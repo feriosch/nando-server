@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
-// MealsService handles requests about Meals. It reads Entries too, for the
+// MealsService handles requests and Tools about Meals. It reads Entries too, for the
 // quick list's counts.
 type MealsService struct {
 	meals   model.MealsRepository
@@ -69,11 +70,15 @@ func (s *MealsService) listMeals(w http.ResponseWriter, r *http.Request) {
 
 // writeMeals answers 200 with meals as the API lists them.
 func writeMeals(w http.ResponseWriter, meals []model.Meal) {
+	coreutils.WriteJSON(w, http.StatusOK, toMealJSONs(meals))
+}
+
+func toMealJSONs(meals []model.Meal) []model.MealJSON {
 	list := make([]model.MealJSON, len(meals))
 	for i, m := range meals {
 		list[i] = toMealJSON(m)
 	}
-	coreutils.WriteJSON(w, http.StatusOK, list)
+	return list
 }
 
 // readMeal reads and checks the Meal in r's body. On a bad body it answers
@@ -194,20 +199,27 @@ const quickListDays = 30
 // quickMeals lists the Meals in use for one-tap logging: pinned ones first,
 // then the most-logged in the last 30 Days, then by name.
 func (s *MealsService) quickMeals(w http.ResponseWriter, r *http.Request) {
-	today, err := s.core.Today(r.Context())
+	meals, err := s.quick(r.Context())
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	meals, err := s.meals.List(r.Context(), false)
+	writeMeals(w, meals)
+}
+
+// quick returns the Meals in use in the quick list's order.
+func (s *MealsService) quick(ctx context.Context) ([]model.Meal, error) {
+	today, err := s.core.Today(ctx)
 	if err != nil {
-		coreutils.ServerError(w, err)
-		return
+		return nil, err
 	}
-	counts, err := s.entries.CountByMeal(r.Context(), today.AddDays(1-quickListDays), today)
+	meals, err := s.meals.List(ctx, false)
 	if err != nil {
-		coreutils.ServerError(w, err)
-		return
+		return nil, err
+	}
+	counts, err := s.entries.CountByMeal(ctx, today.AddDays(1-quickListDays), today)
+	if err != nil {
+		return nil, err
 	}
 	// meals are by name, which a stable sort keeps among equals.
 	slices.SortStableFunc(meals, func(a, b model.Meal) int {
@@ -219,5 +231,5 @@ func (s *MealsService) quickMeals(w http.ResponseWriter, r *http.Request) {
 		}
 		return counts[b.ID] - counts[a.ID]
 	})
-	writeMeals(w, meals)
+	return meals, nil
 }
