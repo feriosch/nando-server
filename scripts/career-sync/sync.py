@@ -100,16 +100,29 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause, import_
         since = datetime.combine(date.fromisoformat(status["since"]), time(), now.tzinfo)
         updates = []
         problem = None
+        # Whether it stopped before reading every thread it had to.
+        stopped_early = False
         opened = 0
         # Set once a thread Nando holds has nothing new. The inbox is in order
-        # of activity, so the held threads after it have nothing new either.
+        # of activity, so the held threads after it have nothing new either,
+        # as long as the last Sync read them all up to date. One that stopped
+        # early may have taken a newer message from a thread above one it
+        # never reached: then the held threads after it are opened too.
         caught_up = False
-        names = inbox_names(inbox)
-        for thread_id, name in names.items():
+        read_through = status.get("readThrough", True)
+        names = list(inbox_names(inbox).items())
+        for i, (thread_id, name) in enumerate(names):
             thread = held.get(thread_id)
-            if thread and (thread["ignored"] or caught_up):
+            if thread and (thread["ignored"] or (caught_up and read_through)):
                 continue
             if opened == MAX_OPENED:
+                # Early only before a held thread with nothing new, and with a
+                # held thread left. Threads Nando doesn't hold are the backlog,
+                # which every Sync opens. After a held thread with nothing new,
+                # the held threads left are ones a Sync that didn't read
+                # through opens too, from the top: another such Sync would
+                # open the same 30 again, and again every Sync after.
+                stopped_early = not caught_up and any(t in held and not held[t]["ignored"] for t, _ in names[i:])
                 break
             if opened:
                 await pause()
@@ -160,6 +173,14 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause, import_
                     "messages": new,
                 }
             )
+        # A problem ends a Sync early too. Nando learns of it from the problem,
+        # sent after the batches, but the batches say so as well, should it
+        # never arrive.
+        stopped_early = stopped_early or problem is not None
+        # What the Sync's first record adds: on the first batch, which starts
+        # the Sync, or the record with no threads, so that the next Sync reads
+        # the held threads this one didn't reach.
+        starts = {"stoppedEarly": True} if stopped_early else {}
         sync_id = None
         for start in range(0, len(updates), BATCH):
             batch: dict[str, Any] = {"threads": updates[start : start + BATCH]}
@@ -167,6 +188,8 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause, import_
             # so that Nando counts them as one Sync.
             if sync_id:
                 batch["sync"] = sync_id
+            else:
+                batch.update(starts)
             recorded = await call(nando, "career_record_sync", batch)
             sync_id = recorded["sync"]
             log.info("Sent %d threads; Nando stored %d new messages.", len(updates[start : start + BATCH]), recorded["stored"])
@@ -176,7 +199,7 @@ async def run_sync(nando: Client, start_reader, *, now: datetime, pause, import_
             await call(nando, "career_record_sync", {"threads": [], "problem": problem})
         elif not updates:
             # A Sync that found nothing still counts.
-            await call(nando, "career_record_sync", {"threads": []})
+            await call(nando, "career_record_sync", {"threads": [], **starts})
 
 
 LINKEDIN = "https://www.linkedin.com"
