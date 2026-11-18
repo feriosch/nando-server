@@ -167,6 +167,10 @@ type ConversationsRepository interface {
 	// changed since it was read as reply or the Owner has since marked it
 	// replied. It reports whether it did.
 	MakeReplyLate(ctx context.Context, id bson.ObjectID, reply SuggestedReply) (bool, error)
+	// DropReply removes the Conversation's Suggested Reply, unless it
+	// changed since it was read as reply or the Owner has since marked it
+	// replied. It reports whether it did.
+	DropReply(ctx context.Context, id bson.ObjectID, reply SuggestedReply) (bool, error)
 	// MarkReplied marks the Conversation's Suggested Reply replied at at,
 	// unless it is already marked or it changed since it was read as reply.
 	MarkReplied(ctx context.Context, id bson.ObjectID, reply SuggestedReply, at time.Time) error

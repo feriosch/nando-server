@@ -167,3 +167,61 @@ func TestAnIntroducedOpportunityGetsNoFollowUp(t *testing.T) {
 		t.Errorf("the run claimed %+v; want nothing: only an Opportunity in process or at an offer is followed up", items)
 	}
 }
+
+func TestAFollowUpNobodySentIn30DaysIsDroppedNotTurnedLate(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	// The Owner wrote to Sato first, and Sato never answered.
+	wrote := at(-1, 20, 0)
+	conversations, recruiters := fileThreads(t, phone,
+		thread("sato", message("s1", "owner", wrote, "Hello Sato-san, I saw your post about the platform team.")),
+	)
+	id := conversations["2-sato"]
+	run := phone.connect()
+	o := callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{
+		"company": map[string]any{"name": "Kumo Pay"}, "role": "Platform Engineer", "recruiterId": recruiters["sato"],
+	})
+	callTool[fullOpportunityJSON](t, run, "career_save_opportunity", map[string]any{"id": o.ID, "stage": "in_process"})
+
+	n.tickAt(wrote.Add(14 * day))
+	if items := phone.claimWorkAt(wrote.Add(14*day + time.Minute)); len(items) != 1 || items[0].Kind != "follow_up" {
+		t.Fatalf("14 days after the Owner's message, the run claimed %+v; want one follow_up item", items)
+	}
+	suggestReply(t, phone, id, "follow_up", "Hello Sato-san,\nI wanted to follow up on my message.", wrote)
+
+	n.tickAt(wrote.Add(30 * day))
+	if got := callTool[conversationJSON](t, phone.connect(), "career_get_conversation", map[string]any{"id": id}); got.SuggestedReply == nil || got.SuggestedReply.Kind != "follow_up" {
+		t.Fatalf("30 days after the Owner's message, the Suggested Reply is %+v; want it still a follow-up", got.SuggestedReply)
+	}
+
+	n.tickAt(wrote.Add(30*day + time.Minute))
+	run = phone.connect()
+	if got := callTool[conversationJSON](t, run, "career_get_conversation", map[string]any{"id": id}); got.SuggestedReply != nil {
+		t.Errorf("over 30 days after the Owner's message, the Suggested Reply is %+v; want none: a follow-up never turns late", got.SuggestedReply)
+	}
+	if items := callTool[workJSON](t, run, "career_list_work", nil).Items; len(items) != 0 {
+		t.Errorf("the run claimed %+v; want nothing: no late_reply, and no second follow-up for the same message", items)
+	}
+	if screen := get[careerScreenJSON](phone, "/api/career"); len(screen.Waiting) != 0 || screen.LateReplies != 0 {
+		t.Errorf("Sato is waiting as %+v, with %d Late Replies; want Sato neither waiting nor late", screen.Waiting, screen.LateReplies)
+	}
+}
+
+func TestNoFollowUpIsQueuedForAnOwnersMessageOver30DaysOld(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	run, filed := fileTanakasConversation(t, phone)
+	o := newOpportunity(t, run, filed.Recruiter)
+	callTool[recordedJSON](t, phone.macAt(at(2, 8, 0)), "career_record_sync", map[string]any{"threads": []any{
+		tanakaThread(message("m2", "owner", ownersMessage, "Thank you, I'd be glad to talk with them.")),
+	}})
+	// Over 30 days later, the Owner moves the Opportunity on through the
+	// Tools, which keeps it open.
+	moved := ownersMessage.Add(30*day + time.Minute)
+	n.clock.Set(moved)
+	callTool[fullOpportunityJSON](t, phone.connect(), "career_save_opportunity", map[string]any{"id": o.ID, "stage": "in_process"})
+
+	n.tickAt(moved.Add(time.Minute))
+
+	if items := phone.claimWorkAt(moved.Add(2 * time.Minute)); len(items) != 0 {
+		t.Errorf("the run claimed %+v; want nothing: a follow-up to a message over 30 days old would be dropped at the next tick", items)
+	}
+}
