@@ -177,8 +177,8 @@ Logs the Weigh-in for `week`, replacing any it already has.
 ## Notifications
 
 Core sends every Notification, for a Module or for itself, in the Messenger whenever some Assistant has a bot ([#128](https://github.com/feriosch/nando-server/issues/128), ADR 0008):
-- It goes to the chat of the Assistant its ID's area names, such as the Career Assistant's for `career:…`, or the Core Assistant's when that Assistant has no bot (Calories, for now).
-- It is sent as plain text: the title, a line break and the body.
+- It goes to the chat of the Assistant its ID's area names, such as the Career Assistant's for `career:…`. When that Assistant has no bot (Calories, for now), it goes to the Core Assistant's chat, or, if Core has no bot either, to any Assistant's that has one.
+- It is sent as plain text: the title, a line break and the body, leaving out either if it is empty.
 - It joins that Assistant's Talk as a message from the Assistant, so the Owner can answer it there. It wakes no run on its own.
 
 Web Push is deprecated, and is used only when no bot is configured, as in local development. Removing it is #137 here and feriosch/nando-web#88. Either way, each Notification is sent at most once, through one channel, even if the scheduler retries a tick. The test Notification is the exception: the Owner sends it on demand, always by Web Push.
@@ -275,7 +275,7 @@ At each tick Core asks every Notification provider (Core's own and every Module'
 Each tick logs, to Cloud Logging, one line saying what it sent:
 
 - `tick: sent 2 Notifications to 2 Push Subscriptions: calories:no-entries:2026-10-20 (reached 1 of 2), calories:evening-summary:2026-10-20 (reached 1 of 1)`: how many Push Subscriptions there were, and for each Notification sent, its ID and how many of those it was sent to took it. `reached 0` means it reached no device. A Push Subscription removed while sending one Notification isn't sent the next.
-- In Telegram, each Notification counts as sent to one Push Subscription: `reached 1 of 1`, or `reached 0 of 1` when Telegram refused it, which is logged as `send Notification <id> in Telegram: …`.
+- `tick: sent 1 Notification in Telegram: core:weigh-in:2026-11-16 (sent)`: while the Messenger is on, Push Subscriptions aren't read at all. A Notification Telegram refused shows `(refused)`, with the reason logged on its own line (`send Notification <id> in Telegram: …`). It isn't retried, nor sent by Web Push.
 - `tick: no Notifications due`: nothing was due, or a retried tick found it all sent already, and nothing went wrong.
 - With errors, the line counts them: `tick: no Notifications sent, 1 error`, or `tick: sent 1 Notification to 1 Push Subscription, 1 error: …`. Each error is logged on its own line, and the tick answers `500`.
 

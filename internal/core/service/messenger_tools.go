@@ -590,19 +590,29 @@ func (s *MessengerService) On() bool {
 
 // Notify sends n to the Owner in the chat of the Assistant its ID's area
 // names, such as career for "career:…", or the Core Assistant's when that
-// Assistant has no bot: the title, a line break and the body. It joins that
-// Assistant's Talk.
+// Assistant has no bot: the title, a line break and the body, leaving out
+// either if empty. It joins that Assistant's Talk.
 func (s *MessengerService) Notify(ctx context.Context, n model.Notification) error {
 	area, _, _ := strings.Cut(n.ID, ":")
-	assistant := area
-	if _, ok := s.bot(assistant); !ok {
-		assistant = model.CoreAssistant
+	assistant, token := "", ""
+	// Its area's Assistant, or the Core Assistant's, or, while bots are set
+	// up one at a time, any Assistant's with a bot: never lost.
+	for _, candidate := range append([]string{area, model.CoreAssistant}, s.on()...) {
+		if t, ok := s.bot(candidate); ok {
+			assistant, token = candidate, t
+			break
+		}
 	}
-	token, ok := s.bot(assistant)
-	if !ok {
-		return errors.New("the Core Assistant has no bot")
+	if token == "" {
+		return errors.New("no Assistant has a bot")
 	}
-	text := n.Title + "\n" + n.Body
+	var lines []string
+	for _, line := range []string{n.Title, n.Body} {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	text := strings.Join(lines, "\n")
 	var sent struct {
 		MessageID int64 `json:"message_id"`
 	}
@@ -610,8 +620,12 @@ func (s *MessengerService) Notify(ctx context.Context, n model.Notification) err
 		return err
 	}
 	// In the Talk, so the Owner's answer has it as context. It answers
-	// nothing and waits for nothing, so no run is woken.
-	return s.talks.AddMessage(ctx, assistant, model.TalkMessage{
+	// nothing and waits for nothing, so no run is woken. The Owner has it
+	// already, so failing to keep it is only logged.
+	if err := s.talks.AddMessage(ctx, assistant, model.TalkMessage{
 		From: model.FromAssistant, At: s.now(), Text: text, TelegramMessageID: sent.MessageID,
-	})
+	}); err != nil {
+		log.Printf("messenger: keep Notification %s in the %s Talk: %v", n.ID, assistant, err)
+	}
+	return nil
 }

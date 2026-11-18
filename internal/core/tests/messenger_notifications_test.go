@@ -1,10 +1,13 @@
 package tests
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/feriosch/nando-server/internal/core"
 	"github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/testpush"
+	"github.com/feriosch/nando-server/internal/testtelegram"
 )
 
 func TestANotificationIsSentByItsAssistantsBotInsteadOfWebPush(t *testing.T) {
@@ -84,5 +87,66 @@ func TestARetriedTickSendsEachNotificationInTelegramOnlyOnce(t *testing.T) {
 	}
 	if got := n.talk("core").Messages; len(got) != 1 {
 		t.Errorf("Core Talk = %+v; want the Notification once", got)
+	}
+}
+
+func TestANotificationTelegramRefusesIsLoggedNotRetriedAndNotPushed(t *testing.T) {
+	n, telegram, _ := messengerNandoWithTrigger(t)
+	phone := n.newBrowser("iPhone")
+	phone.mustEnroll()
+	push := testpush.New(t)
+	phone.subscribe(push)
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{{
+		ID: "core:weigh-in:2026-11-16", Title: "Weigh-in", Body: "Time to log this week's weight",
+	}}})
+	telegram.Fail("sendMessage")
+	logs := captureLog(t)
+
+	n.mustTick() // 204: a channel that fails doesn't fail the tick
+	n.mustTick()
+
+	if sent := telegram.CallsTo("sendMessage"); len(sent) != 1 {
+		t.Errorf("sendMessage calls = %d; want 1: claimed before sending, so lost rather than sent twice", len(sent))
+	}
+	if got := push.Received(); len(got) != 0 {
+		t.Errorf("Web Push received %+v; want nothing: no fallback that could send it twice", got)
+	}
+	if !strings.Contains(logs.String(), "tick: sent 1 Notification in Telegram: core:weigh-in:2026-11-16 (refused)\n") {
+		t.Errorf("log = %q; want the tick's line saying Telegram refused it", logs.String())
+	}
+}
+
+func TestTheTicksLogSaysNotificationsWentToTelegram(t *testing.T) {
+	n, _, _ := messengerNandoWithTrigger(t)
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{{
+		ID: "core:weigh-in:2026-11-16", Title: "Weigh-in", Body: "Time to log this week's weight",
+	}}})
+	logs := captureLog(t)
+
+	n.mustTick()
+
+	if !strings.Contains(logs.String(), "tick: sent 1 Notification in Telegram: core:weigh-in:2026-11-16 (sent)\n") {
+		t.Errorf("log = %q; want the tick's line saying it went to Telegram", logs.String())
+	}
+}
+
+func TestWithoutACoreBotANotificationGoesToAnotherAssistantsBot(t *testing.T) {
+	telegram := testtelegram.New(t)
+	n := newNandoWith(t, func(cfg *core.Config) {
+		cfg.Messenger = core.MessengerConfig{
+			TelegramURL: telegram.URL, OwnerID: ownerTelegramID, WebhookSecret: webhookSecret,
+			BotTokens: map[string]string{"career": careerBotToken}, // set up one at a time
+		}
+	})
+	n.core.AddAssistant(model.Assistant{Name: "career"})
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{{
+		ID: "core:weigh-in:2026-11-16", Title: "Weigh-in", Body: "",
+	}}})
+
+	n.mustTick()
+
+	sent := telegram.CallsTo("sendMessage")
+	if len(sent) != 1 || sent[0].Token != careerBotToken || sent[0].Params["text"] != "Weigh-in" {
+		t.Errorf("sendMessage calls = %+v; want the Career bot, the only one, sending the title alone, as the body is empty", sent)
 	}
 }
