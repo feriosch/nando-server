@@ -18,23 +18,31 @@ from mcp_types import CallToolResult, TextContent
 class FakeNando:
     """Nando's two Sync Tools, answering with what a test sets."""
 
-    def __init__(self, *, due: bool, threads: list[dict[str, Any]] | None = None) -> None:
+    def __init__(self, *, due: bool, threads: list[dict[str, Any]] | None = None, read_through: bool = True) -> None:
         self.due = due
         self.threads = threads or []
+        # read_through is whether the newest Sync read every thread it had
+        # to, rather than stopping early.
+        self.read_through = read_through
         self.recorded: list[dict[str, Any]] = []
         self.server = MCPServer("nando")
 
         @self.server.tool()
         def career_sync_status() -> dict[str, Any]:
-            return {"due": self.due, "since": "2025-01-01", "threads": self.threads}
+            return {"due": self.due, "since": "2025-01-01", "threads": self.threads, "readThrough": self.read_through}
 
         @self.server.tool()
         def career_record_sync(
-            threads: list[dict[str, Any]] | None = None, problem: dict[str, Any] | None = None, sync: str | None = None
+            threads: list[dict[str, Any]] | None = None,
+            problem: dict[str, Any] | None = None,
+            sync: str | None = None,
+            stoppedEarly: bool | None = None,
         ) -> dict[str, Any]:
             call: dict[str, Any] = {"threads": threads or []}
             if problem is not None:
                 call["problem"] = problem
+            if stoppedEarly is not None:
+                call["stoppedEarly"] = stoppedEarly
             if sync is not None:
                 call["sync"] = sync
             self.recorded.append(call)

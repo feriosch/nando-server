@@ -68,6 +68,14 @@ func (r syncs) FirstProblemAfter(ctx context.Context, kind string, after time.Ti
 	return sync, utils.NotFound(err)
 }
 
+func (r syncs) Latest(ctx context.Context) (model.Sync, error) {
+	var sync model.Sync
+	// By _id too: a problem is recorded right after the batches of the same
+	// run, possibly in the same millisecond, and its id is the newer.
+	err := r.collection.FindOne(ctx, bson.D{}, options.FindOne().SetSort(bson.D{{Key: "at", Value: -1}, {Key: "_id", Value: -1}})).Decode(&sync)
+	return sync, utils.NotFound(err)
+}
+
 func (r syncs) FirstRead(ctx context.Context) (model.Sync, error) {
 	var sync model.Sync
 	err := r.collection.FindOne(ctx, bson.D{read}, options.FindOne().SetSort(bson.D{{Key: "at", Value: 1}})).Decode(&sync)

@@ -29,6 +29,8 @@ type syncStatusJSON struct {
 	Due     bool         `json:"due"`
 	Since   string       `json:"since"`
 	Threads []threadJSON `json:"threads"`
+	// ReadThrough is whether the newest Sync read every thread it had to.
+	ReadThrough bool `json:"readThrough"`
 }
 
 // threadJSON is one LinkedIn thread Nando knows, in career_sync_status.
@@ -323,5 +325,44 @@ func TestAMessageSentTwiceInOneSyncIsStoredOnce(t *testing.T) {
 
 	if got.Stored != 1 {
 		t.Errorf("stored = %d, want 1", got.Stored)
+	}
+}
+
+func TestAfterASyncThatStoppedEarlyTheNextIsToldItDidntReadThrough(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	sent := at(-1, 18, 0)
+
+	stopped := phone.macAt(at(0, 8, 0))
+	callTool[recordedJSON](t, stopped, "career_record_sync", map[string]any{"threads": batch(0, 10, sent), "stoppedEarly": true})
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 14, 0)), "career_sync_status", nil); got.ReadThrough {
+		t.Errorf("after a Sync that stopped early: readThrough = true, want false")
+	}
+
+	callTool[recordedJSON](t, phone.macAt(at(0, 14, 0)), "career_record_sync", map[string]any{"threads": []any{}})
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 20, 0)), "career_sync_status", nil); !got.ReadThrough {
+		t.Errorf("after a Sync that read through: readThrough = false, want true")
+	}
+}
+
+func TestStoppedEarlyIsSentOnlyWithASyncsFirstBatch(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	mac := phone.macAt(at(0, 8, 0))
+	first := callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"threads": batch(0, 10, at(-1, 18, 0))})
+
+	toolFails(t, mac, "career_record_sync", map[string]any{"sync": first.Sync, "threads": batch(10, 1, at(-1, 18, 0)), "stoppedEarly": true})
+}
+
+func TestAfterASyncThatReportedAProblemTheNextIsToldItDidntReadThrough(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	phone.saveTimeZone("Asia/Tokyo")
+	mac := phone.macAt(at(0, 8, 0))
+	// The script sends what it read, then the problem that stopped it.
+	callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"threads": batch(0, 1, at(-1, 18, 0))})
+	callTool[recordedJSON](t, mac, "career_record_sync", map[string]any{"problem": map[string]any{"kind": "other", "text": "rate limited"}})
+
+	if got := callTool[syncStatusJSON](t, phone.macAt(at(0, 9, 0)), "career_sync_status", nil); got.ReadThrough {
+		t.Errorf("after a Sync that reported a problem: readThrough = true, want false")
 	}
 }

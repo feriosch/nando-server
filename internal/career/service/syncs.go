@@ -55,7 +55,9 @@ func (s *SyncsService) Tools() []coremodel.Tool {
 			"the oldest Day whose messages it reads (since, YYYY-MM-DD), and every thread Nando holds " +
 			"with when its newest message was sent, so the script opens only threads with newer ones. " +
 			"An ignored thread isn't about a role: never send its messages. " +
-			"Answers {\"due\": bool, \"since\", \"threads\": [{\"threadId\", \"newest\", \"ignored\"}]}.",
+			"readThrough is false when the newest Sync stopped early or reported a problem: then also open the held threads " +
+			"after one with nothing new, as that Sync may not have reached them. " +
+			"Answers {\"due\": bool, \"since\", \"threads\": [{\"threadId\", \"newest\", \"ignored\"}], \"readThrough\": bool}.",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 		ReadOnly:    true,
 		Handle:      s.statusTool,
@@ -66,6 +68,7 @@ func (s *SyncsService) Tools() []coremodel.Tool {
 			"Messages Nando already holds are skipped. If the script couldn't read LinkedIn, it sends only a problem: " +
 			"session_expired when LinkedIn wants the Owner to log in again. " +
 			"A Sync sent in batches is one Sync: send each batch after the first, within 10 minutes of it, with sync, the id the first was answered with. " +
+			"If it stopped before reading every thread it had to, at its cap or at a problem, send stoppedEarly with the first batch. " +
 			"Answers {\"sync\": id, \"stored\": how many new messages were stored}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"sync":{"type":"string","description":"On every batch after a Sync's first, within 10 minutes of it: the id the first was answered with, so the batches count as one Sync."},` +
@@ -83,7 +86,8 @@ func (s *SyncsService) Tools() []coremodel.Tool {
 			`"problem":{"type":"object","description":"Only when the script couldn't read LinkedIn. Such a Sync doesn't count towards when the next is due.","properties":{` +
 			`"kind":{"type":"string","enum":["session_expired","other"]},` +
 			`"text":{"type":"string","description":"For other: what went wrong."}},` +
-			`"required":["kind"]}}}`),
+			`"required":["kind"]},` +
+			`"stoppedEarly":{"type":"boolean","description":"On a Sync's first batch only: true when the script stopped before reading every thread it had to, so that the next Sync reads the threads this one may not have reached."}}}`),
 		Handle: s.recordTool,
 	}}
 }
@@ -106,11 +110,31 @@ func (s *SyncsService) statusTool(ctx context.Context, _ json.RawMessage) (any, 
 	for _, c := range conversations {
 		threads = append(threads, model.ThreadJSON{ThreadID: c.ThreadID, Newest: c.Newest, Ignored: c.Ignored})
 	}
+	readThrough, err := s.readThrough(ctx)
+	if err != nil {
+		return nil, err
+	}
 	return model.SyncStatusJSON{
-		Due:     due,
-		Since:   syncSince,
-		Threads: threads,
+		Due:         due,
+		Since:       syncSince,
+		Threads:     threads,
+		ReadThrough: readThrough,
 	}, nil
+}
+
+// readThrough reports whether the newest Sync read every thread it had to. The
+// script skips the held threads after one with nothing new only then: the
+// inbox is in order of activity, but a Sync that stopped early may have taken
+// a newer message from a thread above one it never reached.
+func (s *SyncsService) readThrough(ctx context.Context) (bool, error) {
+	latest, err := s.syncs.Latest(ctx)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return true, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return latest.Problem == nil && !latest.StoppedEarly, nil
 }
 
 // due reports whether a Sync is due at now, a time in the Owner Time Zone.
@@ -170,7 +194,7 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 		}
 	}
 	if isNew {
-		err = s.syncs.Insert(ctx, model.Sync{ID: id, At: s.core.Now(), Threads: len(updates), Problem: problem})
+		err = s.syncs.Insert(ctx, model.Sync{ID: id, At: s.core.Now(), Threads: len(updates), Problem: problem, StoppedEarly: j.StoppedEarly})
 	} else {
 		err = s.syncs.AddThreads(ctx, id, len(updates))
 	}
@@ -224,6 +248,9 @@ func (s *SyncsService) queue(ctx context.Context, added model.Added, syncID bson
 // check.
 func fromRecordSyncJSON(j model.RecordSyncJSON) ([]model.ThreadUpdate, *model.SyncProblem, error) {
 	var problem *model.SyncProblem
+	if j.StoppedEarly && j.Sync != "" {
+		return nil, nil, errors.New("stoppedEarly is sent with a Sync's first batch, which starts it: send it without sync")
+	}
 	if j.Problem != nil {
 		if j.Sync != "" {
 			return nil, nil, errors.New("a problem is a Sync of its own: send it without sync")
