@@ -35,7 +35,7 @@ In a Conversation, a message `from` `"owner"` is the Owner's; `"other"` is the p
 
 **Otherwise**, file it under its Recruiter with `career_file_conversation`:
 
-- If the person is a Recruiter Nando holds (`career_search` with their name or organisation; the same `profileUrl` settles it), send `recruiterId`.
+- If the person is a Recruiter Nando holds, send `recruiterId`. Look them up with `career_search`: first with the person's `profileUrl`, when it has one, which finds them however the inbox writes their name; then with their name or organisation. The same `profileUrl` settles it. A Recruiter with no `profileUrl` takes the Conversation's when you file it.
 - Otherwise send `recruiter`: `{"name", "profileUrl", "kind", "organisation"}`. `kind` is `agency` for an agency's recruiter, `in_house` for one hiring for their own Company. `organisation` is the agency or the Company.
 
 Then keep its Opportunities (step 3), and write its Suggested Reply when the last message is the Recruiter's: an `answer` if that message is at most 30 days old, or a `late` one from the templates (step 5) if older. When the Owner's message is the last, there is nothing to reply to.

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
@@ -88,5 +89,72 @@ func TestARecruitersConversationsAreNewestFirst(t *testing.T) {
 	}
 	if want := []string{conversations["3-tanaka"], conversations["2-tanaka"]}; !slices.Equal(ids, want) {
 		t.Errorf("Tanaka's Conversations are %q; want the one with the newest message first, %q", ids, want)
+	}
+}
+
+// tanakaWithoutLink files 2-tanaka, which a Sync brought before the script
+// read profile links, under a new Recruiter, Tanaka, with no profile link.
+// It returns the run's session and the Recruiter.
+func tanakaWithoutLink(t *testing.T, phone *browser) (*mcp.ClientSession, recruiterJSON) {
+	t.Helper()
+	unlinked := tanakaThread(message("m1", "other", at(-3, 10, 15), "Hello! I have a backend role at a fintech in Tokyo."))
+	unlinked["person"] = map[string]any{"name": "Tanaka Yui", "profileUrl": ""}
+	conversations, recruiters := fileThreads(t, phone, unlinked)
+	run := phone.connect()
+	tanaka := callTool[searchJSON](t, run, "career_search", map[string]any{"query": "Tanaka"}).Recruiters
+	if len(conversations) != 1 || len(tanaka) != 1 || tanaka[0].ID != recruiters["Tanaka Yui"] || tanaka[0].ProfileURL != "" {
+		t.Fatalf("filing 2-tanaka made %+v; want one Recruiter, Tanaka, with no profile link", tanaka)
+	}
+	return run, tanaka[0].recruiterJSON
+}
+
+func TestARecruiterWithNoProfileLinkGetsOneFromTheNextConversationFiledUnderThem(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run, tanaka := tanakaWithoutLink(t, phone)
+	studio := threadWithID("3-tanaka", "Tanaka Yui", message("m9", "other", at(-1, 9, 0), "Another role, at a game studio this time."))
+	studio["person"] = map[string]any{"name": "Tanaka Yui", "profileUrl": "https://www.linkedin.com/in/ACoAATanaka/"}
+	callTool[recordedJSON](t, phone.macAt(at(0, 9, 0)), "career_record_sync", map[string]any{"threads": []any{studio}})
+	run = phone.connect()
+	items := callTool[workJSON](t, run, "career_list_work", nil).Items
+
+	filed := callTool[filedJSON](t, run, "career_file_conversation", map[string]any{"conversationId": items[0].Conversation.ID, "recruiterId": tanaka.ID})
+
+	if filed.Recruiter.ProfileURL != "https://www.linkedin.com/in/ACoAATanaka/" {
+		t.Errorf("filed under Tanaka, who had no profile link, the Recruiter is %+v; want the Conversation's link", filed.Recruiter)
+	}
+	if found := callTool[searchJSON](t, run, "career_search", map[string]any{"query": "Tanaka"}).Recruiters; len(found) != 1 ||
+		found[0].ProfileURL != "https://www.linkedin.com/in/ACoAATanaka/" {
+		t.Errorf("career_search found %+v; want Tanaka, with the link kept", found)
+	}
+}
+
+func TestASyncBringingAFiledConversationsProfileLinkFillsInItsRecruiters(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	tanakaWithoutLink(t, phone)
+
+	// Tanaka writes again, and the script now reads the profile link.
+	callTool[recordedJSON](t, phone.macAt(at(0, 15, 0)), "career_record_sync", map[string]any{"threads": []any{
+		tanakaThread(message("m2", "other", at(0, 14, 0), "Are you free for a call this week?")),
+	}})
+
+	found := callTool[searchJSON](t, phone.connect(), "career_search", map[string]any{"query": "Tanaka"}).Recruiters
+	if len(found) != 1 || found[0].ProfileURL != "https://www.linkedin.com/in/tanaka-yui/" {
+		t.Errorf("career_search found %+v; want Tanaka, with the link the Sync brought", found)
+	}
+}
+
+func TestARecruitersProfileLinkIsNeverReplaced(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run, tanaka := fileTanaka(t, phone)
+	other := threadWithID("3-tanaka", "Tanaka Yui", message("m9", "other", at(-1, 9, 0), "Another role, at a game studio this time."))
+	other["person"] = map[string]any{"name": "Tanaka Yui", "profileUrl": "https://www.linkedin.com/in/someone-else/"}
+	callTool[recordedJSON](t, phone.macAt(at(0, 9, 0)), "career_record_sync", map[string]any{"threads": []any{other}})
+	run = phone.connect()
+	items := callTool[workJSON](t, run, "career_list_work", nil).Items
+
+	filed := callTool[filedJSON](t, run, "career_file_conversation", map[string]any{"conversationId": items[0].Conversation.ID, "recruiterId": tanaka.ID})
+
+	if filed.Recruiter.ProfileURL != "https://www.linkedin.com/in/tanaka-yui/" {
+		t.Errorf("filed under Tanaka, the Recruiter is %+v; want Tanaka's own link kept", filed.Recruiter)
 	}
 }

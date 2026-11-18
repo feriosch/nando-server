@@ -32,8 +32,11 @@ type RecruitersRepository interface {
 	// GetByID returns the Recruiter, or Core's utils.ErrNotFound.
 	GetByID(ctx context.Context, id bson.ObjectID) (Recruiter, error)
 	// Search returns the Recruiters whose name or organisation has query in
-	// it, ignoring case.
+	// it, ignoring case, or whose profile link is query.
 	Search(ctx context.Context, query string) ([]Recruiter, error)
+	// FillProfileURL sets the Recruiter's profile link to url while they
+	// have none, and reports whether it did.
+	FillProfileURL(ctx context.Context, id bson.ObjectID, url string) (bool, error)
 }
 
 // The JSON shapes below are what the Tools and the API answer with and are

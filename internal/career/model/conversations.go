@@ -113,8 +113,8 @@ type Added struct {
 	ConversationID bson.ObjectID
 	// Stored is how many new messages were stored.
 	Stored int
-	// Filed is whether the Conversation is filed under a Recruiter.
-	Filed bool
+	// RecruiterID is the Recruiter the Conversation is filed under, or nil.
+	RecruiterID *bson.ObjectID
 	// Ignored is whether the thread is ignored, so nothing was stored.
 	Ignored bool
 	// FromOther is whether a stored message is the other person's.

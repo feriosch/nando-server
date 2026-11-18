@@ -97,3 +97,21 @@ func TestSearchLeadsFromARecruiterToTheirSuggestedReply(t *testing.T) {
 		t.Errorf("after the run wrote one, Tanaka's Conversation has no Suggested Reply")
 	}
 }
+
+func TestSearchFindsARecruiterByTheirProfileLinkWhateverTheirNameInTheInbox(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run, tanaka := fileTanaka(t, phone)
+	if tanaka.ProfileURL != "https://www.linkedin.com/in/tanaka-yui/" {
+		t.Fatalf("filed under a new Recruiter sent with no profile link, Tanaka is %+v; want the Conversation's link", tanaka)
+	}
+
+	for _, query := range []string{"https://www.linkedin.com/in/tanaka-yui/", " https://www.linkedin.com/in/tanaka-yui "} {
+		got := callTool[searchJSON](t, run, "career_search", map[string]any{"query": query}).Recruiters
+		if len(got) != 1 || got[0].ID != tanaka.ID {
+			t.Errorf("career_search %q found %+v; want Tanaka, by their profile link", query, got)
+		}
+	}
+	if got := callTool[searchJSON](t, run, "career_search", map[string]any{"query": "https://www.linkedin.com/in/someone-else/"}).Recruiters; len(got) != 0 {
+		t.Errorf("career_search for another profile link found %+v; want nobody", got)
+	}
+}

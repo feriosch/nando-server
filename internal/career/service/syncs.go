@@ -37,14 +37,15 @@ type SyncsService struct {
 	scheduledTask *coreutils.ScheduledTask
 	syncs         model.SyncsRepository
 	conversations model.ConversationsRepository
+	recruiters    model.RecruitersRepository
 	work          model.WorkRepository
 	core          coremodel.CoreService
 }
 
 // NewSyncs returns the SyncsService.
 func NewSyncs(scheduledTask *coreutils.ScheduledTask, syncs model.SyncsRepository, conversations model.ConversationsRepository,
-	work model.WorkRepository, core coremodel.CoreService) *SyncsService {
-	return &SyncsService{scheduledTask: scheduledTask, syncs: syncs, conversations: conversations, work: work, core: core}
+	recruiters model.RecruitersRepository, work model.WorkRepository, core coremodel.CoreService) *SyncsService {
+	return &SyncsService{scheduledTask: scheduledTask, syncs: syncs, conversations: conversations, recruiters: recruiters, work: work, core: core}
 }
 
 // Tools are what the Mac's Sync script calls.
@@ -178,6 +179,13 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 			return nil, err
 		}
 		stored += added.Stored
+		// A Recruiter filed before the Sync read profile links takes the
+		// link of their Conversation's person.
+		if link := update.Person.ProfileURL; added.RecruiterID != nil && link != "" {
+			if _, err := s.recruiters.FillProfileURL(ctx, *added.RecruiterID, link); err != nil {
+				return nil, err
+			}
+		}
 		if err := s.queue(ctx, added, id); err != nil {
 			return nil, err
 		}
@@ -224,7 +232,7 @@ func (s *SyncsService) queue(ctx context.Context, added model.Added, syncID bson
 	switch {
 	case added.Stored == 0 || added.Ignored:
 		return nil
-	case !added.Filed:
+	case added.RecruiterID == nil:
 		return s.work.Add(ctx, model.ItemSort, added.ConversationID, syncID, s.core.Now())
 	case added.FromOther:
 		return s.work.Add(ctx, model.ItemReply, added.ConversationID, syncID, s.core.Now())

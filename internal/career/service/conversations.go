@@ -108,7 +108,8 @@ func (s *ConversationsService) Tools() []coremodel.Tool {
 		Name: "career_file_conversation",
 		Description: "Files a Conversation about roles under its Recruiter: an existing one (recruiterId), " +
 			"or a new one (recruiter: name, LinkedIn profileUrl, kind agency or in_house, and organisation, their agency or Company). " +
-			"Look for an existing Recruiter first, with career_search or the Recruiter on the run's Items. " +
+			"Look for an existing Recruiter first, with career_search (the person's profileUrl first, then their name or organisation) " +
+			"or the Recruiter on the run's Items. A Recruiter with no profileUrl takes the Conversation's. " +
 			"It does the Conversation's sort Item. Answers {\"conversation\", \"recruiter\"}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"conversationId":{"type":"string"},` +
@@ -301,6 +302,17 @@ func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawM
 		if recruiter, err = s.recruiter(ctx, args.RecruiterID); err != nil {
 			return nil, err
 		}
+		// A Recruiter with no profile link, filed before the Sync read them,
+		// takes the Conversation's.
+		if link := held.Person.ProfileURL; recruiter.ProfileURL == "" && link != "" {
+			filled, err := s.recruiters.FillProfileURL(ctx, recruiter.ID, link)
+			if err != nil {
+				return nil, err
+			}
+			if filled {
+				recruiter.ProfileURL = link
+			}
+		}
 	case args.Recruiter != nil:
 		r := model.Recruiter{
 			Name:         strings.TrimSpace(args.Recruiter.Name),
@@ -310,6 +322,9 @@ func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawM
 		}
 		if r.Name == "" {
 			return nil, errors.New("a new Recruiter needs a name")
+		}
+		if r.ProfileURL == "" {
+			r.ProfileURL = held.Person.ProfileURL
 		}
 		if r.Kind != model.RecruiterAgency && r.Kind != model.RecruiterInHouse {
 			return nil, fmt.Errorf("a Recruiter's kind is %s or %s", model.RecruiterAgency, model.RecruiterInHouse)
