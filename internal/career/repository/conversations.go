@@ -230,6 +230,19 @@ func (r conversations) MakeReplyLate(ctx context.Context, id bson.ObjectID, repl
 	return result.ModifiedCount == 1, nil
 }
 
+func (r conversations) DropReply(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply) error {
+	_, err := r.collection.UpdateOne(ctx,
+		bson.D{
+			{Key: "_id", Value: id},
+			{Key: "suggestedReply.kind", Value: reply.Kind},
+			{Key: "suggestedReply.writtenAt", Value: reply.WrittenAt},
+			notMarkedReplied,
+		},
+		bson.D{{Key: "$unset", Value: bson.D{{Key: "suggestedReply", Value: ""}}}},
+	)
+	return err
+}
+
 func (r conversations) MarkReplied(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply, at time.Time) error {
 	_, err := r.collection.UpdateOne(ctx,
 		bson.D{

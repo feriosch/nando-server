@@ -16,7 +16,8 @@ const (
 	// Tools.
 	fadesAfter = 30 * 24 * time.Hour
 	// lateAfter is how old a message is when its answer becomes a Late
-	// Reply: an answer or follow-up to an older one turns late.
+	// Reply: an answer to an older one turns late, and a follow-up to an
+	// older one is dropped.
 	lateAfter = 30 * 24 * time.Hour
 	// followUpAfter is how long after the Owner's last message, with no
 	// answer, a follow-up is due.
@@ -24,8 +25,8 @@ const (
 )
 
 // TickRulesService applies, at every tick, the rules that need no model:
-// it closes the Opportunities that went quiet as faded, turns Suggested
-// Replies to old messages late, and queues follow-ups for Opportunities
+// it closes the Opportunities that went quiet as faded, turns answers to old
+// messages late, drops follow-ups to old messages, and queues follow-ups for Opportunities
 // waiting on the Recruiter. What they queue in the run's work, the tick
 // then wakes the run for.
 type TickRulesService struct {
@@ -141,9 +142,10 @@ func lastMessage(c model.Conversation) (model.Message, bool) {
 	return last, true
 }
 
-// makeLate turns late every answer or follow-up to a message older than
-// lateAfter, and queues a late_reply Item for the run to rewrite it from the
-// late templates.
+// makeLate turns late every answer to a message older than lateAfter, and
+// queues a late_reply Item for the run to rewrite it from the late templates.
+// A follow-up to a message that old is dropped instead: a Late Reply
+// apologises for the Owner's delay, and a follow-up waits on the Recruiter's.
 func (s *TickRulesService) makeLate(ctx context.Context) error {
 	now := s.now()
 	stale, err := s.conversations.WithWaitingReplyBefore(ctx, now.Add(-lateAfter))
@@ -151,8 +153,14 @@ func (s *TickRulesService) makeLate(ctx context.Context) error {
 		return err
 	}
 	for _, c := range stale {
-		// Turned late first, and queued only if it was: a reply the run
-		// rewrote meanwhile isn't sent back to be rewritten again.
+		// A reply the run rewrote meanwhile is left alone, and isn't sent
+		// back to be rewritten again.
+		if c.SuggestedReply.Kind == model.ReplyFollowUp {
+			if err := s.conversations.DropReply(ctx, c.ID, *c.SuggestedReply); err != nil {
+				return err
+			}
+			continue
+		}
 		late, err := s.conversations.MakeReplyLate(ctx, c.ID, *c.SuggestedReply)
 		if err != nil {
 			return err

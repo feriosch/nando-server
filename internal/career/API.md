@@ -212,7 +212,7 @@ What a Sync brings waits as Items (collection `work`) for a cloud Claude run, wh
 | --- | --- | --- |
 | `sort` | a Sync stores messages in a Conversation not filed yet | `career_ignore_thread` or `career_file_conversation` |
 | `reply` | a Sync stores a message from the Recruiter in a filed Conversation | `career_set_suggested_reply` |
-| `late_reply` | an `answer` or `follow_up` Suggested Reply turns `late` (see The tick's rules) | `career_set_suggested_reply` |
+| `late_reply` | an `answer` Suggested Reply turns `late` (see The tick's rules) | `career_set_suggested_reply` |
 | `follow_up` | an Opportunity waits on its Recruiter for 14 days (see The tick's rules) | `career_set_suggested_reply` |
 
 `career_list_work` claims up to 5 Items at a time, oldest first, each for 15 minutes. A claim that lapses lets another run take the Item. After 3 claims with no outcome, the Item is set aside as failed, and that is logged.
@@ -233,8 +233,8 @@ Without both variables, Nando never wakes the run. The last fire and the run's a
 At every tick (Core's `/internal/tick`, every 5 minutes), before it sets aside failed Items and wakes the run, the Module applies these rules by the clock. None needs a model. What they queue wakes the run under the rules above, at the same tick.
 
 - **Faded.** An open Opportunity closes with Outcome `faded` once 30 days have passed with no new message (from either side) in its Recruiter's Conversations and no change to it through the Tools. One with no Recruiter counts only changes through the Tools. It keeps the Stage it had, for `career_reopen_opportunity`, which counts as a change.
-- **Late Reply.** A Suggested Reply of kind `answer` or `follow_up` that answers a message more than 30 days old becomes kind `late`, and a `late_reply` Item is queued for the run to rewrite it from the late templates. A reply the run rewrote in the meantime is left alone, and so is one the Owner marked replied.
-- **Follow-up.** For an Opportunity in `in_process` or `offer`, each of its Recruiter's Conversations whose last message is the Owner's, at least 14 days old, with no Suggested Reply, gets a `follow_up` Item. A Suggested Reply the Owner marked replied counts as the Owner's last message, sent at `markedRepliedAt`, until a Sync brings the real one; the run's follow-up then answers `markedRepliedAt` and replaces it. A message gets one at most, ever: not again if no run writes it and it is set aside, nor when a Sync later brings the message a mark stood for.
+- **Late Reply.** A Suggested Reply of kind `answer` that answers a message more than 30 days old becomes kind `late`, and a `late_reply` Item is queued for the run to rewrite it from the late templates. A `follow_up` that answers a message more than 30 days old never turns late: it is dropped, with no Item, since a Late Reply apologises for the Owner's delay and a follow-up waits on the Recruiter's. By then its Opportunity has usually faded. A reply the run rewrote in the meantime is left alone, and so is one the Owner marked replied.
+- **Follow-up.** For an Opportunity in `in_process` or `offer`, each of its Recruiter's Conversations whose last message is the Owner's, at least 14 days old, with no Suggested Reply, gets a `follow_up` Item. A Suggested Reply the Owner marked replied counts as the Owner's last message, sent at `markedRepliedAt`, until a Sync brings the real one; the run's follow-up then answers `markedRepliedAt` and replaces it. A message gets one at most, ever: not again if no run writes it and it is set aside, nor if it is dropped after 30 days, nor when a Sync later brings the message a mark stood for.
 
 ## Notifications
 
@@ -248,7 +248,7 @@ Core asks the Module at every tick (see [Core's API](../core/API.md)), and sends
 | A Sync reported `session_expired`: once for the first such report since the last Sync that read LinkedIn, as the Mac reports it again every hour, and only within 7 days of it | "Log in to LinkedIn again" / "Open the Mac and run the Sync's login" | `/career` | `career:sync-problem:<sync id>` |
 | No Sync has read LinkedIn for 36 hours, sent within the 7 days after that (a Sync that reported a problem doesn't count) | "No LinkedIn Sync since \<weekday\>" / "Check that the Mac is on and its Sync job is loaded" | `/career` | `career:no-sync:<last sync id>` |
 
-A Recruiter is waiting when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up` to a message at most 30 days old, not marked replied. A Sync whose only answers are marked replied causes none. Late Replies never cause a Notification, nor a reply about to turn late: Core sends the tick's Notifications before the rules run. The Sync Notifications stop after 7 days, well within the 30 days Core remembers a sent ID, so none is sent twice. Once a Sync reads LinkedIn, the "no Sync" Notification can fire again only after a later 36-hour gap. Before the first Sync, there is none.
+A Recruiter is waiting when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up` to a message at most 30 days old, not marked replied. A Sync whose only answers are marked replied causes none. Late Replies never cause a Notification, nor a reply about to turn late or be dropped: Core sends the tick's Notifications before the rules run. The Sync Notifications stop after 7 days, well within the 30 days Core remembers a sent ID, so none is sent twice. Once a Sync reads LinkedIn, the "no Sync" Notification can fire again only after a later 36-hour gap. Before the first Sync, there is none.
 
 ## Tools
 
