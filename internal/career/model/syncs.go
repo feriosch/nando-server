@@ -60,9 +60,6 @@ type SyncsRepository interface {
 	// FirstRead returns the first Sync that read LinkedIn, or Core's
 	// utils.ErrNotFound if none has.
 	FirstRead(ctx context.Context) (Sync, error)
-	// Latest returns the newest Sync, whether or not it read LinkedIn, or
-	// Core's utils.ErrNotFound if there's none.
-	Latest(ctx context.Context) (Sync, error)
 }
 
 // The JSON shapes below are what the Sync Tools answer with and are sent.
@@ -75,8 +72,8 @@ type SyncStatusJSON struct {
 	// Since is the oldest Day, as YYYY-MM-DD, whose messages a Sync reads.
 	Since   string       `json:"since"`
 	Threads []ThreadJSON `json:"threads"`
-	// ReadThrough is whether the newest Sync read every thread it had to:
-	// false when it stopped early or reported a problem.
+	// ReadThrough is whether the newest Sync that read LinkedIn read every
+	// thread it had to: false when it stopped early.
 	ReadThrough bool `json:"readThrough"`
 }
 
