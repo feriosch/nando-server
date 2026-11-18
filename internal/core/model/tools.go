@@ -23,8 +23,9 @@ type Tool struct {
 	// Connector can be set to ask the Owner before each use.
 	Destructive bool
 	// Handle runs the Tool with its arguments, as JSON, and returns its
-	// result, which the Connector gets as JSON: best a JSON object. An error
-	// is shown to the Connector's model as the Tool's failure.
+	// result, which the Connector gets as JSON: best a JSON object. An Image
+	// result is sent as an image instead, for the Connector's model to see.
+	// An error is shown to the Connector's model as the Tool's failure.
 	Handle func(ctx context.Context, arguments json.RawMessage) (any, error)
 }
 
@@ -38,4 +39,11 @@ type ToolProvider interface {
 	// undone. The consent page shows it to the Owner before they approve a
 	// Connector.
 	ToolsDescription() string
+}
+
+// Image is a Tool's result that is an image, such as a photo the Owner sent.
+type Image struct {
+	// MIMEType is the image's type, such as image/jpeg.
+	MIMEType string
+	Data     []byte
 }

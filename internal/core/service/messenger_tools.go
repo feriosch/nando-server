@@ -63,6 +63,25 @@ func (s *MessengerService) Tools() []model.Tool {
 			},
 		},
 		{
+			Name: "messenger_get_photo",
+			Description: "Shows a photo the Owner sent the Assistant, by the id messenger_claim_talk listed in a message's " +
+				"photos. Look at the photos of every waiting message before answering it, and at older ones only when the Owner refers to them.",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+				`"assistant":{"type":"string","description":"The Assistant the run is."},` +
+				`"id":{"type":"string","description":"The photo's id, from messenger_claim_talk."}},"required":["assistant","id"]}`),
+			ReadOnly: true,
+			Handle: func(ctx context.Context, arguments json.RawMessage) (any, error) {
+				var args struct {
+					Assistant string `json:"assistant"`
+					ID        string `json:"id"`
+				}
+				if err := json.Unmarshal(arguments, &args); err != nil {
+					return nil, err
+				}
+				return s.photo(ctx, args.Assistant, args.ID)
+			},
+		},
+		{
 			Name: "messenger_new_talk",
 			Description: "Closes the Assistant's Talk and opens a new one, telling the Owner in one line. Messages still " +
 				"waiting move to the new Talk, and the run's claim goes with them. Without summary the new Talk starts " +
@@ -83,6 +102,23 @@ func (s *MessengerService) Tools() []model.Tool {
 			},
 		},
 	}
+}
+
+// photo downloads the photo with id, which the Owner sent assistant, from
+// Telegram. Telegram keeps every photo as a JPEG.
+func (s *MessengerService) photo(ctx context.Context, assistant, id string) (model.Image, error) {
+	token, ok := s.bot(assistant)
+	if !ok {
+		return model.Image{}, fmt.Errorf("there is no Assistant %q with a bot", assistant)
+	}
+	if strings.TrimSpace(id) == "" {
+		return model.Image{}, errors.New("id is empty")
+	}
+	data, err := s.telegram.download(ctx, token, id)
+	if err != nil {
+		return model.Image{}, fmt.Errorf("Telegram has no such photo for this Assistant, or no longer keeps it (%w)", err)
+	}
+	return model.Image{MIMEType: "image/jpeg", Data: data}, nil
 }
 
 // newTalkJSON is what messenger_new_talk answers.
@@ -281,6 +317,13 @@ type messageJSON struct {
 	// Failed marks a message no run answered, which the Owner was asked to
 	// send again.
 	Failed bool `json:"failed,omitempty"`
+	// Photos are the message's photos, for messenger_get_photo.
+	Photos []photoJSON `json:"photos,omitempty"`
+}
+
+// photoJSON is one photo in a message, for a run.
+type photoJSON struct {
+	ID string `json:"id"`
 }
 
 // on is every Assistant with a bot, by name.
@@ -363,10 +406,14 @@ func (s *MessengerService) claimAnswer(talk model.Talk) claimJSON {
 		Messages:  []messageJSON{},
 	}
 	for _, m := range talk.Messages {
-		answer.Messages = append(answer.Messages, messageJSON{
+		message := messageJSON{
 			From: m.From, At: m.At, Text: m.Text,
 			Waiting: m.State == model.MessageWaiting, Failed: m.State == model.MessageFailed,
-		})
+		}
+		for _, p := range m.Photos {
+			message.Photos = append(message.Photos, photoJSON{ID: p.ID})
+		}
+		answer.Messages = append(answer.Messages, message)
 	}
 	for _, name := range s.on() {
 		if name != talk.Assistant {

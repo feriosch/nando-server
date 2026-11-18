@@ -156,7 +156,8 @@ func (s *MCPService) server(*http.Request) *mcp.Server {
 }
 
 // handleTool runs tool for an MCP tools/call. Its result goes back as JSON
-// text and, when it is a JSON object, as structured content too; its error
+// text and, when it is a JSON object, as structured content too, or as an
+// image when it is a model.Image; its error
 // goes back as the Tool's failure, for the Connector's model to read.
 func handleTool(tool model.Tool) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -167,6 +168,9 @@ func handleTool(tool model.Tool) mcp.ToolHandler {
 		result, err := tool.Handle(ctx, arguments)
 		if err != nil {
 			return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
+		}
+		if image, ok := result.(model.Image); ok {
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.ImageContent{MIMEType: image.MIMEType, Data: image.Data}}}, nil
 		}
 		var text bytes.Buffer
 		encoder := json.NewEncoder(&text)

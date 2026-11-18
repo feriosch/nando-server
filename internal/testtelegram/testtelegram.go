@@ -31,6 +31,8 @@ type Telegram struct {
 	calls    []Call
 	failing  map[string]bool
 	webhooks map[string]Webhook
+	// files is each file a bot can download, by file_id.
+	files map[string][]byte
 }
 
 // Webhook is one bot's webhook, as setWebhook last set it.
@@ -45,7 +47,7 @@ type Webhook struct {
 // when the test ends.
 func New(t *testing.T) *Telegram {
 	t.Helper()
-	f := &Telegram{failing: map[string]bool{}, webhooks: map[string]Webhook{}}
+	f := &Telegram{failing: map[string]bool{}, webhooks: map[string]Webhook{}, files: map[string][]byte{}}
 	srv := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(srv.Close)
 	f.URL = srv.URL
@@ -53,6 +55,20 @@ func New(t *testing.T) *Telegram {
 }
 
 func (f *Telegram) serve(w http.ResponseWriter, r *http.Request) {
+	// A file is downloaded from /file/bot<token>/<file_path>, as getFile
+	// names it: here, files/<file_id>.
+	if rest, ok := strings.CutPrefix(r.URL.Path, "/file/bot"); ok {
+		_, path, _ := strings.Cut(rest, "/")
+		f.mu.Lock()
+		data, found := f.files[strings.TrimPrefix(path, "files/")]
+		f.mu.Unlock()
+		if !found || !strings.HasPrefix(path, "files/") {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write(data)
+		return
+	}
 	// The path is /bot<token>/<method>.
 	token, method, ok := strings.Cut(strings.TrimPrefix(r.URL.Path, "/bot"), "/")
 	if !ok || !strings.HasPrefix(r.URL.Path, "/bot") {
@@ -78,6 +94,17 @@ func (f *Telegram) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	case "sendMessage":
 		result = map[string]any{"message_id": len(f.calls)}
+	case "getFile":
+		id, _ := params["file_id"].(string)
+		if data, found := f.files[id]; found {
+			result = map[string]any{"file_id": id, "file_size": len(data), "file_path": "files/" + id}
+		} else {
+			f.mu.Unlock()
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = io.WriteString(w, `{"ok":false,"error_code":400,"description":"Bad Request: invalid file_id"}`)
+			return
+		}
 	}
 	f.mu.Unlock()
 
@@ -120,4 +147,12 @@ func (f *Telegram) WebhookOf(token string) Webhook {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.webhooks[token]
+}
+
+// SetFile has Telegram hold data as the file with fileID, for a bot to
+// download with getFile.
+func (f *Telegram) SetFile(fileID string, data []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.files[fileID] = data
 }
