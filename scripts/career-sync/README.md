@@ -4,16 +4,16 @@ The script on the Owner's MacBook that hands their new LinkedIn messages to Nand
 
 ## How it works
 
-`launchd` runs `sync.py` at minute 0 of every hour, once when the Owner logs in, and once on wake for the hours the Mac slept through. Each run:
+`launchd` runs `sync.py` every 15 minutes, once when the Owner logs in, and once on wake for the runs the Mac slept through. Each run:
 
-1. Exits quietly if the Mac is in a dark wake, or if Nando can't be reached. The next hour tries again. With the lid closed, Power Nap wakes the Mac every 15 to 20 minutes for a few seconds, without its screen, and `launchd` runs the hours it missed then. A run started there carried on in slices of a few seconds over hours: the reader's browser couldn't start without a screen, and the access token expired between checking it and sending it. `pmset -g systemstate` lists `Graphics` only in a full wake. Otherwise, `caffeinate -i` keeps the Mac from sleeping when idle until the run ends. Closing the lid still sleeps it.
+1. Exits quietly if the Mac is in a dark wake, or if Nando can't be reached. The next run tries again. With the lid closed, Power Nap wakes the Mac every 15 to 20 minutes for a few seconds, without its screen, and `launchd` starts the runs it missed then. A run started there carried on in slices of a few seconds over hours: the reader's browser couldn't start without a screen, and the access token expired between checking it and sending it. `pmset -g systemstate` lists `Graphics` only in a full wake. Once a Sync starts the reader, `caffeinate -i` keeps the Mac from sleeping when idle until the run ends. Closing the lid still sleeps it.
 2. Asks Nando `career_sync_status`. Nando decides when a Sync is due: at most twice a Day, 6 hours apart, not before 07:00. Nearly every run stops here, without starting the reader.
 3. Starts the reader over stdio and calls `get_session_status`. With no LinkedIn session saved, such as after LinkedIn ended the last one, it imports the session of the Owner's Chrome (see Logging in to LinkedIn) and starts the reader again. If Chrome has none, it tells Nando `session_expired` and stops, without asking the reader for anything: with no session, the reader would open a login window.
 4. Calls `get_inbox` for the 50 most recent threads. If LinkedIn turns the session away, it imports Chrome's and tries once more, the same way. If Chrome has none, or LinkedIn turns that one away too, it tells Nando `session_expired` and stops.
 5. Opens the threads with `get_conversation`, most recent first, at most 30, waiting 3–10 s between them. It skips threads Nando marked ignored. Once a thread Nando holds has nothing newer than what Nando has, it skips the held threads after it too: the inbox is in order of activity, so none of them has anything new either. It still opens the threads Nando doesn't hold yet, the backlog an earlier Sync didn't reach, so the backlog fills in about 30 threads a Sync. It keeps only messages since 2025-01-01, and stops at a thread with none: every thread after it is older still.
 6. Sends the new messages with `career_record_sync`, 10 threads at a time. Every batch after the first names, as `sync`, the Sync the first batch started, so that Nando counts them as one. A Sync with nothing new is recorded too, so that it counts.
 
-If the reader fails or stops answering, LinkedIn opens another page than the thread asked for, or a thread's page can't be read, the script tells Nando with `problem: other` and the reason, after sending what it had read. Such a Sync doesn't count, so the next hour tries again.
+If the reader fails or stops answering, LinkedIn opens another page than the thread asked for, or a thread's page can't be read, the script tells Nando with `problem: other` and the reason, after sending what it had read. Such a Sync doesn't count, so the next run tries again.
 
 The script calls only `get_session_status`, `get_inbox` and `get_conversation`. An allow-list in `sync.py` refuses any other reader Tool before it reaches the reader.
 
@@ -29,7 +29,7 @@ On the MacBook, with [`uv`](https://docs.astral.sh/uv/) installed:
    ./install.sh
    ```
 
-   It fills in the paths in `app.nando.career-sync.plist`, copies it to `~/Library/LaunchAgents/` and loads it. It runs once straight away, then every hour. Run it again after moving the folder or updating `uv`. `./uninstall.sh` removes it.
+   It fills in the paths in `app.nando.career-sync.plist`, copies it to `~/Library/LaunchAgents/` and loads it. It runs once straight away, then every 15 minutes. Run it again after moving the folder or updating `uv`. `./uninstall.sh` removes it.
 
 ## Logging in to LinkedIn
 
@@ -56,8 +56,8 @@ What it does, from the reader's code:
 - It reads only Chrome, never another browser, which might hold another LinkedIn account. It has no option for a Chrome profile: with several, it takes the one whose LinkedIn session was used most recently.
 - It copies Chrome's LinkedIn cookies into `~/.linkedin-mcp/`, checks them against the feed, and leaves Chrome as it is. Both then hold the same LinkedIn session, from the same address. If LinkedIn ends it, both are signed out.
 - It runs once and exits: `0` when it imported a session LinkedIn accepts, `1` otherwise, and its output goes to the log. It never opens a login window. When it fails, it puts back the session it replaced.
-- To decrypt Chrome's cookies, it reads "Chrome Safe Storage" from the Keychain. macOS may ask once: choose **Always Allow**. The reader gives up after 10 seconds when the Keychain doesn't answer, which can happen when run from `launchd`. The Sync then reports `session_expired`, and the next hour tries again. Watch the first import in the log.
-- It reads most reliably with Chrome closed. With Chrome open, an import may fail, and the next hour tries again.
+- To decrypt Chrome's cookies, it reads "Chrome Safe Storage" from the Keychain. macOS may ask once: choose **Always Allow**. The reader gives up after 10 seconds when the Keychain doesn't answer, which can happen when run from `launchd`. The Sync then reports `session_expired`, and the next run tries again. Watch the first import in the log.
+- It reads most reliably with Chrome closed. With Chrome open, an import may fail, and the next run tries again.
 
 The reader's own auto-import stays off (`--no-auto-import`): when it fails, the reader falls back to opening a login window.
 
@@ -67,7 +67,7 @@ The reader's own auto-import stays off (`--no-auto-import`): when it fails, the 
 uv run --script sync.py --connect
 ```
 
-It registers the script with Nando, opens the browser on Nando's consent page, where the Owner approves it with a Passkey, and waits for the browser to come back to `http://127.0.0.1:8765/callback`. The tokens are kept in the login Keychain (service `app.nando.career-sync`), or, if `launchd` can't reach the Keychain, in `~/.nando/career-sync.json`, readable only by the Owner. The access token lasts an hour. Each hourly run is a new process, so before refreshing it, the script reads Nando's OAuth metadata (`/.well-known/oauth-authorization-server`) for the token endpoint (`/oauth/token`): the MCP SDK reads it only on the way to the browser. If Nando can't serve it, the run logs so, keeps the tokens, and the next hour tries again. The script refreshes the access token 5 minutes before it expires. If Nando turns a token away anyway, it refreshes it and tries once more before asking for `--connect`: the SDK alone would go straight to the browser. The Connector appears in Nando's Settings like any other. Removing it there cuts the script off, and the log then says to run `--connect` again.
+It registers the script with Nando, opens the browser on Nando's consent page, where the Owner approves it with a Passkey, and waits for the browser to come back to `http://127.0.0.1:8765/callback`. The tokens are kept in the login Keychain (service `app.nando.career-sync`), or, if `launchd` can't reach the Keychain, in `~/.nando/career-sync.json`, readable only by the Owner. The access token lasts an hour. Each run is a new process, so before refreshing it, the script reads Nando's OAuth metadata (`/.well-known/oauth-authorization-server`) for the token endpoint (`/oauth/token`): the MCP SDK reads it only on the way to the browser. If Nando can't serve it, the run logs so, keeps the tokens, and the next run tries again. The script refreshes the access token 5 minutes before it expires. If Nando turns a token away anyway, it refreshes it and tries once more before asking for `--connect`: the SDK alone would go straight to the browser. If the answer to a refresh is lost, as when the Mac sleeps mid-request, the next run sends the old refresh token again, and Nando answers it once more rather than removing the Connector, as long as the tokens it sent were never used (`internal/core/API.md`). The Connector appears in Nando's Settings like any other. Removing it there cuts the script off, and the log then says to run `--connect` again.
 
 ## Keeping Claude Code away from the reader's writing Tools
 
@@ -148,4 +148,4 @@ Hello Jane!
 uv run --project scripts/career-sync pytest scripts/career-sync
 ```
 
-They run `run_sync` against fake MCP servers for Nando and the reader (`fakes.py`), whose answers follow the reader at 4.30.0 as above. `test_auth.py` runs the Connector's OAuth against a fake of Nando's endpoints, from `--connect` to a later hourly run that refreshes the access token. `NandoAuth` leans on the internals of `mcp` 2.3.0 (`_initialize`, `_refresh_token` and its context): when updating the SDK, run these tests and read its `oauth2.py` again. CI runs them on PRs that touch this folder.
+They run `run_sync` against fake MCP servers for Nando and the reader (`fakes.py`), whose answers follow the reader at 4.30.0 as above. `test_auth.py` runs the Connector's OAuth against a fake of Nando's endpoints, from `--connect` to a later run that refreshes the access token. `NandoAuth` leans on the internals of `mcp` 2.3.0 (`_initialize`, `_refresh_token` and its context): when updating the SDK, run these tests and read its `oauth2.py` again. CI runs them on PRs that touch this folder.

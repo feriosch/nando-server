@@ -2,9 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   The Career Sync's LaunchAgent. install.sh fills in the @...@ paths and
-  copies it to ~/Library/LaunchAgents/. launchd runs sync.py at minute 0 of
-  every hour, once at login (RunAtLoad), and once on wake for the hours the
-  Mac slept through (launchd coalesces missed StartCalendarInterval runs).
+  copies it to ~/Library/LaunchAgents/. launchd runs sync.py every 15
+  minutes, once at login (RunAtLoad), and once on wake for the runs the Mac
+  slept through (launchd coalesces missed StartInterval runs). That first
+  wake is often a dark wake, which sync.py skips, so a run comes at most 15
+  minutes after the Owner opens the lid. A run with no Sync due costs one
+  call to Nando.
 -->
 <plist version="1.0">
 <dict>
@@ -24,11 +27,8 @@
 		<key>PATH</key>
 		<string>@UV_DIR@:/usr/bin:/bin:/usr/sbin:/sbin</string>
 	</dict>
-	<key>StartCalendarInterval</key>
-	<dict>
-		<key>Minute</key>
-		<integer>0</integer>
-	</dict>
+	<key>StartInterval</key>
+	<integer>900</integer>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>ProcessType</key>
