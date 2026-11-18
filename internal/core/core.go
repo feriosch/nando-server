@@ -168,6 +168,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		return nil, err
 	}
 	c.notifications.AddTickJob(c.messenger)
+	c.notifications.SetMessenger(c.messenger)
 	return c, nil
 }
 

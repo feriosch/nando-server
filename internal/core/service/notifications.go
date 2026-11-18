@@ -36,10 +36,27 @@ type NotificationsService struct {
 	settings          *SettingsService
 	providers         []model.NotificationProvider
 	tickJobs          []model.TickJob
+	// messenger sends Notifications in Telegram instead of Web Push, while
+	// some Assistant has a bot (ADR 0008).
+	messenger notifier
 
 	verifySchedulerToken func(ctx context.Context, token string) error
 	vapid                VAPID
 	now                  func() time.Time
+}
+
+// notifier sends Notifications another way than Web Push.
+type notifier interface {
+	// On reports whether it can send Notifications at all.
+	On() bool
+	// Notify sends n.
+	Notify(ctx context.Context, n model.Notification) error
+}
+
+// SetMessenger has the tick send Notifications through m instead of Web Push
+// whenever m is on. Core sets it once, before serving.
+func (s *NotificationsService) SetMessenger(m notifier) {
+	s.messenger = m
 }
 
 // NewNotifications returns the NotificationsService, accepting only ticks
@@ -149,6 +166,17 @@ func (s *NotificationsService) sendDueNotifications(ctx context.Context) error {
 				continue
 			}
 			if !claimed {
+				continue
+			}
+			if s.messenger != nil && s.messenger.On() {
+				// Claimed already: one Telegram fails to take is lost, as
+				// with Web Push, rather than possibly sent twice.
+				reached := 1
+				if err := s.messenger.Notify(ctx, n); err != nil {
+					log.Printf("send Notification %s in Telegram: %v", n.ID, err)
+					reached = 0
+				}
+				sent = append(sent, sentNotification{id: n.ID, reached: reached, of: 1})
 				continue
 			}
 			outcome := s.sendToEveryPushSubscription(ctx, live, n)

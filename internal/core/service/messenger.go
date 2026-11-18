@@ -247,7 +247,7 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if err := s.talks.AddOwnerMessage(ctx, assistant, model.TalkMessage{
+	if err := s.talks.AddMessage(ctx, assistant, model.TalkMessage{
 		From:              model.FromOwner,
 		At:                s.now(),
 		Text:              text,
