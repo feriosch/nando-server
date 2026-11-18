@@ -41,11 +41,23 @@ const (
 	MessageFailed MessageState = "failed"
 )
 
+// Photo is one photo the Owner sent, as Telegram keeps it.
+type Photo struct {
+	// ID is Telegram's file_id for the size Nando chose: the bot that got
+	// the photo downloads it by this ID.
+	ID     string `bson:"id"`
+	Width  int    `bson:"width"`
+	Height int    `bson:"height"`
+}
+
 // TalkMessage is one message in a Talk.
 type TalkMessage struct {
 	From MessageFrom `bson:"from"`
 	At   time.Time   `bson:"at"`
 	Text string      `bson:"text"`
+	// Photos are the message's photos. Nando keeps only Telegram's IDs for
+	// them, never the files.
+	Photos []Photo `bson:"photos,omitempty"`
 	// TelegramMessageID is the message's id in the Owner's chat with the bot.
 	TelegramMessageID int64 `bson:"telegramMessageId"`
 	// State is set only for the Owner's messages.

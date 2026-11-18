@@ -68,7 +68,9 @@ type telegramMessage struct {
 	From      *telegramUser    `json:"from,omitempty"`
 	Text      string           `json:"text,omitempty"`
 	Photo     []map[string]any `json:"photo,omitempty"`
+	Caption   string           `json:"caption,omitempty"`
 	Sticker   map[string]any   `json:"sticker,omitempty"`
+	Document  map[string]any   `json:"document,omitempty"`
 }
 
 type telegramChat struct {
@@ -233,26 +235,28 @@ func TestARedeliveredUpdateIsKeptOnce(t *testing.T) {
 	}
 }
 
-func TestAPhotoOrStickerIsAnsweredButNotKept(t *testing.T) {
+func TestAStickerOrFileIsAnsweredButNotKept(t *testing.T) {
 	n, telegram := messengerNando(t)
 
-	photo := ownerSays(5001, 42, "")
-	photo.Message.Photo = []map[string]any{{"file_id": "AgAC-photo", "width": 90, "height": 90}}
+	// An image sent as a file is a document, not a photo: not read yet (#135).
+	file := ownerSays(5001, 42, "")
+	file.Message.Caption = "the job description"
+	file.Message.Document = map[string]any{"file_id": "BQAC-file", "file_name": "jd.pdf", "mime_type": "application/pdf"}
 	sticker := ownerSays(5002, 43, "")
 	sticker.Message.Sticker = map[string]any{"file_id": "CAAC-sticker"}
-	n.mustPostUpdate("career", photo)
+	n.mustPostUpdate("career", file)
 	n.mustPostUpdate("career", sticker)
-	n.mustPostUpdate("career", photo) // re-delivered
+	n.mustPostUpdate("career", file) // re-delivered
 
 	if got := n.talk("career").Messages; len(got) != 0 {
 		t.Errorf("Career Talk's messages = %+v; want none", got)
 	}
 	sent := telegram.CallsTo("sendMessage")
 	if len(sent) != 2 {
-		t.Fatalf("sendMessage calls = %+v; want one per photo or sticker", sent)
+		t.Fatalf("sendMessage calls = %+v; want one per file or sticker", sent)
 	}
 	for _, c := range sent {
-		if c.Token != careerBotToken || c.Params["chat_id"] != float64(ownerTelegramID) || c.Params["text"] != "I can only read text for now." {
+		if c.Token != careerBotToken || c.Params["chat_id"] != float64(ownerTelegramID) || c.Params["text"] != "I can read text and photos, but not files, stickers or voice notes yet." {
 			t.Errorf("sendMessage = %+v; want the Career bot telling the Owner it reads only text", c)
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"maps"
 	"net/http"
@@ -42,8 +43,9 @@ type MessengerConfig struct {
 // re-delivers an update for up to a day while it isn't answered 200.
 const updateMemory = 7 * 24 * time.Hour
 
-// textOnly is what a bot answers a message with no text.
-const textOnly = "I can only read text for now."
+// textOnly is what a bot answers a message it can't read: a sticker, a
+// voice note or a file. Its caption, if any, is dropped with it.
+const textOnly = "I can read text and photos, but not files, stickers or voice notes yet."
 
 // MessengerService receives the Owner's messages from Telegram and keeps them
 // in Talks.
@@ -161,7 +163,36 @@ type update struct {
 			ID int64 `json:"id"`
 		} `json:"from"`
 		Text string `json:"text"`
+		// Photo is one photo in the sizes Telegram made of it, smallest first.
+		Photo []struct {
+			FileID string `json:"file_id"`
+			Width  int    `json:"width"`
+			Height int    `json:"height"`
+		} `json:"photo"`
+		// Caption is a photo's text.
+		Caption string `json:"caption"`
 	} `json:"message"`
+}
+
+// maxPhotoSide is the longest side, in pixels, of the photo size Nando keeps:
+// enough to read a sign or a screenshot, at about 1,500 tokens.
+const maxPhotoSide = 1280
+
+// photo is the size of u's photo that Nando keeps: the largest no longer than
+// maxPhotoSide on its long side, or the smallest if all are longer. It is
+// false if u has no photo.
+func (u update) photo() (model.Photo, bool) {
+	sizes := u.Message.Photo
+	if len(sizes) == 0 {
+		return model.Photo{}, false
+	}
+	best := sizes[0]
+	for _, size := range sizes {
+		if max(size.Width, size.Height) <= maxPhotoSide && size.Width*size.Height > best.Width*best.Height {
+			best = size
+		}
+	}
+	return model.Photo{ID: best.FileID, Width: best.Width, Height: best.Height}, true
 }
 
 // postUpdate takes one update from assistant's bot. It always answers 200
@@ -201,8 +232,12 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	if m.Text == "" {
-		// A photo, sticker, voice note or anything else without text.
+	text, photos := m.Text, []model.Photo(nil)
+	if p, ok := u.photo(); ok {
+		text, photos = m.Caption, []model.Photo{p}
+	}
+	if text == "" && len(photos) == 0 {
+		// A sticker, voice note, file or anything else without text.
 		if err := s.telegram.call(ctx, token, "sendMessage", map[string]any{
 			"chat_id": m.Chat.ID,
 			"text":    textOnly,
@@ -215,7 +250,8 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 	if err := s.talks.AddOwnerMessage(ctx, assistant, model.TalkMessage{
 		From:              model.FromOwner,
 		At:                s.now(),
-		Text:              m.Text,
+		Text:              text,
+		Photos:            photos,
 		TelegramMessageID: m.MessageID,
 		State:             model.MessageWaiting,
 	}); err != nil {
@@ -269,6 +305,52 @@ type telegramClient struct {
 	http    *http.Client
 }
 
+// errFileGone is a file Telegram doesn't have for the bot: an unknown
+// file_id, or one it no longer keeps.
+var errFileGone = errors.New("Telegram has no such file for this bot")
+
+// maxPhotoBytes is the most of a photo Nando downloads. A photo of up to
+// maxPhotoSide pixels is far smaller.
+const maxPhotoBytes = 5 << 20
+
+// download downloads the file with fileID as the bot with token. The bot
+// token never appears in an error.
+func (c telegramClient) download(ctx context.Context, token, fileID string) ([]byte, error) {
+	var file struct {
+		FilePath string `json:"file_path"`
+	}
+	if err := c.callFor(ctx, token, "getFile", map[string]any{"file_id": fileID}, &file); err != nil {
+		return nil, err
+	}
+	if file.FilePath == "" {
+		return nil, errors.New("getFile: Telegram gave no file path")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/file/bot"+token+"/"+file.FilePath, nil)
+	if err != nil {
+		return nil, errors.New("download: the bot token or the API URL isn't usable")
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		// The URL holds the bot's token, and *url.Error repeats it.
+		return nil, errors.New("download: request failed")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: download: %s", errFileGone, resp.Status)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download: %s", resp.Status)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPhotoBytes+1))
+	if err != nil {
+		return nil, errors.New("download: reading the file failed")
+	}
+	if len(data) > maxPhotoBytes {
+		return nil, errors.New("download: the file is too large")
+	}
+	return data, nil
+}
+
 // call calls method as the bot with token, with params as its JSON body.
 func (c telegramClient) call(ctx context.Context, token, method string, params any) error {
 	return c.callFor(ctx, token, method, params, nil)
@@ -298,7 +380,11 @@ func (c telegramClient) callFor(ctx context.Context, token, method string, param
 		Result      json.RawMessage `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&answer); err != nil || !answer.OK {
-		return fmt.Errorf("%s: %d %s", method, resp.StatusCode, answer.Description)
+		err := fmt.Errorf("%s: %d %s", method, resp.StatusCode, answer.Description)
+		if resp.StatusCode == http.StatusBadRequest && method == "getFile" {
+			return fmt.Errorf("%w: %w", errFileGone, err)
+		}
+		return err
 	}
 	if result != nil {
 		if err := json.Unmarshal(answer.Result, result); err != nil {

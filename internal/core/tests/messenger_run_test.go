@@ -52,6 +52,9 @@ type claimJSON struct {
 		Text    string `json:"text"`
 		Waiting bool   `json:"waiting"`
 		Failed  bool   `json:"failed"`
+		Photos  []struct {
+			ID string `json:"id"`
+		} `json:"photos"`
 	} `json:"messages"`
 	OtherAssistants []string `json:"otherAssistants"`
 }
