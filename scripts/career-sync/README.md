@@ -6,7 +6,7 @@ The script on the Owner's MacBook that hands their new LinkedIn messages to Nand
 
 `launchd` runs `sync.py` at minute 0 of every hour, once when the Owner logs in, and once on wake for the hours the Mac slept through. Each run:
 
-1. Exits quietly if Nando can't be reached. The next hour tries again.
+1. Exits quietly if the Mac is in a dark wake, or if Nando can't be reached. The next hour tries again. With the lid closed, Power Nap wakes the Mac every 15 to 20 minutes for a few seconds, without its screen, and `launchd` runs the hours it missed then. A run started there carried on in slices of a few seconds over hours: the reader's browser couldn't start without a screen, and the access token expired between checking it and sending it. `pmset -g systemstate` lists `Graphics` only in a full wake. Otherwise, `caffeinate -i` keeps the Mac from sleeping when idle until the run ends. Closing the lid still sleeps it.
 2. Asks Nando `career_sync_status`. Nando decides when a Sync is due: at most twice a Day, 6 hours apart, not before 07:00. Nearly every run stops here, without starting the reader.
 3. Starts the reader over stdio and calls `get_session_status`. With no LinkedIn session saved, such as after LinkedIn ended the last one, it imports the session of the Owner's Chrome (see Logging in to LinkedIn) and starts the reader again. If Chrome has none, it tells Nando `session_expired` and stops, without asking the reader for anything: with no session, the reader would open a login window.
 4. Calls `get_inbox` for the 50 most recent threads. If LinkedIn turns the session away, it imports Chrome's and tries once more, the same way. If Chrome has none, or LinkedIn turns that one away too, it tells Nando `session_expired` and stops.
@@ -67,7 +67,7 @@ The reader's own auto-import stays off (`--no-auto-import`): when it fails, the 
 uv run --script sync.py --connect
 ```
 
-It registers the script with Nando, opens the browser on Nando's consent page, where the Owner approves it with a Passkey, and waits for the browser to come back to `http://127.0.0.1:8765/callback`. The tokens are kept in the login Keychain (service `app.nando.career-sync`), or, if `launchd` can't reach the Keychain, in `~/.nando/career-sync.json`, readable only by the Owner. The access token lasts an hour. Each hourly run is a new process, so before refreshing it, the script reads Nando's OAuth metadata (`/.well-known/oauth-authorization-server`) for the token endpoint (`/oauth/token`): the MCP SDK reads it only on the way to the browser. If Nando can't serve it, the run logs so, keeps the tokens, and the next hour tries again. The Connector appears in Nando's Settings like any other. Removing it there cuts the script off, and the log then says to run `--connect` again.
+It registers the script with Nando, opens the browser on Nando's consent page, where the Owner approves it with a Passkey, and waits for the browser to come back to `http://127.0.0.1:8765/callback`. The tokens are kept in the login Keychain (service `app.nando.career-sync`), or, if `launchd` can't reach the Keychain, in `~/.nando/career-sync.json`, readable only by the Owner. The access token lasts an hour. Each hourly run is a new process, so before refreshing it, the script reads Nando's OAuth metadata (`/.well-known/oauth-authorization-server`) for the token endpoint (`/oauth/token`): the MCP SDK reads it only on the way to the browser. If Nando can't serve it, the run logs so, keeps the tokens, and the next hour tries again. The script refreshes the access token 5 minutes before it expires. If Nando turns a token away anyway, it refreshes it and tries once more before asking for `--connect`: the SDK alone would go straight to the browser. The Connector appears in Nando's Settings like any other. Removing it there cuts the script off, and the log then says to run `--connect` again.
 
 ## Keeping Claude Code away from the reader's writing Tools
 
@@ -95,7 +95,7 @@ If the reader is ever added to Claude Code on the Mac, deny its writing Tools in
 tail -n 50 ~/Library/Logs/nando-career-sync.log
 ```
 
-Most runs log `No Sync is due.` A Sync logs how many threads it opened and sent, and how many new messages Nando stored. `WARNING` lines are problems also sent to Nando. `ERROR` lines are runs that failed before reaching Nando, such as `run sync.py --connect`. To run one by hand: `launchctl kickstart gui/$(id -u)/app.nando.career-sync`.
+Most runs log `No Sync is due.` A Sync logs how many threads it opened and sent, and how many new messages Nando stored. `WARNING` lines are problems also sent to Nando. `ERROR` lines are runs that failed before reaching Nando, such as `run sync.py --connect`, or that lost the connection to it, as can happen just after a wake. Only the first needs the Owner. `The Mac is in a dark wake` lines are runs skipped while the Mac slept. To run one by hand: `launchctl kickstart gui/$(id -u)/app.nando.career-sync`.
 
 ## The reader, as checked at 4.30.0
 

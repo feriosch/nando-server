@@ -21,10 +21,12 @@ import random
 import re
 import socket
 import stat
+import subprocess
 import sys
 import time as clock
 import unicodedata
 import webbrowser
+from collections.abc import AsyncGenerator
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import date, datetime, time, tzinfo
 from pathlib import Path
@@ -572,6 +574,31 @@ def online() -> bool:
         return False
 
 
+def awake() -> bool:
+    """Whether the Mac is fully awake, rather than in a dark wake: with the
+    lid closed, Power Nap wakes it every 15 to 20 minutes for a few seconds,
+    without its screen, and launchd runs the hours it missed then. A run
+    started there would carry on in slices of a few seconds over hours, the
+    reader's browser couldn't start without a screen, and the access token
+    could expire between checking it and using it. Only a full wake has the
+    Graphics capability. If pmset can't tell, the Mac counts as awake."""
+    try:
+        out = subprocess.run(["pmset", "-g", "systemstate"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return True
+    capabilities = re.search(r"Capabilities are:(.*)", out)
+    return capabilities is None or "Graphics" in capabilities.group(1).split()
+
+
+def stay_awake() -> None:
+    """Keeps the Mac from sleeping when idle until this run ends, so that a
+    Sync isn't cut into slices by sleep. Closing the lid still sleeps it."""
+    try:
+        subprocess.Popen(["caffeinate", "-i", "-w", str(os.getpid())])
+    except OSError as e:
+        log.info("Couldn't start caffeinate (%s): the Mac may sleep during this run.", e)
+
+
 # The Connector's tokens and registration, in the login Keychain, or in a
 # 0600 file if launchd can't reach the Keychain.
 KEYCHAIN_SERVICE = "app.nando.career-sync"
@@ -583,6 +610,9 @@ TOKEN_FILE = Path.home() / ".nando" / "career-sync.json"
 # authorization and the code exchange.
 CALLBACK_PORT = 8765
 REDIRECT_URI = f"http://127.0.0.1:{CALLBACK_PORT}/callback"
+
+# How long before the access token expires a run refreshes it, in seconds.
+EXPIRY_MARGIN = 300
 
 
 class Store:
@@ -660,10 +690,13 @@ class NandoAuth(OAuthClientProvider):
     Nando turned it away. Without the metadata it would refresh at the
     origin's /token, which Nando doesn't serve: its token endpoint is
     /oauth/token. Either way it would start over in the browser, which an
-    hourly run can't. So it reads the metadata itself before a refresh.
+    hourly run can't. So it reads the metadata itself before a refresh. It
+    refreshes EXPIRY_MARGIN early, and once more if Nando turns a token away
+    anyway (_auth_flow), before asking for --connect.
 
-    It leans on mcp 2.3.0's internals (_initialize, _refresh_token and
-    context): test_auth.py checks them when the SDK is updated."""
+    It leans on mcp 2.3.0's internals (_initialize, _auth_flow,
+    _refresh_token and context): test_auth.py checks them when the SDK is
+    updated."""
 
     def __init__(
         self, storage: StoredTokens, *, interactive: bool, transport: httpx2.AsyncBaseTransport | None = None
@@ -686,7 +719,40 @@ class NandoAuth(OAuthClientProvider):
 
     async def _initialize(self) -> None:
         await super()._initialize()
-        self.context.token_expiry_time = self._storage.expires_at()
+        expires_at = self._storage.expires_at()
+        self.context.token_expiry_time = expires_at - EXPIRY_MARGIN if expires_at else None
+
+    async def _auth_flow(self, request: httpx2.Request) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
+        """The SDK's flow, except that when Nando turns away an access token
+        the script took for valid, it refreshes the token and tries once
+        more before asking for --connect. The SDK would go straight to the
+        browser. A token expires unseen when the Mac sleeps between checking
+        it and sending it, or when the Mac's clock and Nando's disagree."""
+        flow = super()._auth_flow(request)
+        try:
+            outgoing = await flow.__anext__()
+            while True:
+                response = yield outgoing
+                if outgoing is request and response.status_code == 401 and self.context.can_refresh_token():
+                    break
+                outgoing = await flow.asend(response)
+        except StopAsyncIteration:
+            return
+        finally:
+            await flow.aclose()
+        log.info("Nando turned the access token away: refreshing it.")
+        # In the past, not 0: the SDK takes no expiry time as never expiring.
+        self.context.token_expiry_time = clock.time() - 1
+        flow = super()._auth_flow(request)
+        try:
+            outgoing = await flow.__anext__()
+            while True:
+                response = yield outgoing
+                outgoing = await flow.asend(response)
+        except StopAsyncIteration:
+            return
+        finally:
+            await flow.aclose()
 
     async def _refresh_token(self) -> httpx2.Request:
         if self.context.oauth_metadata is None:
@@ -798,20 +864,35 @@ def main() -> int:
     if args.connect:
         asyncio.run(connect())
         return 0
+    if not awake():
+        log.info("The Mac is in a dark wake: the next hour tries again.")
+        return 0
     if not online():
         log.info("No network: the next hour tries again.")
         return 0
+    stay_awake()
     try:
         asyncio.run(hourly())
     except Exception as e:
-        errors = list(leaves(e))
-        if all(isinstance(error, (NotConnected, NandoUnavailable)) for error in errors):
-            for message in dict.fromkeys(str(error) for error in errors):
+        messages = [why_nando_ended(error) for error in leaves(e)]
+        if all(messages):
+            for message in dict.fromkeys(messages):
                 log.error("%s", message)
         else:
             log.exception("The run failed.")
         return 1
     return 0
+
+
+def why_nando_ended(error: BaseException) -> str | None:
+    """One line for an error that only means Nando couldn't be used this
+    run, or None for any other, which is logged with its traceback."""
+    if isinstance(error, (NotConnected, NandoUnavailable)):
+        return str(error)
+    # Such as a connection reset just after a wake, before the network is back.
+    if isinstance(error, httpx2.TransportError):
+        return f"Lost the connection to Nando ({type(error).__name__}): the next hour tries again."
+    return None
 
 
 def leaves(e: BaseException):
