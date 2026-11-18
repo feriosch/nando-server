@@ -115,3 +115,39 @@ func TestAPhotoTelegramDoesntHaveIsAnErrorWithoutTheBotToken(t *testing.T) {
 		}
 	}
 }
+
+func TestAPhotoLargerThan1280PixelsInEverySizeIsSeenAtItsSmallest(t *testing.T) {
+	n, telegram, _ := messengerNandoWithTrigger(t)
+	// A long panorama: even Telegram's smallest size is wider than 1280 px.
+	panorama := ownerSays(5001, 42, "")
+	panorama.Message.Photo = []map[string]any{
+		{"file_id": "pano-1600", "width": 1600, "height": 200},
+		{"file_id": "pano-3200", "width": 3200, "height": 400},
+	}
+	telegram.SetFile("pano-1600", []byte("JPEG bytes, 1600 px"))
+	telegram.SetFile("pano-3200", []byte("JPEG bytes, 3200 px"))
+	n.mustPostUpdate("career", panorama)
+	r := n.startRun()
+
+	result := r.getPhoto("career", r.claim("").Messages[0].Photos[0].ID)
+
+	if image, ok := result.Content[0].(*mcp.ImageContent); !ok || string(image.Data) != "JPEG bytes, 1600 px" {
+		t.Errorf("messenger_get_photo = %+v; want the smallest size, 1600 px", result.Content[0])
+	}
+}
+
+func TestAPhotoTelegramFailsToSendForNowIsNotCalledGone(t *testing.T) {
+	n, telegram, _ := messengerNandoWithTrigger(t)
+	telegram.SetFile("photo-1280", []byte("JPEG bytes"))
+	n.mustPostUpdate("career", ownerSendsPhoto(5001, 42, ""))
+	r := n.startRun()
+	id := r.claim("").Messages[0].Photos[0].ID
+	telegram.Fail("getFile") // Telegram has a bad moment
+
+	result := r.getPhoto("career", id)
+
+	text, _ := result.Content[0].(*mcp.TextContent)
+	if !result.IsError || text == nil || strings.Contains(text.Text, "no longer keeps it") || !strings.Contains(text.Text, "try once more") {
+		t.Errorf("messenger_get_photo = %+v; want an error saying to try again, not that the photo is gone", result.Content[0])
+	}
+}

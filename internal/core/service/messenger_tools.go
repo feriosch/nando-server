@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -105,7 +106,7 @@ func (s *MessengerService) Tools() []model.Tool {
 }
 
 // photo downloads the photo with id, which the Owner sent assistant, from
-// Telegram. Telegram keeps every photo as a JPEG.
+// Telegram.
 func (s *MessengerService) photo(ctx context.Context, assistant, id string) (model.Image, error) {
 	token, ok := s.bot(assistant)
 	if !ok {
@@ -115,10 +116,18 @@ func (s *MessengerService) photo(ctx context.Context, assistant, id string) (mod
 		return model.Image{}, errors.New("id is empty")
 	}
 	data, err := s.telegram.download(ctx, token, id)
-	if err != nil {
-		return model.Image{}, fmt.Errorf("Telegram has no such photo for this Assistant, or no longer keeps it (%w)", err)
+	if errors.Is(err, errFileGone) {
+		return model.Image{}, fmt.Errorf("Telegram has no such photo for this Assistant, or no longer keeps it: ask the Owner to send it again (%w)", err)
 	}
-	return model.Image{MIMEType: "image/jpeg", Data: data}, nil
+	if err != nil {
+		return model.Image{}, fmt.Errorf("couldn't get the photo from Telegram just now, try once more (%w)", err)
+	}
+	// Telegram keeps photos as JPEGs; trust the bytes if they say otherwise.
+	mimeType := http.DetectContentType(data)
+	if !strings.HasPrefix(mimeType, "image/") {
+		mimeType = "image/jpeg"
+	}
+	return model.Image{MIMEType: mimeType, Data: data}, nil
 }
 
 // newTalkJSON is what messenger_new_talk answers.

@@ -43,8 +43,9 @@ type MessengerConfig struct {
 // re-delivers an update for up to a day while it isn't answered 200.
 const updateMemory = 7 * 24 * time.Hour
 
-// textOnly is what a bot answers a message with no text.
-const textOnly = "I can only read text for now."
+// textOnly is what a bot answers a message it can't read: a sticker, a
+// voice note or a file. Its caption, if any, is dropped with it.
+const textOnly = "I can read text and photos, but not files, stickers or voice notes yet."
 
 // MessengerService receives the Owner's messages from Telegram and keeps them
 // in Talks.
@@ -304,6 +305,10 @@ type telegramClient struct {
 	http    *http.Client
 }
 
+// errFileGone is a file Telegram doesn't have for the bot: an unknown
+// file_id, or one it no longer keeps.
+var errFileGone = errors.New("Telegram has no such file for this bot")
+
 // maxPhotoBytes is the most of a photo Nando downloads. A photo of up to
 // maxPhotoSide pixels is far smaller.
 const maxPhotoBytes = 5 << 20
@@ -330,6 +335,9 @@ func (c telegramClient) download(ctx context.Context, token, fileID string) ([]b
 		return nil, errors.New("download: request failed")
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: download: %s", errFileGone, resp.Status)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download: %s", resp.Status)
 	}
@@ -372,7 +380,11 @@ func (c telegramClient) callFor(ctx context.Context, token, method string, param
 		Result      json.RawMessage `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&answer); err != nil || !answer.OK {
-		return fmt.Errorf("%s: %d %s", method, resp.StatusCode, answer.Description)
+		err := fmt.Errorf("%s: %d %s", method, resp.StatusCode, answer.Description)
+		if resp.StatusCode == http.StatusBadRequest && method == "getFile" {
+			return fmt.Errorf("%w: %w", errFileGone, err)
+		}
+		return err
 	}
 	if result != nil {
 		if err := json.Unmarshal(answer.Result, result); err != nil {
