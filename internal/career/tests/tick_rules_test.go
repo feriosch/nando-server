@@ -205,3 +205,23 @@ func TestAFollowUpNobodySentIn30DaysIsDroppedNotTurnedLate(t *testing.T) {
 		t.Errorf("Sato is waiting as %+v, with %d Late Replies; want Sato neither waiting nor late", screen.Waiting, screen.LateReplies)
 	}
 }
+
+func TestNoFollowUpIsQueuedForAnOwnersMessageOver30DaysOld(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	run, filed := fileTanakasConversation(t, phone)
+	o := newOpportunity(t, run, filed.Recruiter)
+	callTool[recordedJSON](t, phone.macAt(at(2, 8, 0)), "career_record_sync", map[string]any{"threads": []any{
+		tanakaThread(message("m2", "owner", ownersMessage, "Thank you, I'd be glad to talk with them.")),
+	}})
+	// Over 30 days later, the Owner moves the Opportunity on through the
+	// Tools, which keeps it open.
+	moved := ownersMessage.Add(30*day + time.Minute)
+	n.clock.Set(moved)
+	callTool[fullOpportunityJSON](t, phone.connect(), "career_save_opportunity", map[string]any{"id": o.ID, "stage": "in_process"})
+
+	n.tickAt(moved.Add(time.Minute))
+
+	if items := phone.claimWorkAt(moved.Add(2 * time.Minute)); len(items) != 0 {
+		t.Errorf("the run claimed %+v; want nothing: a follow-up to a message over 30 days old would be dropped at the next tick", items)
+	}
+}

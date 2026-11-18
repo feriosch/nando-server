@@ -215,13 +215,7 @@ func (r conversations) WithWaitingReplyBefore(ctx context.Context, before time.T
 }
 
 func (r conversations) MakeReplyLate(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply) (bool, error) {
-	result, err := r.collection.UpdateOne(ctx,
-		bson.D{
-			{Key: "_id", Value: id},
-			{Key: "suggestedReply.kind", Value: reply.Kind},
-			{Key: "suggestedReply.writtenAt", Value: reply.WrittenAt},
-			notMarkedReplied,
-		},
+	result, err := r.collection.UpdateOne(ctx, unchangedReply(id, reply),
 		bson.D{{Key: "$set", Value: bson.D{{Key: "suggestedReply.kind", Value: model.ReplyLate}}}},
 	)
 	if err != nil {
@@ -230,17 +224,25 @@ func (r conversations) MakeReplyLate(ctx context.Context, id bson.ObjectID, repl
 	return result.ModifiedCount == 1, nil
 }
 
-func (r conversations) DropReply(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply) error {
-	_, err := r.collection.UpdateOne(ctx,
-		bson.D{
-			{Key: "_id", Value: id},
-			{Key: "suggestedReply.kind", Value: reply.Kind},
-			{Key: "suggestedReply.writtenAt", Value: reply.WrittenAt},
-			notMarkedReplied,
-		},
+func (r conversations) DropReply(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply) (bool, error) {
+	result, err := r.collection.UpdateOne(ctx, unchangedReply(id, reply),
 		bson.D{{Key: "$unset", Value: bson.D{{Key: "suggestedReply", Value: ""}}}},
 	)
-	return err
+	if err != nil {
+		return false, err
+	}
+	return result.ModifiedCount == 1, nil
+}
+
+// unchangedReply matches the Conversation id while its Suggested Reply is
+// still reply, as it was read, and the Owner hasn't marked it replied.
+func unchangedReply(id bson.ObjectID, reply model.SuggestedReply) bson.D {
+	return bson.D{
+		{Key: "_id", Value: id},
+		{Key: "suggestedReply.kind", Value: reply.Kind},
+		{Key: "suggestedReply.writtenAt", Value: reply.WrittenAt},
+		notMarkedReplied,
+	}
 }
 
 func (r conversations) MarkReplied(ctx context.Context, id bson.ObjectID, reply model.SuggestedReply, at time.Time) error {

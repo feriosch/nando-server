@@ -26,9 +26,9 @@ const (
 
 // TickRulesService applies, at every tick, the rules that need no model:
 // it closes the Opportunities that went quiet as faded, turns answers to old
-// messages late, drops follow-ups to old messages, and queues follow-ups for Opportunities
-// waiting on the Recruiter. What they queue in the run's work, the tick
-// then wakes the run for.
+// messages late, drops follow-ups to old messages, and queues follow-ups for
+// Opportunities waiting on the Recruiter. What they queue in the run's work,
+// the tick then wakes the run for.
 type TickRulesService struct {
 	opportunities model.OpportunitiesRepository
 	conversations model.ConversationsRepository
@@ -63,8 +63,8 @@ func (s *TickRulesService) Apply(ctx context.Context) error {
 // fadesAfter: no new message in its Recruiter's Conversations and no change
 // through the Tools, or, with no Recruiter, only no change. Otherwise, in
 // process or at an offer, each of its Recruiter's Conversations whose last
-// message is the Owner's, at least followUpAfter old, with no Suggested
-// Reply, gets a follow_up Item: one for each such message, ever, even if no
+// message is the Owner's, at least followUpAfter and at most lateAfter old,
+// with no Suggested Reply, gets a follow_up Item: one for each such message, ever, even if no
 // run writes it. A Suggested Reply the Owner marked replied counts as their
 // last message, sent when they marked it, until a Sync brings the real one,
 // which the mark's follow_up Item, sent after it, already covers.
@@ -95,7 +95,8 @@ func (s *TickRulesService) fadeOrFollowUp(ctx context.Context, o model.Opportuni
 	}
 	for _, c := range filed {
 		ownerLast, ok := ownersLastWord(c)
-		if !ok || now.Sub(ownerLast) < followUpAfter || !followedUpBefore(c, ownerLast) {
+		// Over lateAfter, makeLate would drop the follow-up at the next tick.
+		if !ok || now.Sub(ownerLast) < followUpAfter || now.Sub(ownerLast) > lateAfter || !followedUpBefore(c, ownerLast) {
 			continue
 		}
 		// The Item first: if marking the message then fails, the open Item
@@ -153,14 +154,19 @@ func (s *TickRulesService) makeLate(ctx context.Context) error {
 		return err
 	}
 	for _, c := range stale {
-		// A reply the run rewrote meanwhile is left alone, and isn't sent
-		// back to be rewritten again.
 		if c.SuggestedReply.Kind == model.ReplyFollowUp {
-			if err := s.conversations.DropReply(ctx, c.ID, *c.SuggestedReply); err != nil {
+			dropped, err := s.conversations.DropReply(ctx, c.ID, *c.SuggestedReply)
+			if dropped {
+				log.Printf("career: the follow-up in Conversation %s answered a message from %s, so it was dropped",
+					c.ID.Hex(), c.SuggestedReply.Answers.Format(time.RFC3339))
+			}
+			if err != nil {
 				return err
 			}
 			continue
 		}
+		// Turned late first, and queued only if it was: a reply the run
+		// rewrote meanwhile isn't sent back to be rewritten again.
 		late, err := s.conversations.MakeReplyLate(ctx, c.ID, *c.SuggestedReply)
 		if err != nil {
 			return err
