@@ -50,7 +50,7 @@ func (r talks) Open(ctx context.Context, assistant string) (model.Talk, error) {
 	return talk, err
 }
 
-func (r talks) AddOwnerMessage(ctx context.Context, assistant string, m model.TalkMessage) error {
+func (r talks) AddMessage(ctx context.Context, assistant string, m model.TalkMessage) error {
 	push := func() error {
 		_, err := r.collection.UpdateOne(ctx, openTalk(assistant), bson.D{
 			{Key: "$push", Value: bson.D{{Key: "messages", Value: m}}},

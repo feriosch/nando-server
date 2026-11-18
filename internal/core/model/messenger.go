@@ -141,9 +141,9 @@ var ErrTalkChanged = errors.New("the Talk changed since it was read")
 type TalksRepository interface {
 	// Open is assistant's open Talk, or an empty one if it has none yet.
 	Open(ctx context.Context, assistant string) (Talk, error)
-	// AddOwnerMessage adds m to assistant's open Talk, opening one if there
+	// AddMessage adds m to assistant's open Talk, opening one if there
 	// is none.
-	AddOwnerMessage(ctx context.Context, assistant string, m TalkMessage) error
+	AddMessage(ctx context.Context, assistant string, m TalkMessage) error
 	// Save replaces talk, an open Talk read earlier, with its Version one
 	// higher. It returns ErrTalkChanged if the Talk changed since it was read.
 	Save(ctx context.Context, talk Talk) error

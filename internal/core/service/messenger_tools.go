@@ -581,3 +581,51 @@ func (s *MessengerService) noticeNotStarted(ctx context.Context, assistant strin
 	}
 	return nil
 }
+
+// On reports whether the Messenger is on: some Assistant has a bot. Then
+// Notifications are sent in Telegram instead of Web Push.
+func (s *MessengerService) On() bool {
+	return len(s.on()) > 0
+}
+
+// Notify sends n to the Owner in the chat of the Assistant its ID's area
+// names, such as career for "career:…", or the Core Assistant's when that
+// Assistant has no bot: the title, a line break and the body, leaving out
+// either if empty. It joins that Assistant's Talk.
+func (s *MessengerService) Notify(ctx context.Context, n model.Notification) error {
+	area, _, _ := strings.Cut(n.ID, ":")
+	assistant, token := "", ""
+	// Its area's Assistant, or the Core Assistant's, or, while bots are set
+	// up one at a time, any Assistant's with a bot: never lost.
+	for _, candidate := range append([]string{area, model.CoreAssistant}, s.on()...) {
+		if t, ok := s.bot(candidate); ok {
+			assistant, token = candidate, t
+			break
+		}
+	}
+	if token == "" {
+		return errors.New("no Assistant has a bot")
+	}
+	var lines []string
+	for _, line := range []string{n.Title, n.Body} {
+		if strings.TrimSpace(line) != "" {
+			lines = append(lines, line)
+		}
+	}
+	text := strings.Join(lines, "\n")
+	var sent struct {
+		MessageID int64 `json:"message_id"`
+	}
+	if err := s.telegram.callFor(ctx, token, "sendMessage", map[string]any{"chat_id": s.cfg.OwnerID, "text": text}, &sent); err != nil {
+		return err
+	}
+	// In the Talk, so the Owner's answer has it as context. It answers
+	// nothing and waits for nothing, so no run is woken. The Owner has it
+	// already, so failing to keep it is only logged.
+	if err := s.talks.AddMessage(ctx, assistant, model.TalkMessage{
+		From: model.FromAssistant, At: s.now(), Text: text, TelegramMessageID: sent.MessageID,
+	}); err != nil {
+		log.Printf("messenger: keep Notification %s in the %s Talk: %v", n.ID, assistant, err)
+	}
+	return nil
+}

@@ -36,10 +36,27 @@ type NotificationsService struct {
 	settings          *SettingsService
 	providers         []model.NotificationProvider
 	tickJobs          []model.TickJob
+	// messenger sends Notifications in Telegram instead of Web Push, while
+	// some Assistant has a bot (ADR 0008).
+	messenger notifier
 
 	verifySchedulerToken func(ctx context.Context, token string) error
 	vapid                VAPID
 	now                  func() time.Time
+}
+
+// notifier sends Notifications another way than Web Push.
+type notifier interface {
+	// On reports whether it can send Notifications at all.
+	On() bool
+	// Notify sends n.
+	Notify(ctx context.Context, n model.Notification) error
+}
+
+// SetMessenger has the tick send Notifications through m instead of Web Push
+// whenever m is on. Core sets it once, before serving.
+func (s *NotificationsService) SetMessenger(m notifier) {
+	s.messenger = m
 }
 
 // NewNotifications returns the NotificationsService, accepting only ticks
@@ -121,13 +138,16 @@ func (s *NotificationsService) tick(w http.ResponseWriter, r *http.Request) {
 func (s *NotificationsService) sendDueNotifications(ctx context.Context) error {
 	slot, err := s.currentSlot(ctx)
 	if err != nil {
-		logTick(nil, 0, 1)
+		logTick(nil, "", 1)
 		return err
 	}
-	subs, err := s.pushSubscriptions.List(ctx)
-	if err != nil {
-		logTick(nil, 0, 1)
-		return err
+	inTelegram := s.messenger != nil && s.messenger.On()
+	var subs []model.PushSubscription
+	if !inTelegram {
+		if subs, err = s.pushSubscriptions.List(ctx); err != nil {
+			logTick(nil, "", 1)
+			return err
+		}
 	}
 	var errs []error
 	var sent []sentNotification
@@ -151,27 +171,43 @@ func (s *NotificationsService) sendDueNotifications(ctx context.Context) error {
 			if !claimed {
 				continue
 			}
+			if inTelegram {
+				// Claimed already: one Telegram fails to take is lost, as
+				// with Web Push, rather than possibly sent twice.
+				reached := 1
+				if err := s.messenger.Notify(ctx, n); err != nil {
+					log.Printf("send Notification %s in Telegram: %v", n.ID, err)
+					reached = 0
+				}
+				sent = append(sent, sentNotification{id: n.ID, reached: reached, of: 1, inTelegram: true})
+				continue
+			}
 			outcome := s.sendToEveryPushSubscription(ctx, live, n)
 			logOutcome("send Notification "+n.ID, outcome)
 			sent = append(sent, sentNotification{id: n.ID, reached: len(outcome.reached), of: len(live)})
 			live = withoutRemoved(live, outcome)
 		}
 	}
-	logTick(sent, len(subs), len(errs))
+	to := "to " + counted(len(subs), "Push Subscription")
+	if inTelegram {
+		to = "in Telegram"
+	}
+	logTick(sent, to, len(errs))
 	return errors.Join(errs...)
 }
 
-// logTick logs the tick's one line: the Notifications it sent to how many
-// Push Subscriptions, and how many errors it met, which ServerError logs on
-// their own. Only a tick without errors says nothing was due.
-func logTick(sent []sentNotification, subs, errs int) {
+// logTick logs the tick's one line: the Notifications it sent, where (to
+// how many Push Subscriptions, or in Telegram), and how many errors it met,
+// which ServerError logs on their own. Only a tick without errors says
+// nothing was due.
+func logTick(sent []sentNotification, to string, errs int) {
 	switch {
 	case len(sent) == 0 && errs == 0:
 		log.Print("tick: no Notifications due")
 	case len(sent) == 0:
 		log.Printf("tick: no Notifications sent, %s", counted(errs, "error"))
 	default:
-		head := fmt.Sprintf("tick: sent %s to %s", counted(len(sent), "Notification"), counted(subs, "Push Subscription"))
+		head := fmt.Sprintf("tick: sent %s %s", counted(len(sent), "Notification"), to)
 		if errs > 0 {
 			head += ", " + counted(errs, "error")
 		}
@@ -188,11 +224,20 @@ func logTick(sent []sentNotification, subs, errs int) {
 type sentNotification struct {
 	id          string
 	reached, of int
+	// inTelegram is true for one sent in Telegram, not to Push Subscriptions.
+	inTelegram bool
 }
 
 // String is how the tick's log line reports it, such as
-// "calories:evening-summary:2026-10-20 (reached 1 of 2)".
+// "calories:evening-summary:2026-10-20 (reached 1 of 2)", or in Telegram
+// "core:weigh-in:2026-11-16 (sent)" or "(refused)".
 func (n sentNotification) String() string {
+	if n.inTelegram {
+		if n.reached == 0 {
+			return n.id + " (refused)"
+		}
+		return n.id + " (sent)"
+	}
 	return fmt.Sprintf("%s (reached %d of %d)", n.id, n.reached, n.of)
 }
 

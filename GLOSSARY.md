@@ -263,7 +263,7 @@ _Avoid_: Integration, external app, Connector (that is the reverse: an outside a
 ## Notifications
 
 **Notification**:
-A short message delivered to the Owner's installed devices. Core always sends it, either on a Module's behalf or for itself (such as the Weigh-in reminder, or the test Notification the Owner sends from Settings to see that Notifications reach their devices).
+A short message Nando sends the Owner first, without being asked. Core always sends it, either on a Module's behalf or for itself (such as the Weigh-in reminder), in the Messenger: in the chat of that Module's Assistant, or the Core Assistant's when the Module has none. It becomes part of that Assistant's Talk, so the Owner can answer it there. Before the Messenger it went to the Owner's installed devices by Web Push, which is being retired.
 _Avoid_: Alert, push, message
 
 **Push Subscription**:
