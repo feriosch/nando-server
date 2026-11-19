@@ -34,10 +34,19 @@ func (r recruiters) GetByID(ctx context.Context, id bson.ObjectID) (model.Recrui
 	return recruiter, utils.NotFound(err)
 }
 
+func (r recruiters) GiveProfileURL(ctx context.Context, id bson.ObjectID, url string) error {
+	_, err := r.collection.UpdateOne(ctx,
+		bson.D{{Key: "_id", Value: id}, {Key: "profileUrl", Value: bson.D{{Key: "$in", Value: bson.A{"", nil}}}}},
+		bson.D{{Key: "$set", Value: bson.D{{Key: "profileUrl", Value: url}}}},
+	)
+	return err
+}
+
 func (r recruiters) Search(ctx context.Context, query string) ([]model.Recruiter, error) {
 	cursor, err := r.collection.Find(ctx, bson.D{{Key: "$or", Value: bson.A{
 		bson.D{{Key: "name", Value: careerutils.Containing(query)}},
 		bson.D{{Key: "organisation", Value: careerutils.Containing(query)}},
+		bson.D{{Key: "profileUrl", Value: query}},
 	}}}, careerutils.ByName())
 	if err != nil {
 		return nil, err

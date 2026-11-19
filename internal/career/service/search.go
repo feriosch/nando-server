@@ -34,7 +34,7 @@ func NewSearch(recruiters model.RecruitersRepository, conversations model.Conver
 func (s *SearchService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "career_search",
-		Description: "Finds Recruiters (by name or their agency or Company), Companies (by name) and Opportunities " +
+		Description: "Finds Recruiters (by name or their agency or Company, or by their exact LinkedIn profileUrl), Companies (by name) and Opportunities " +
 			"(by role, or by their Company's name), open or closed, ignoring case. A Recruiter comes with their Conversations, " +
 			"each with whether it has a Suggested Reply (career_get_conversation reads one), and the Opportunities they brought, " +
 			"in short (none for a Lead; career_get_opportunity reads one). " +

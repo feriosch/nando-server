@@ -97,3 +97,28 @@ func TestSearchLeadsFromARecruiterToTheirSuggestedReply(t *testing.T) {
 		t.Errorf("after the run wrote one, Tanaka's Conversation has no Suggested Reply")
 	}
 }
+
+func TestSearchFindsARecruiterByTheirExactProfileLink(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run := syncTanaka(t, phone)
+	item := callTool[workJSON](t, run, "career_list_work", nil).Items[0]
+	tanaka := callTool[filedJSON](t, run, "career_file_conversation", map[string]any{
+		"conversationId": item.Conversation.ID,
+		"recruiter": map[string]any{"name": "Tanaka Yui", "profileUrl": "https://www.linkedin.com/in/ACoAATanaka/",
+			"kind": "agency", "organisation": "Hays Japan"},
+	}).Recruiter
+
+	for _, c := range []struct {
+		query string
+		want  int
+	}{
+		{"https://www.linkedin.com/in/ACoAATanaka/", 1},
+		{"https://www.linkedin.com/in/", 0},
+		{"https://www.linkedin.com/in/ACoAAOther/", 0},
+	} {
+		got := callTool[searchJSON](t, run, "career_search", map[string]any{"query": c.query})
+		if len(got.Recruiters) != c.want || (c.want == 1 && got.Recruiters[0].ID != tanaka.ID) {
+			t.Errorf("career_search %q found Recruiters %+v; want %d (Tanaka, %s)", c.query, got.Recruiters, c.want, tanaka.ID)
+		}
+	}
+}

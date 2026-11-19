@@ -109,6 +109,7 @@ func (s *ConversationsService) Tools() []coremodel.Tool {
 		Description: "Files a Conversation about roles under its Recruiter: an existing one (recruiterId), " +
 			"or a new one (recruiter: name, LinkedIn profileUrl, kind agency or in_house, and organisation, their agency or Company). " +
 			"Look for an existing Recruiter first, with career_search or the Recruiter on the run's Items. " +
+			"A Recruiter with no profileUrl takes the Conversation's person.profileUrl, if it has one; one they have is kept. " +
 			"It does the Conversation's sort Item. Answers {\"conversation\", \"recruiter\"}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"conversationId":{"type":"string"},` +
@@ -301,12 +302,21 @@ func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawM
 		if recruiter, err = s.recruiter(ctx, args.RecruiterID); err != nil {
 			return nil, err
 		}
+		if link := held.Person.ProfileURL; link != "" && recruiter.ProfileURL == "" {
+			if err := s.recruiters.GiveProfileURL(ctx, recruiter.ID, link); err != nil {
+				return nil, err
+			}
+			recruiter.ProfileURL = link
+		}
 	case args.Recruiter != nil:
 		r := model.Recruiter{
 			Name:         strings.TrimSpace(args.Recruiter.Name),
 			ProfileURL:   strings.TrimSpace(args.Recruiter.ProfileURL),
 			Kind:         args.Recruiter.Kind,
 			Organisation: strings.TrimSpace(args.Recruiter.Organisation),
+		}
+		if r.ProfileURL == "" {
+			r.ProfileURL = held.Person.ProfileURL
 		}
 		if r.Name == "" {
 			return nil, errors.New("a new Recruiter needs a name")
