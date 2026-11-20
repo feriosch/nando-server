@@ -36,14 +36,16 @@ func (r recruiters) GetByID(ctx context.Context, id bson.ObjectID) (model.Recrui
 }
 
 func (r recruiters) Search(ctx context.Context, query string) ([]model.Recruiter, error) {
-	// A profile link matches whole, with or without its trailing slash: its
-	// id is case-sensitive.
-	link := strings.TrimSuffix(query, "/")
-	cursor, err := r.collection.Find(ctx, bson.D{{Key: "$or", Value: bson.A{
+	matches := bson.A{
 		bson.D{{Key: "name", Value: careerutils.Containing(query)}},
 		bson.D{{Key: "organisation", Value: careerutils.Containing(query)}},
-		bson.D{{Key: "profileUrl", Value: bson.D{{Key: "$in", Value: bson.A{link, link + "/"}}}}},
-	}}}, careerutils.ByName())
+	}
+	// A profile link matches whole, with or without its trailing slash: its
+	// id is case-sensitive. An empty one matches nobody.
+	if link := strings.TrimSuffix(query, "/"); link != "" {
+		matches = append(matches, bson.D{{Key: "profileUrl", Value: bson.D{{Key: "$in", Value: bson.A{link, link + "/"}}}}})
+	}
+	cursor, err := r.collection.Find(ctx, bson.D{{Key: "$or", Value: matches}}, careerutils.ByName())
 	if err != nil {
 		return nil, err
 	}

@@ -130,7 +130,10 @@ func TestARecruiterWithNoProfileLinkGetsOneFromTheNextConversationFiledUnderThem
 
 func TestASyncBringingAFiledConversationsProfileLinkFillsInItsRecruiters(t *testing.T) {
 	_, phone := signedInBrowser(t)
-	tanakaWithoutLink(t, phone)
+	run, _ := tanakaWithoutLink(t, phone)
+	if got := callTool[searchJSON](t, run, "career_search", map[string]any{"query": "/"}).Recruiters; len(got) != 0 {
+		t.Errorf("career_search \"/\" found %+v; want nobody: an empty link matches no Recruiter", got)
+	}
 
 	// Tanaka writes again, and the script now reads the profile link.
 	callTool[recordedJSON](t, phone.macAt(at(0, 15, 0)), "career_record_sync", map[string]any{"threads": []any{
@@ -156,5 +159,13 @@ func TestARecruitersProfileLinkIsNeverReplaced(t *testing.T) {
 
 	if filed.Recruiter.ProfileURL != "https://www.linkedin.com/in/tanaka-yui/" {
 		t.Errorf("filed under Tanaka, the Recruiter is %+v; want Tanaka's own link kept", filed.Recruiter)
+	}
+
+	// A Sync bringing the other link to the filed Conversation keeps it too.
+	other["messages"] = []any{message("m10", "other", at(0, 14, 0), "Are you free for a call this week?")}
+	callTool[recordedJSON](t, phone.macAt(at(0, 15, 0)), "career_record_sync", map[string]any{"threads": []any{other}})
+	if found := callTool[searchJSON](t, phone.connect(), "career_search", map[string]any{"query": "Tanaka"}).Recruiters; len(found) != 1 ||
+		found[0].ProfileURL != "https://www.linkedin.com/in/tanaka-yui/" {
+		t.Errorf("after a Sync brought another link, career_search found %+v; want Tanaka's own link kept", found)
 	}
 }

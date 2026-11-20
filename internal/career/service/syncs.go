@@ -179,15 +179,16 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 			return nil, err
 		}
 		stored += added.Stored
+		if err := s.queue(ctx, added, id); err != nil {
+			return nil, err
+		}
 		// A Recruiter filed before the Sync read profile links takes the
-		// link of their Conversation's person.
+		// link of their Conversation's person. After the Item: a failure
+		// here must not leave stored messages with nothing queued.
 		if link := update.Person.ProfileURL; added.RecruiterID != nil && link != "" {
 			if _, err := s.recruiters.FillProfileURL(ctx, *added.RecruiterID, link); err != nil {
 				return nil, err
 			}
-		}
-		if err := s.queue(ctx, added, id); err != nil {
-			return nil, err
 		}
 	}
 	if isNew {
