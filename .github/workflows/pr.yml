@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      # The Messenger's PDF tests run poppler's programs, as the image does.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends poppler-utils
       - run: go vet ./...
       # -count=1: see README's Test section.
       - run: go test -count=1 ./...

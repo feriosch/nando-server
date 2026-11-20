@@ -40,7 +40,7 @@ Imports follow the same direction. A Module may import what Core exports, such a
 
 ## Run locally
 
-Requires Go 1.25+ and Docker.
+Requires Go 1.25+, Docker, and poppler's programs (`pdfinfo`, `pdftotext`, `pdftoppm`, from `poppler-utils` on Debian or Ubuntu, `poppler` on Homebrew), with which Assistants read PDFs.
 
 ```sh
 docker compose up -d   # MongoDB on localhost:27017
@@ -114,6 +114,8 @@ Every pull request runs `go vet ./...` and the same `go test` on GitHub Actions 
 ```sh
 docker build -t nando-server .
 ```
+
+The image runs the static binary on `debian:12-slim`, as a non-root user, with `poppler-utils` for reading PDFs (ADR 0008) and CA certificates for calling out. Time zones are built into the binary.
 
 ## Deploy
 

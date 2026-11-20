@@ -50,6 +50,16 @@ type Photo struct {
 	Height int    `bson:"height"`
 }
 
+// File is one file the Owner sent, such as a PDF, as Telegram keeps it.
+type File struct {
+	// ID is Telegram's file_id: the bot that got the file downloads it by
+	// this ID.
+	ID   string `bson:"id"`
+	Name string `bson:"name"`
+	// Size is in bytes, as Telegram reported it.
+	Size int64 `bson:"size"`
+}
+
 // TalkMessage is one message in a Talk.
 type TalkMessage struct {
 	From MessageFrom `bson:"from"`
@@ -58,6 +68,9 @@ type TalkMessage struct {
 	// Photos are the message's photos. Nando keeps only Telegram's IDs for
 	// them, never the files.
 	Photos []Photo `bson:"photos,omitempty"`
+	// Files are the message's files, such as a PDF. Nando keeps only
+	// Telegram's IDs for them, never the files.
+	Files []File `bson:"files,omitempty"`
 	// TelegramMessageID is the message's id in the Owner's chat with the bot.
 	TelegramMessageID int64 `bson:"telegramMessageId"`
 	// State is set only for the Owner's messages.

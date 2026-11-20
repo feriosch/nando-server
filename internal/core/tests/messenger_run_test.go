@@ -55,6 +55,10 @@ type claimJSON struct {
 		Photos  []struct {
 			ID string `json:"id"`
 		} `json:"photos"`
+		Files []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"files"`
 	} `json:"messages"`
 	OtherAssistants []string `json:"otherAssistants"`
 }

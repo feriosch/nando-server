@@ -238,10 +238,11 @@ func TestARedeliveredUpdateIsKeptOnce(t *testing.T) {
 func TestAStickerOrFileIsAnsweredButNotKept(t *testing.T) {
 	n, telegram := messengerNando(t)
 
-	// An image sent as a file is a document, not a photo: not read yet (#135).
+	// A file other than a PDF or an image isn't read (#135).
 	file := ownerSays(5001, 42, "")
-	file.Message.Caption = "the job description"
-	file.Message.Document = map[string]any{"file_id": "BQAC-file", "file_name": "jd.pdf", "mime_type": "application/pdf"}
+	file.Message.Caption = "my CV"
+	file.Message.Document = map[string]any{"file_id": "BQAC-file", "file_name": "CV.docx",
+		"mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
 	sticker := ownerSays(5002, 43, "")
 	sticker.Message.Sticker = map[string]any{"file_id": "CAAC-sticker"}
 	n.mustPostUpdate("career", file)
@@ -256,7 +257,7 @@ func TestAStickerOrFileIsAnsweredButNotKept(t *testing.T) {
 		t.Fatalf("sendMessage calls = %+v; want one per file or sticker", sent)
 	}
 	for _, c := range sent {
-		if c.Token != careerBotToken || c.Params["chat_id"] != float64(ownerTelegramID) || c.Params["text"] != "I can read text and photos, but not files, stickers or voice notes yet." {
+		if c.Token != careerBotToken || c.Params["chat_id"] != float64(ownerTelegramID) || c.Params["text"] != "I can read text, photos and PDFs, but not other files, stickers or voice notes yet." {
 			t.Errorf("sendMessage = %+v; want the Career bot telling the Owner it reads only text", c)
 		}
 	}

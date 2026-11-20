@@ -9,6 +9,7 @@ import (
 	"maps"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -83,6 +84,28 @@ func (s *MessengerService) Tools() []model.Tool {
 			},
 		},
 		{
+			Name: "messenger_get_file",
+			Description: "Reads a PDF the Owner sent the Assistant, by the id messenger_claim_talk listed in a message's " +
+				"files: its page count and, for the pages asked (the first 10 if not said, never more than 10 at a time), " +
+				"their text, or, for a scan with no text, the pages as images.",
+			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+				`"assistant":{"type":"string","description":"The Assistant the run is."},` +
+				`"id":{"type":"string","description":"The file's id, from messenger_claim_talk."},` +
+				`"pages":{"type":"string","description":"The pages to read, such as 3 or 11-20; at most 10."}},"required":["assistant","id"]}`),
+			ReadOnly: true,
+			Handle: func(ctx context.Context, arguments json.RawMessage) (any, error) {
+				var args struct {
+					Assistant string `json:"assistant"`
+					ID        string `json:"id"`
+					Pages     string `json:"pages"`
+				}
+				if err := json.Unmarshal(arguments, &args); err != nil {
+					return nil, err
+				}
+				return s.file(ctx, args.Assistant, args.ID, args.Pages)
+			},
+		},
+		{
 			Name: "messenger_new_talk",
 			Description: "Closes the Assistant's Talk and opens a new one, telling the Owner in one line. Messages still " +
 				"waiting move to the new Talk, and the run's claim goes with them. Without summary the new Talk starts " +
@@ -128,6 +151,102 @@ func (s *MessengerService) photo(ctx context.Context, assistant, id string) (mod
 		mimeType = "image/jpeg"
 	}
 	return model.Image{MIMEType: mimeType, Data: data}, nil
+}
+
+// maxPagesRead is the most pages of a PDF one messenger_get_file reads.
+const maxPagesRead = 10
+
+// fileAnswerJSON is what messenger_get_file answers about a PDF.
+type fileAnswerJSON struct {
+	PageCount int            `json:"pageCount"`
+	Pages     []pageTextJSON `json:"pages"`
+	// Scanned is true when the pages read have no text, as in a scan: then
+	// they follow as images, in order.
+	Scanned bool `json:"scanned,omitempty"`
+}
+
+// pageTextJSON is one page of a PDF, as text.
+type pageTextJSON struct {
+	Page int    `json:"page"`
+	Text string `json:"text"`
+}
+
+// file reads the pages of the PDF with id, which the Owner sent assistant.
+func (s *MessengerService) file(ctx context.Context, assistant, id, pages string) (any, error) {
+	token, ok := s.bot(assistant)
+	if !ok {
+		return nil, fmt.Errorf("there is no Assistant %q with a bot", assistant)
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil, errors.New("id is empty")
+	}
+	data, err := s.telegram.download(ctx, token, id)
+	if errors.Is(err, errFileGone) {
+		return nil, fmt.Errorf("Telegram has no such file for this Assistant, or no longer keeps it: ask the Owner to send it again (%w)", err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("couldn't get the file from Telegram just now, try once more (%w)", err)
+	}
+	doc, err := openPDF(data)
+	if err != nil {
+		return nil, err
+	}
+	defer doc.close()
+	count, err := doc.pageCount(ctx)
+	if err != nil {
+		return nil, err
+	}
+	first, last, err := pageRange(pages, count)
+	if err != nil {
+		return nil, err
+	}
+	texts, err := doc.text(ctx, first, last)
+	if err != nil {
+		return nil, err
+	}
+	answer := fileAnswerJSON{PageCount: count, Pages: []pageTextJSON{}, Scanned: true}
+	for i, text := range texts {
+		answer.Pages = append(answer.Pages, pageTextJSON{Page: first + i, Text: text})
+		if text != "" {
+			answer.Scanned = false
+		}
+	}
+	if !answer.Scanned {
+		return answer, nil
+	}
+	drawn, err := doc.images(ctx, first, last)
+	if err != nil {
+		return nil, err
+	}
+	with := model.WithImages{Result: answer}
+	for _, page := range drawn {
+		with.Images = append(with.Images, model.Image{MIMEType: "image/jpeg", Data: page})
+	}
+	return with, nil
+}
+
+// pageRange is the pages of a PDF of count pages that pages asks for, such
+// as "3" or "11-20", or the first ones when it is empty: never more than
+// maxPagesRead, so a longer range is cut short.
+func pageRange(pages string, count int) (first, last int, err error) {
+	pages = strings.TrimSpace(pages)
+	first, last = 1, count
+	if pages != "" {
+		from, to, isRange := strings.Cut(pages, "-")
+		if !isRange {
+			to = from
+		}
+		var errFrom, errTo error
+		first, errFrom = strconv.Atoi(strings.TrimSpace(from))
+		last, errTo = strconv.Atoi(strings.TrimSpace(to))
+		if errFrom != nil || errTo != nil {
+			return 0, 0, fmt.Errorf("pages %q isn't a page or a range of pages, such as 3 or 11-20", pages)
+		}
+	}
+	if first < 1 || first > last || last > count {
+		return 0, 0, fmt.Errorf("pages %q isn't in the PDF, which has %d pages", pages, count)
+	}
+	return first, min(last, first+maxPagesRead-1), nil
 }
 
 // newTalkJSON is what messenger_new_talk answers.
@@ -328,6 +447,14 @@ type messageJSON struct {
 	Failed bool `json:"failed,omitempty"`
 	// Photos are the message's photos, for messenger_get_photo.
 	Photos []photoJSON `json:"photos,omitempty"`
+	// Files are the message's files, such as PDFs, for messenger_get_file.
+	Files []fileJSON `json:"files,omitempty"`
+}
+
+// fileJSON is one file in a message, for a run.
+type fileJSON struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
 }
 
 // photoJSON is one photo in a message, for a run.
@@ -421,6 +548,9 @@ func (s *MessengerService) claimAnswer(talk model.Talk) claimJSON {
 		}
 		for _, p := range m.Photos {
 			message.Photos = append(message.Photos, photoJSON{ID: p.ID})
+		}
+		for _, f := range m.Files {
+			message.Files = append(message.Files, fileJSON{ID: f.ID, Name: f.Name})
 		}
 		answer.Messages = append(answer.Messages, message)
 	}
