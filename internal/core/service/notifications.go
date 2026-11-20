@@ -61,8 +61,8 @@ func (s *NotificationsService) SetMessenger(m notifier) {
 
 // NewNotifications returns the NotificationsService, accepting only ticks
 // whose bearer token verifySchedulerToken accepts, signing push messages with
-// vapid, and with now as its clock. Core's own provider, the Weigh-in
-// reminder, is already added.
+// vapid, and with now as its clock. Core's own providers, the Weigh-in
+// reminder and the Mail Digest, are already added.
 func NewNotifications(
 	pushSubscriptions model.PushSubscriptionsRepository,
 	sentNotifications model.SentNotificationsRepository,
@@ -78,7 +78,7 @@ func NewNotifications(
 		pushSubscriptions: pushSubscriptions,
 		sentNotifications: sentNotifications,
 		settings:          settings,
-		providers:         []model.NotificationProvider{weighInReminder{settings: settings.Settings}},
+		providers:         []model.NotificationProvider{weighInReminder{settings: settings.Settings}, mailDigest{settings: settings.Settings}},
 
 		verifySchedulerToken: verifySchedulerToken,
 		vapid:                vapid,
@@ -161,6 +161,10 @@ func (s *NotificationsService) sendDueNotifications(ctx context.Context) error {
 			continue
 		}
 		for _, n := range due {
+			if n.Asks && !inTelegram {
+				// Only an Assistant can answer it, and none is on.
+				continue
+			}
 			// Claimed before sending: a Notification a push service failed to
 			// take is lost rather than possibly sent twice.
 			claimed, err := s.sentNotifications.Claim(ctx, n.ID, s.now(), s.now().Add(sentNotificationTTL))

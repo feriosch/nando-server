@@ -12,6 +12,7 @@ type Settings struct {
 	// HeightCm is the Owner's height; 0 means not set yet.
 	HeightCm        int             `bson:"heightCm"`
 	WeighInReminder WeighInReminder `bson:"weighInReminder"`
+	MailDigest      MailDigest      `bson:"mailDigest"`
 }
 
 // WeighInReminder is the weekly Notification reminding the Owner to weigh in.
@@ -23,10 +24,20 @@ type WeighInReminder struct {
 	Time string `bson:"time"`
 }
 
+// MailDigest is the daily Notification that asks the Core Assistant to
+// summarize the Owner's new mail (ADR 0009).
+type MailDigest struct {
+	Enabled bool `bson:"enabled"`
+	// Time is the clock time in the Owner Time Zone, "HH:MM" on the hour or
+	// half hour.
+	Time string `bson:"time"`
+}
+
 // DefaultSettings are the settings until the Owner first saves theirs.
 var DefaultSettings = Settings{
 	TimeZone:        "UTC",
 	WeighInReminder: WeighInReminder{Enabled: false, Weekday: time.Monday, Time: "08:00"},
+	MailDigest:      MailDigest{Enabled: false, Time: "08:00"},
 }
 
 // SettingsRepository reads and writes the settings collection.
@@ -41,6 +52,15 @@ type SettingsJSON struct {
 	TimeZone        string       `json:"timeZone"`
 	HeightCm        *int         `json:"heightCm"`
 	WeighInReminder ReminderJSON `json:"weighInReminder"`
+	// MailDigest is always answered. A PUT may leave it out, keeping the
+	// saved one, so a web app that doesn't know it yet can't turn it off.
+	MailDigest *MailDigestJSON `json:"mailDigest,omitempty"`
+}
+
+// MailDigestJSON is the Mail Digest as the API reads and writes it.
+type MailDigestJSON struct {
+	Enabled bool   `json:"enabled"`
+	Time    string `json:"time"`
 }
 
 // ReminderJSON is the Weigh-in reminder as the API reads and writes it.

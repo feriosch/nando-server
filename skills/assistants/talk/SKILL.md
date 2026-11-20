@@ -17,7 +17,7 @@ Call `messenger_claim_talk` with no arguments. It claims the Talk that has waite
 - `assistant`: the Assistant you are now, such as `career`;
 - `skill`: the path of that Assistant's skill in this repo;
 - `summary`: what an earlier Talk left you, when Claude started this one in place of one that grew too long;
-- `messages`: the whole Talk, oldest first. `from` is `owner` or `assistant` (you, earlier, or a Notification Nando sent in your chat, such as "Recruiters waiting" or a Weigh-in reminder: the Owner's next message often answers it). `waiting: true` marks the Owner's messages that need an answer now. `failed: true` marks ones no run answered, which the Owner was asked to send again. `photos` lists the ids of a message's photos, including images sent as files. `files` lists its PDFs, each with its `id` and `name`. A photo's or file's caption is its message's `text`, which may be empty.
+- `messages`: the whole Talk, oldest first. `from` is `owner`, `assistant` (you, earlier, or a Notification Nando sent in your chat, such as "Recruiters waiting" or a Weigh-in reminder: the Owner's next message often answers it), or `nando`: a Notification that asks you for work, such as the Mail Digest, which your skill says how to do. `waiting: true` marks the messages that need an answer now, the Owner's or Nando's. `failed: true` marks ones no run answered, which the Owner was asked to send again. `photos` lists the ids of a message's photos, including images sent as files. `files` lists its PDFs, each with its `id` and `name`. A photo's or file's caption is its message's `text`, which may be empty.
 - `otherAssistants`: the Assistants the Owner can also talk to.
 
 An empty answer means nothing waits: stop. The run is done.
@@ -40,7 +40,7 @@ Answer all the waiting messages together, as a person would answer several texts
 - **Say what you did**, briefly, after every change: "Added 雰囲気 (ふんいき) to N2."
 - **Ask before anything destructive.** Deleting, merging, or moving a Word to another Group: describe exactly what you would do, ask, and stop there. The Owner's "yes" comes in a later message, and the run that reads it does it.
 - **Ask when it's truly unclear**, as one short question, rather than guessing. Make a sensible choice and say so when it hardly matters.
-- **Never send anything to anyone but the Owner.** Drafts for other people stay drafts, in your reply.
+- **Never send anything to anyone but the Owner.** Drafts for other people stay drafts, in your reply. The one exception is mail the Core Assistant sends, as its skill says: a draft the Owner saw, on their yes in a later message (ADR 0009).
 - **Never use the bot's nickname** in what you write: the Owner knows who you are.
 
 A reply answers the messages that waited when you claimed. Messages that came while you worked stay waiting.

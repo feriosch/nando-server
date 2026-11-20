@@ -18,6 +18,11 @@ type Notification struct {
 	// URL is the path in the web app to open when the Owner taps it, such as
 	// "/calories".
 	URL string
+	// Asks marks a Notification that asks its area's Assistant for work, such
+	// as the Mail Digest (ADR 0009): it waits in that Assistant's Talk like
+	// the Owner's message and wakes a run, which answers it. It is sent only
+	// in the Messenger, and only while that Assistant has a bot.
+	Asks bool
 }
 
 // NotificationID names the Notification of this kind from area (Core or a

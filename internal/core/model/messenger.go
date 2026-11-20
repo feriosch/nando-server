@@ -27,6 +27,10 @@ type MessageFrom string
 const (
 	FromOwner     MessageFrom = "owner"
 	FromAssistant MessageFrom = "assistant"
+	// FromNando is a Notification that asks the Assistant for work, such as
+	// the Mail Digest: Nando sent it in the chat, and it waits like the
+	// Owner's message until a reply answers it.
+	FromNando MessageFrom = "nando"
 )
 
 // MessageState is where one of the Owner's messages stands.
@@ -73,7 +77,7 @@ type TalkMessage struct {
 	Files []File `bson:"files,omitempty"`
 	// TelegramMessageID is the message's id in the Owner's chat with the bot.
 	TelegramMessageID int64 `bson:"telegramMessageId"`
-	// State is set only for the Owner's messages.
+	// State is set only for the Owner's messages, and Nando's.
 	State MessageState `bson:"state,omitempty"`
 }
 
@@ -95,20 +99,22 @@ type Talk struct {
 	ClaimedUntil time.Time `bson:"claimedUntil,omitempty"`
 	// Claims counts the claims since the Talk's last reply.
 	Claims int `bson:"claims,omitempty"`
-	// ClaimedUpTo is the Telegram message ID of the Owner's last message when
-	// the Talk was last claimed: a reply answers the messages up to it.
+	// ClaimedUpTo is the Telegram message ID of the last message a reply
+	// answers, the Owner's or Nando's, when the Talk was last claimed: a reply
+	// answers the messages up to it.
 	ClaimedUpTo int64 `bson:"claimedUpTo,omitempty"`
 	// NoticedFor is the Telegram message ID of the oldest waiting message
 	// when the Owner was last told that no run started.
 	NoticedFor int64 `bson:"noticedFor,omitempty"`
 }
 
-// LastOwnerMessageID is the Telegram message ID of the Owner's latest message
-// in the Talk, or 0.
-func (t Talk) LastOwnerMessageID() int64 {
+// LastWaitableMessageID is the Telegram message ID of the latest message in
+// the Talk that a reply answers: the Owner's or Nando's, or 0. Telegram
+// numbers the bot's and the Owner's messages in one chat in one sequence.
+func (t Talk) LastWaitableMessageID() int64 {
 	var id int64
 	for _, m := range t.Messages {
-		if m.From == FromOwner {
+		if m.From == FromOwner || m.From == FromNando {
 			id = max(id, m.TelegramMessageID)
 		}
 	}
