@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -180,15 +181,17 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 			return nil, err
 		}
 		stored += added.Stored
+		if err := s.queue(ctx, added, id); err != nil {
+			return nil, err
+		}
 		// The first Syncs sent no profile links: give a Recruiter filed
-		// without one the link their thread now comes with.
+		// without one the link their thread now comes with. After queueing,
+		// so that a retried Sync, which skips the messages now held, has
+		// only this left to do.
 		if link := update.Person.ProfileURL; link != "" && added.RecruiterID != nil {
 			if err := s.recruiters.GiveProfileURL(ctx, *added.RecruiterID, link); err != nil {
 				return nil, err
 			}
-		}
-		if err := s.queue(ctx, added, id); err != nil {
-			return nil, err
 		}
 	}
 	if isNew {
@@ -269,7 +272,7 @@ func fromRecordSyncJSON(j model.RecordSyncJSON) ([]model.ThreadUpdate, *model.Sy
 		update := model.ThreadUpdate{
 			ThreadID: t.ThreadID,
 			URL:      t.URL,
-			Person:   model.Person{Name: t.Person.Name, ProfileURL: t.Person.ProfileURL},
+			Person:   model.Person{Name: t.Person.Name, ProfileURL: strings.TrimSpace(t.Person.ProfileURL)},
 		}
 		for _, m := range t.Messages {
 			if m.From != model.MessageFromOwner && m.From != model.MessageFromOther {

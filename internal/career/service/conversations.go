@@ -302,12 +302,6 @@ func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawM
 		if recruiter, err = s.recruiter(ctx, args.RecruiterID); err != nil {
 			return nil, err
 		}
-		if link := held.Person.ProfileURL; link != "" && recruiter.ProfileURL == "" {
-			if err := s.recruiters.GiveProfileURL(ctx, recruiter.ID, link); err != nil {
-				return nil, err
-			}
-			recruiter.ProfileURL = link
-		}
 	case args.Recruiter != nil:
 		r := model.Recruiter{
 			Name:         strings.TrimSpace(args.Recruiter.Name),
@@ -333,6 +327,13 @@ func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawM
 	conversation, err := s.conversations.File(ctx, id, recruiter.ID)
 	if err != nil {
 		return nil, careerutils.Found(err, "Conversation", args.ConversationID)
+	}
+	// Once it's filed: a Recruiter with no link takes the Conversation's.
+	if link := conversation.Person.ProfileURL; link != "" && recruiter.ProfileURL == "" {
+		if err := s.recruiters.GiveProfileURL(ctx, recruiter.ID, link); err != nil {
+			return nil, err
+		}
+		recruiter.ProfileURL = link
 	}
 	if err := s.complete(ctx, id, model.ItemSort); err != nil {
 		return nil, err
