@@ -92,7 +92,7 @@ func (r conversations) AddMessages(ctx context.Context, update model.ThreadUpdat
 		return model.Added{}, err
 	}
 	fromOther := slices.ContainsFunc(added, func(m model.Message) bool { return m.From == model.MessageFromOther })
-	return model.Added{ConversationID: after.ID, Stored: len(added), Filed: after.RecruiterID != nil, FromOther: fromOther}, nil
+	return model.Added{ConversationID: after.ID, Stored: len(added), RecruiterID: after.RecruiterID, FromOther: fromOther}, nil
 }
 
 // removeAnsweredReply removes the Conversation's Suggested Reply if one of

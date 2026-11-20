@@ -70,7 +70,7 @@ func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 	opportunitiesService := service.NewOpportunities(opportunities, companies, recruiters, core)
 	return &Module{
 		settings:      settingsService,
-		syncs:         service.NewSyncs(scheduledTask, syncs, conversations, work, core),
+		syncs:         service.NewSyncs(scheduledTask, syncs, conversations, recruiters, work, core),
 		notifications: service.NewNotifications(settingsService, conversations, opportunities, companies, syncs, work, core.Now),
 		tickRules:     service.NewTickRules(opportunities, conversations, work, core.Now),
 		work:          service.NewWork(scheduledTask, work, conversations, recruiters, opportunitiesService, settingsService, profile, syncs, core.Now),

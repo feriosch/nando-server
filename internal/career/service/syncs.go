@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -37,14 +38,16 @@ type SyncsService struct {
 	scheduledTask *coreutils.ScheduledTask
 	syncs         model.SyncsRepository
 	conversations model.ConversationsRepository
-	work          model.WorkRepository
-	core          coremodel.CoreService
+	// recruiters are given the profile links their threads come with.
+	recruiters model.RecruitersRepository
+	work       model.WorkRepository
+	core       coremodel.CoreService
 }
 
 // NewSyncs returns the SyncsService.
 func NewSyncs(scheduledTask *coreutils.ScheduledTask, syncs model.SyncsRepository, conversations model.ConversationsRepository,
-	work model.WorkRepository, core coremodel.CoreService) *SyncsService {
-	return &SyncsService{scheduledTask: scheduledTask, syncs: syncs, conversations: conversations, work: work, core: core}
+	recruiters model.RecruitersRepository, work model.WorkRepository, core coremodel.CoreService) *SyncsService {
+	return &SyncsService{scheduledTask: scheduledTask, syncs: syncs, conversations: conversations, recruiters: recruiters, work: work, core: core}
 }
 
 // Tools are what the Mac's Sync script calls.
@@ -181,6 +184,15 @@ func (s *SyncsService) recordTool(ctx context.Context, args json.RawMessage) (an
 		if err := s.queue(ctx, added, id); err != nil {
 			return nil, err
 		}
+		// The first Syncs sent no profile links: give a Recruiter filed
+		// without one the link their thread now comes with. After queueing,
+		// so that a retried Sync, which skips the messages now held, has
+		// only this left to do.
+		if link := update.Person.ProfileURL; link != "" && added.RecruiterID != nil {
+			if err := s.recruiters.GiveProfileURL(ctx, *added.RecruiterID, link); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if isNew {
 		err = s.syncs.Insert(ctx, model.Sync{ID: id, At: s.core.Now(), Threads: len(updates), Problem: problem, StoppedEarly: j.StoppedEarly})
@@ -224,7 +236,7 @@ func (s *SyncsService) queue(ctx context.Context, added model.Added, syncID bson
 	switch {
 	case added.Stored == 0 || added.Ignored:
 		return nil
-	case !added.Filed:
+	case added.RecruiterID == nil:
 		return s.work.Add(ctx, model.ItemSort, added.ConversationID, syncID, s.core.Now())
 	case added.FromOther:
 		return s.work.Add(ctx, model.ItemReply, added.ConversationID, syncID, s.core.Now())
@@ -260,7 +272,7 @@ func fromRecordSyncJSON(j model.RecordSyncJSON) ([]model.ThreadUpdate, *model.Sy
 		update := model.ThreadUpdate{
 			ThreadID: t.ThreadID,
 			URL:      t.URL,
-			Person:   model.Person{Name: t.Person.Name, ProfileURL: t.Person.ProfileURL},
+			Person:   model.Person{Name: t.Person.Name, ProfileURL: strings.TrimSpace(t.Person.ProfileURL)},
 		}
 		for _, m := range t.Messages {
 			if m.From != model.MessageFromOwner && m.From != model.MessageFromOther {

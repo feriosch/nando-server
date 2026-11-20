@@ -35,7 +35,7 @@ In a Conversation, a message `from` `"owner"` is the Owner's; `"other"` is the p
 
 **Otherwise**, file it under its Recruiter with `career_file_conversation`:
 
-- If the person is a Recruiter Nando holds (`career_search` with their name or organisation; the same `profileUrl` settles it), send `recruiterId`.
+- If the person is a Recruiter Nando holds, send `recruiterId`. Look first with `career_search` and the Conversation's `person.profileUrl`, which finds only Recruiters with that same link and settles it. If it finds several, they are one person filed twice: send the first one's `recruiterId`. If it finds no one, or the thread has no link, search their name or organisation: a Recruiter filed before Nando had their link has none.
 - Otherwise send `recruiter`: `{"name", "profileUrl", "kind", "organisation"}`. `kind` is `agency` for an agency's recruiter, `in_house` for one hiring for their own Company. `organisation` is the agency or the Company.
 
 Then keep its Opportunities (step 3), and write its Suggested Reply when the last message is the Recruiter's: an `answer` if that message is at most 30 days old, or a `late` one from the templates (step 5) if older. When the Owner's message is the last, there is nothing to reply to.

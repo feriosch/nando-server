@@ -31,8 +31,11 @@ type RecruitersRepository interface {
 	Insert(ctx context.Context, recruiter Recruiter) (Recruiter, error)
 	// GetByID returns the Recruiter, or Core's utils.ErrNotFound.
 	GetByID(ctx context.Context, id bson.ObjectID) (Recruiter, error)
+	// GiveProfileURL sets the Recruiter's profileUrl to url if they have
+	// none, and leaves one they have as it is.
+	GiveProfileURL(ctx context.Context, id bson.ObjectID, url string) error
 	// Search returns the Recruiters whose name or organisation has query in
-	// it, ignoring case.
+	// it, ignoring case, or whose profileUrl is query.
 	Search(ctx context.Context, query string) ([]Recruiter, error)
 }
 
