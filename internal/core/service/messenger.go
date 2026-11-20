@@ -48,8 +48,9 @@ const updateMemory = 7 * 24 * time.Hour
 // is dropped with it.
 const cantRead = "I can read text, photos and PDFs, but not other files, stickers or voice notes yet."
 
-// tooLarge is what a bot answers a PDF or image file over maxFileBytes.
-const tooLarge = "That file is too large: I can read PDFs of up to 10 MB."
+// tooLarge is what a bot answers a PDF over maxFileBytes, or an image file
+// over maxImageBytes.
+const tooLarge = "That file is too large: I can read PDFs of up to 10 MB and images of up to 5 MB."
 
 // MessengerService receives the Owner's messages from Telegram and keeps them
 // in Talks.
@@ -201,11 +202,14 @@ func (u update) content() (text string, photos []model.Photo, files []model.File
 		}
 		return m.Text, nil, nil, ""
 	}
-	isImage, isPDF := strings.HasPrefix(d.MIMEType, "image/"), d.MIMEType == "application/pdf"
+	// A PDF some apps send as application/octet-stream is known by its name:
+	// poppler then decides whether it really is one.
+	isImage := seeableImages[d.MIMEType]
+	isPDF := d.MIMEType == "application/pdf" || strings.HasSuffix(strings.ToLower(d.FileName), ".pdf")
 	switch {
 	case !isImage && !isPDF:
 		return "", nil, nil, cantRead
-	case d.FileSize > maxFileBytes:
+	case isImage && d.FileSize > maxImageBytes, d.FileSize > maxFileBytes:
 		return "", nil, nil, tooLarge
 	case isImage:
 		// An image sent as a file is read like a photo, at its full size.
@@ -218,6 +222,14 @@ func (u update) content() (text string, photos []model.Photo, files []model.File
 // maxFileBytes is the largest file the Owner can send an Assistant, as
 // Telegram reports its size.
 const maxFileBytes = 10 << 20
+
+// maxImageBytes is the largest image sent as a file that Nando keeps: about
+// the most Claude takes in one image.
+const maxImageBytes = 5 << 20
+
+// seeableImages are the image types Claude can see. Others, such as the HEIC
+// of an iPhone photo shared as a file, are refused like any file.
+var seeableImages = map[string]bool{"image/jpeg": true, "image/png": true, "image/gif": true, "image/webp": true}
 
 // maxPhotoSide is the longest side, in pixels, of the photo size Nando keeps:
 // enough to read a sign or a screenshot, at about 1,500 tokens.

@@ -160,8 +160,8 @@ const maxPagesRead = 10
 type fileAnswerJSON struct {
 	PageCount int            `json:"pageCount"`
 	Pages     []pageTextJSON `json:"pages"`
-	// Scanned is true when the pages read have no text, as in a scan: then
-	// they follow as images, in order.
+	// Scanned is true when none of the pages read has text, as in a scan:
+	// then all of them follow as images, in order.
 	Scanned bool `json:"scanned,omitempty"`
 }
 
@@ -169,6 +169,9 @@ type fileAnswerJSON struct {
 type pageTextJSON struct {
 	Page int    `json:"page"`
 	Text string `json:"text"`
+	// Image is true for a page with no text, such as a scanned one: it
+	// follows the answer as an image, in page order.
+	Image bool `json:"image,omitempty"`
 }
 
 // file reads the pages of the PDF with id, which the Owner sent assistant.
@@ -205,22 +208,27 @@ func (s *MessengerService) file(ctx context.Context, assistant, id, pages string
 		return nil, err
 	}
 	answer := fileAnswerJSON{PageCount: count, Pages: []pageTextJSON{}, Scanned: true}
+	anyImage := false
 	for i, text := range texts {
-		answer.Pages = append(answer.Pages, pageTextJSON{Page: first + i, Text: text})
-		if text != "" {
-			answer.Scanned = false
-		}
+		page := pageTextJSON{Page: first + i, Text: text, Image: text == ""}
+		answer.Pages = append(answer.Pages, page)
+		answer.Scanned = answer.Scanned && page.Image
+		anyImage = anyImage || page.Image
 	}
-	if !answer.Scanned {
+	if !anyImage {
 		return answer, nil
 	}
+	// Pages without text, such as a scanned one among typed ones, are drawn,
+	// so that nothing on them is lost.
 	drawn, err := doc.images(ctx, first, last)
 	if err != nil {
 		return nil, err
 	}
 	with := model.WithImages{Result: answer}
-	for _, page := range drawn {
-		with.Images = append(with.Images, model.Image{MIMEType: "image/jpeg", Data: page})
+	for i, page := range answer.Pages {
+		if page.Image && i < len(drawn) {
+			with.Images = append(with.Images, model.Image{MIMEType: "image/jpeg", Data: drawn[i]})
+		}
 	}
 	return with, nil
 }

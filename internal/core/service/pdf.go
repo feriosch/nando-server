@@ -58,6 +58,9 @@ func (p pdf) run(ctx context.Context, program string, args []string, after ...st
 		if errors.Is(err, exec.ErrNotFound) {
 			return nil, fmt.Errorf("%s isn't installed: the server needs poppler-utils", program)
 		}
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return nil, fmt.Errorf("the PDF took too long to read: try fewer pages at a time, with pages")
+		}
 		return nil, errUnreadablePDF
 	}
 	return out.Bytes(), nil

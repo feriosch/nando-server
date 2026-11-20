@@ -84,7 +84,7 @@ func TestALargePDFOrAnotherKindOfFileIsAnsweredButNotKept(t *testing.T) {
 		texts = append(texts, c.Params["text"].(string))
 	}
 	want := []string{
-		"That file is too large: I can read PDFs of up to 10 MB.",
+		"That file is too large: I can read PDFs of up to 10 MB and images of up to 5 MB.",
 		"I can read text, photos and PDFs, but not other files, stickers or voice notes yet.",
 	}
 	if !slices.Equal(texts, want) {
@@ -225,5 +225,72 @@ func TestAMissingOrBrokenPDFIsAnErrorWithoutTheBotToken(t *testing.T) {
 		if !result.IsError || text == nil || !strings.Contains(text.Text, c.want) || strings.Contains(text.Text, careerBotToken) {
 			t.Errorf("%s: messenger_get_file = %+v; want an error saying it %s, without the bot token", name, result.Content, c.want)
 		}
+	}
+}
+
+func TestAPDFsScannedPagesComeAsImagesAmongItsTextPages(t *testing.T) {
+	n, telegram, _ := messengerNandoWithTrigger(t)
+	r, id := sendPDF(t, n, telegram, "offer-with-scanned-page.pdf")
+
+	result := r.getFile("career", id, "")
+
+	var got struct {
+		PageCount int  `json:"pageCount"`
+		Scanned   bool `json:"scanned"`
+		Pages     []struct {
+			Page  int    `json:"page"`
+			Text  string `json:"text"`
+			Image bool   `json:"image"`
+		} `json:"pages"`
+	}
+	text, _ := result.Content[0].(*mcp.TextContent)
+	if result.IsError || text == nil || json.Unmarshal([]byte(text.Text), &got) != nil {
+		t.Fatalf("messenger_get_file = %+v; want the PDF", result.Content)
+	}
+	if got.PageCount != 2 || got.Scanned || len(got.Pages) != 2 ||
+		got.Pages[0].Text != "Offer for the Owner" || got.Pages[0].Image ||
+		got.Pages[1].Text != "" || !got.Pages[1].Image {
+		t.Errorf("messenger_get_file = %+v; want page 1 as text, and page 2, with none, as an image", got)
+	}
+	if len(result.Content) != 2 {
+		t.Fatalf("content = %d parts; want the answer, then page 2 as an image", len(result.Content))
+	}
+	if _, ok := result.Content[1].(*mcp.ImageContent); !ok {
+		t.Errorf("content[1] = %+v; want page 2 as an image", result.Content[1])
+	}
+}
+
+func TestOnlyImagesClaudeCanSeeAreKeptFromFiles(t *testing.T) {
+	n, telegram, _ := messengerNandoWithTrigger(t)
+
+	// An iPhone photo shared as a file is HEIC, which Claude can't see.
+	n.mustPostUpdate("career", ownerSendsFile(5001, 42, "", "heic", "IMG_0001.HEIC", "image/heic", 1_500_000))
+	// Claude takes images of up to 5 MB.
+	n.mustPostUpdate("career", ownerSendsFile(5002, 43, "", "big-png", "Screenshot.png", "image/png", 6_000_000))
+
+	if got := n.talk("career").Messages; len(got) != 0 {
+		t.Errorf("Career Talk = %+v; want nothing kept", got)
+	}
+	var texts []string
+	for _, c := range telegram.CallsTo("sendMessage") {
+		texts = append(texts, c.Params["text"].(string))
+	}
+	want := []string{
+		"I can read text, photos and PDFs, but not other files, stickers or voice notes yet.",
+		"That file is too large: I can read PDFs of up to 10 MB and images of up to 5 MB.",
+	}
+	if !slices.Equal(texts, want) {
+		t.Errorf("the bot said %q; want %q", texts, want)
+	}
+}
+
+func TestAPDFIsKnownByItsNameWhenItsTypeIsntSaid(t *testing.T) {
+	n, _, _ := messengerNandoWithTrigger(t)
+
+	n.mustPostUpdate("career", ownerSendsFile(5001, 42, "", "jd", "JD.PDF", "application/octet-stream", 1833))
+
+	got := n.startRun().claim("")
+	if len(got.Messages) != 1 || len(got.Messages[0].Files) != 1 || got.Messages[0].Files[0].Name != "JD.PDF" {
+		t.Errorf("claim = %+v; want the PDF kept by its name", got.Messages)
 	}
 }

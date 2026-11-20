@@ -466,12 +466,12 @@ The update is dropped, with nothing kept and nothing sent, when:
 A photo is kept like text, with its caption, if any, as its text ([#127](https://github.com/feriosch/nando-server/issues/127)). Nando keeps only Telegram's `file_id` for the photo's size up to 1280 px on its long side, never the file.
 
 A file of up to 10 MB is kept too, its caption as its text ([#135](https://github.com/feriosch/nando-server/issues/135)), again only by its `file_id`:
-- an image sent as a file (`image/*`) is kept as a photo, at its full size;
-- a PDF (`application/pdf`) is kept under the message's files, with its name and size.
+- an image sent as a file, of up to 5 MB and in a type Claude can see (JPEG, PNG, GIF or WebP), is kept as a photo, at its full size;
+- a PDF (`application/pdf`, or a name ending in `.pdf`) is kept under the message's files, with its name and size.
 
 Otherwise, nothing is kept, caption and all, and the bot answers instead:
-- a larger PDF or image: "That file is too large: I can read PDFs of up to 10 MB.";
-- anything else without text, such as a sticker, a voice note or a Word file: "I can read text, photos and PDFs, but not other files, stickers or voice notes yet."
+- a larger PDF or image: "That file is too large: I can read PDFs of up to 10 MB and images of up to 5 MB.";
+- anything else without text, such as a sticker, a voice note, a Word file or a HEIC photo: "I can read text, photos and PDFs, but not other files, stickers or voice notes yet."
 
 Anything else waits in the Assistant's open Talk, which is opened if there is none. The bot reacts to it with 👀 and shows the typing status. If Telegram refuses either, that is logged and the message is still kept. Then Nando wakes that Assistant's runs (below).
 
@@ -501,7 +501,8 @@ Served to every Connector while any bot has a token (ADR 0004). Each one shows t
 - **`messenger_get_photo`** (`assistant`, `id`): downloads the photo with `id`, from the claim's `photos`, from Telegram as that Assistant's bot, and answers it as an image (`image/jpeg`). It is read-only. A photo Telegram doesn't have, or no longer keeps, is a Tool error saying to ask the Owner for it again; any other failure, such as a timeout, says to try once more. Neither includes the bot token. Nando downloads up to 5 MB.
 - **`messenger_get_file`** (`assistant`, `id`, `pages` optional, such as `3` or `11-20`): downloads the PDF with `id`, from the claim's `files`, from Telegram as that Assistant's bot, and reads it with poppler's `pdfinfo`, `pdftotext` and `pdftoppm`. Each runs as its own process, for at most 30 seconds. It is read-only.
   - It answers `pageCount` and `pages`, the pages read (the first 10 when `pages` isn't given, and never more than 10), each with its `page` number and `text`.
-  - When those pages have no text, as in a scan, it adds `scanned: true` and follows the answer with each page as a JPEG of up to 1280 px.
+  - A page with no text, such as a scanned one, is marked `image: true` and follows the answer as a JPEG of up to 1280 px, in page order. When none of the pages read has text, as in a scan, the answer also says `scanned: true`.
+  - A PDF that takes poppler over 30 seconds is an error that says to read fewer pages.
   - Pages outside the PDF, a broken PDF, or a file Telegram no longer has are Tool errors, which never include the bot token.
 - **`messenger_new_talk`** (`assistant`, `summary` optional): closes the open Talk and opens one starting from `summary`. Waiting messages and the run's claim move to it. The bot says "Started a new chat.", or "Started a new chat (kept a short summary)." with a summary. It answers `{"moved": n}`.
 
