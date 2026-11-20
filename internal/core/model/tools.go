@@ -47,3 +47,10 @@ type Image struct {
 	MIMEType string
 	Data     []byte
 }
+
+// WithImages is a Tool's result that is JSON followed by images, such as a
+// scanned PDF's page count and its pages.
+type WithImages struct {
+	Result any
+	Images []Image
+}

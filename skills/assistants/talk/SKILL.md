@@ -17,7 +17,7 @@ Call `messenger_claim_talk` with no arguments. It claims the Talk that has waite
 - `assistant`: the Assistant you are now, such as `career`;
 - `skill`: the path of that Assistant's skill in this repo;
 - `summary`: what an earlier Talk left you, when Claude started this one in place of one that grew too long;
-- `messages`: the whole Talk, oldest first. `from` is `owner` or `assistant` (you, earlier, or a Notification Nando sent in your chat, such as "Recruiters waiting" or a Weigh-in reminder: the Owner's next message often answers it). `waiting: true` marks the Owner's messages that need an answer now. `failed: true` marks ones no run answered, which the Owner was asked to send again. `photos` lists the ids of a message's photos. A photo's caption is its message's `text`, which may be empty.
+- `messages`: the whole Talk, oldest first. `from` is `owner` or `assistant` (you, earlier, or a Notification Nando sent in your chat, such as "Recruiters waiting" or a Weigh-in reminder: the Owner's next message often answers it). `waiting: true` marks the Owner's messages that need an answer now. `failed: true` marks ones no run answered, which the Owner was asked to send again. `photos` lists the ids of a message's photos, including images sent as files. `files` lists its PDFs, each with its `id` and `name`. A photo's or file's caption is its message's `text`, which may be empty.
 - `otherAssistants`: the Assistants the Owner can also talk to.
 
 An empty answer means nothing waits: stop. The run is done.
@@ -29,6 +29,8 @@ Read the skill at `skill` now, all of it. Scheduled tasks may not load skills on
 Read the whole Talk, the `summary` first. Earlier messages are your memory: a "yes" in the waiting messages answers the last question you asked, and "the other one" points at something said before.
 
 **Look at every photo in the waiting messages** with `messenger_get_photo`, passing `assistant` and the photo's `id`, before you answer. A photo is often the whole message: a word on a sign, a Recruiter's screenshot. With no caption, work out from the photo and the Talk what the Owner wants, and ask only if you can't. Look at an older photo only when the Owner refers to it ("the sign from yesterday"): each one costs usage. Telegram may have dropped an old photo. If `messenger_get_photo` fails, say you can't see it any more and ask the Owner to send it again.
+
+**Read every PDF in the waiting messages** with `messenger_get_file`, passing `assistant` and the file's `id`, before you answer. It answers `pageCount` and the first 10 pages: their text, and, for each page marked `image: true` (a scanned page, with no text), that page as an image after the answer, in page order. Read further only when the Owner wants more, with `pages` such as `11-20`, at most 10 pages at a time. When a PDF has more than 10 pages, say which pages you read. As with photos, read an older PDF only when the Owner refers to it, and if `messenger_get_file` says Telegram no longer has the file, ask the Owner to send it again.
 
 ## 3. Answer
 

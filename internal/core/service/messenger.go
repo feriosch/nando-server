@@ -43,9 +43,14 @@ type MessengerConfig struct {
 // re-delivers an update for up to a day while it isn't answered 200.
 const updateMemory = 7 * 24 * time.Hour
 
-// textOnly is what a bot answers a message it can't read: a sticker, a
-// voice note or a file. Its caption, if any, is dropped with it.
-const textOnly = "I can read text and photos, but not files, stickers or voice notes yet."
+// cantRead is what a bot answers a message it can't read: a sticker, a
+// voice note or a file other than a PDF or an image. Its caption, if any,
+// is dropped with it.
+const cantRead = "I can read text, photos and PDFs, but not other files, stickers or voice notes yet."
+
+// tooLarge is what a bot answers a PDF over maxFileBytes, or an image file
+// over maxImageBytes.
+const tooLarge = "That file is too large: I can read PDFs of up to 10 MB and images of up to 5 MB."
 
 // MessengerService receives the Owner's messages from Telegram and keeps them
 // in Talks.
@@ -169,10 +174,62 @@ type update struct {
 			Width  int    `json:"width"`
 			Height int    `json:"height"`
 		} `json:"photo"`
-		// Caption is a photo's text.
+		// Document is a file sent as one, such as a PDF, or an image sent
+		// as a file rather than as a photo.
+		Document *struct {
+			FileID   string `json:"file_id"`
+			FileName string `json:"file_name"`
+			MIMEType string `json:"mime_type"`
+			FileSize int64  `json:"file_size"`
+		} `json:"document"`
+		// Caption is a photo's or a file's text.
 		Caption string `json:"caption"`
 	} `json:"message"`
 }
+
+// content is what Nando keeps of u's message: its text, or a photo's or
+// file's caption, and its photos and files. refusal, when not empty, is what
+// the bot answers instead, keeping nothing.
+func (u update) content() (text string, photos []model.Photo, files []model.File, refusal string) {
+	m := u.Message
+	if p, ok := u.photo(); ok {
+		return m.Caption, []model.Photo{p}, nil, ""
+	}
+	d := m.Document
+	if d == nil {
+		if m.Text == "" {
+			return "", nil, nil, cantRead
+		}
+		return m.Text, nil, nil, ""
+	}
+	// A PDF some apps send as application/octet-stream is known by its name:
+	// poppler then decides whether it really is one.
+	isImage := seeableImages[d.MIMEType]
+	isPDF := d.MIMEType == "application/pdf" || strings.HasSuffix(strings.ToLower(d.FileName), ".pdf")
+	switch {
+	case !isImage && !isPDF:
+		return "", nil, nil, cantRead
+	case isImage && d.FileSize > maxImageBytes, d.FileSize > maxFileBytes:
+		return "", nil, nil, tooLarge
+	case isImage:
+		// An image sent as a file is read like a photo, at its full size.
+		return m.Caption, []model.Photo{{ID: d.FileID}}, nil, ""
+	default:
+		return m.Caption, nil, []model.File{{ID: d.FileID, Name: d.FileName, Size: d.FileSize}}, ""
+	}
+}
+
+// maxFileBytes is the largest file the Owner can send an Assistant, as
+// Telegram reports its size.
+const maxFileBytes = 10 << 20
+
+// maxImageBytes is the largest image sent as a file that Nando keeps: about
+// the most Claude takes in one image.
+const maxImageBytes = 5 << 20
+
+// seeableImages are the image types Claude can see. Others, such as the HEIC
+// of an iPhone photo shared as a file, are refused like any file.
+var seeableImages = map[string]bool{"image/jpeg": true, "image/png": true, "image/gif": true, "image/webp": true}
 
 // maxPhotoSide is the longest side, in pixels, of the photo size Nando keeps:
 // enough to read a sign or a screenshot, at about 1,500 tokens.
@@ -232,17 +289,13 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	text, photos := m.Text, []model.Photo(nil)
-	if p, ok := u.photo(); ok {
-		text, photos = m.Caption, []model.Photo{p}
-	}
-	if text == "" && len(photos) == 0 {
-		// A sticker, voice note, file or anything else without text.
+	text, photos, files, refusal := u.content()
+	if refusal != "" {
 		if err := s.telegram.call(ctx, token, "sendMessage", map[string]any{
 			"chat_id": m.Chat.ID,
-			"text":    textOnly,
+			"text":    refusal,
 		}); err != nil {
-			log.Printf("messenger: tell the Owner %s reads only text: %v", assistant, err)
+			log.Printf("messenger: tell the Owner %s can't read a message: %v", assistant, err)
 		}
 		w.WriteHeader(http.StatusOK)
 		return
@@ -252,6 +305,7 @@ func (s *MessengerService) postUpdate(w http.ResponseWriter, r *http.Request) {
 		At:                s.now(),
 		Text:              text,
 		Photos:            photos,
+		Files:             files,
 		TelegramMessageID: m.MessageID,
 		State:             model.MessageWaiting,
 	}); err != nil {
@@ -309,10 +363,6 @@ type telegramClient struct {
 // file_id, or one it no longer keeps.
 var errFileGone = errors.New("Telegram has no such file for this bot")
 
-// maxPhotoBytes is the most of a photo Nando downloads. A photo of up to
-// maxPhotoSide pixels is far smaller.
-const maxPhotoBytes = 5 << 20
-
 // download downloads the file with fileID as the bot with token. The bot
 // token never appears in an error.
 func (c telegramClient) download(ctx context.Context, token, fileID string) ([]byte, error) {
@@ -341,11 +391,11 @@ func (c telegramClient) download(ctx context.Context, token, fileID string) ([]b
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("download: %s", resp.Status)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxPhotoBytes+1))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxFileBytes+1))
 	if err != nil {
 		return nil, errors.New("download: reading the file failed")
 	}
-	if len(data) > maxPhotoBytes {
+	if len(data) > maxFileBytes {
 		return nil, errors.New("download: the file is too large")
 	}
 	return data, nil
