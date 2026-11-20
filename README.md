@@ -54,6 +54,8 @@ go run ./cmd/nando-server
 curl localhost:8080/health
 ```
 
+Notifications go only through the Messenger's Telegram bots (ADR 0008). Without a `TELEGRAM_BOT_TOKEN_*`, none are sent: each tick logs which were due, and records none as sent.
+
 | Env var           | Meaning |
 | ----------------- | --- |
 | `MONGO_URI`       | MongoDB connection string (required)                             |

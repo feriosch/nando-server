@@ -161,7 +161,11 @@ func (s *NotificationsService) sendDueNotifications(ctx context.Context) error {
 	if unsent > 0 {
 		// Not recorded as sent: once a bot has a token, a Notification that is
 		// still due goes out.
-		log.Printf("tick: %s due, but no Assistant has a bot to send them", counted(unsent, "Notification"))
+		line := "tick: " + counted(unsent, "Notification") + " due, but no Assistant has a bot to send them"
+		if len(errs) > 0 {
+			line += ", " + counted(len(errs), "error")
+		}
+		log.Print(line)
 		return errors.Join(errs...)
 	}
 	logTick(sent, len(errs))

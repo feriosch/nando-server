@@ -199,7 +199,7 @@ Each tick logs, to Cloud Logging, one line saying what it sent:
 
 - `tick: sent 2 Notifications in Telegram: calories:no-entries:2026-10-20 (sent), calories:evening-summary:2026-10-20 (refused)`: each Notification sent, by its ID. One Telegram refused shows `(refused)`, with the reason logged on its own line (`send Notification <id> in Telegram: …`). It isn't retried.
 - `tick: no Notifications due`: nothing was due, or a retried tick found it all sent already, and nothing went wrong.
-- `tick: 1 Notification due, but no Assistant has a bot to send them`: with no bot configured. Nothing is recorded as sent.
+- `tick: 1 Notification due, but no Assistant has a bot to send them`: with no bot configured, followed by `, 1 error` when there were errors. Nothing is recorded as sent.
 - With errors, the line counts them: `tick: no Notifications sent, 1 error`, or `tick: sent 1 Notification in Telegram, 1 error: …`. Each error is logged on its own line, and the tick answers `500`.
 
 Logs never hold what a Notification says: only its ID.

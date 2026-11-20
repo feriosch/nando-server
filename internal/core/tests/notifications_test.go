@@ -141,6 +141,32 @@ func (d *browser) saveWeighInReminder(r reminderJSON) {
 // weighInReminder is the Weigh-in reminder as the Core bot sends it.
 const weighInReminder = "Weigh-in\nTime to log this week's weight"
 
+func TestANotificationWithoutATitleIsSentAsItsBodyAlone(t *testing.T) {
+	n, _, telegram := signedInWithBots(t, wednesday)
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{{ID: "calories:no-entries:2026-10-21", Body: "Nothing logged today"}}})
+
+	n.mustTick()
+
+	if got := received(telegram); !slices.Equal(got, []string{"Nothing logged today"}) {
+		t.Errorf("received %q, want the body alone, with no blank first line", got)
+	}
+}
+
+func TestWithNoBotAndAFailingProviderTheTickSaysBoth(t *testing.T) {
+	n := newNando(t)
+	n.core.AddNotificationProvider(brokenProvider{})
+	n.core.AddNotificationProvider(&provider{due: []model.Notification{eveningSummary}})
+	logs := captureLog(t)
+
+	if rec := n.tick(schedulerToken); rec.Code != http.StatusInternalServerError {
+		t.Errorf("tick: status = %d, want 500 for the broken provider", rec.Code)
+	}
+
+	if want := "tick: 1 Notification due, but no Assistant has a bot to send them, 1 error\n"; !strings.Contains(logs.String(), want) {
+		t.Errorf("log = %q; want a line %q", logs, want)
+	}
+}
+
 func TestWeighInReminderIsSentAtItsTimeEachWeek(t *testing.T) {
 	tokyo, _ := time.LoadLocation("Asia/Tokyo")
 	mondayMorning := time.Date(2026, 10, 26, 8, 0, 0, 0, tokyo) // Sunday 23:00 UTC
