@@ -5,8 +5,9 @@ import (
 	"time"
 )
 
-// Notification is a short message delivered to every Push Subscription. Core
-// sends it, either on a Module's behalf or for itself.
+// Notification is a short message Nando sends the Owner first, in the
+// Messenger (ADR 0008). Core sends it, either on a Module's behalf or for
+// itself.
 type Notification struct {
 	// ID names this one Notification for good; make it with NotificationID,
 	// or, for one that isn't once a day or week, as area:kind: and then what
@@ -15,9 +16,6 @@ type Notification struct {
 	ID    string
 	Title string
 	Body  string
-	// URL is the path in the web app to open when the Owner taps it, such as
-	// "/calories".
-	URL string
 }
 
 // NotificationID names the Notification of this kind from area (Core or a
@@ -36,32 +34,4 @@ type NotificationProvider interface {
 	// A provider may return one it returned before (a retried tick); Core sends
 	// each ID only once.
 	DueNotifications(ctx context.Context, slot time.Time) ([]Notification, error)
-}
-
-// PushMessageJSON is what a push message carries: one Notification, as the
-// web app's service worker reads it. An empty field is left out, so the
-// service worker shows its default ("Nando" for the title, Home for the url).
-type PushMessageJSON struct {
-	Title string `json:"title,omitempty"`
-	Body  string `json:"body,omitempty"`
-	URL   string `json:"url,omitempty"`
-}
-
-// TestNotificationResultJSON is what came of sending the test Notification:
-// how many Push Subscriptions took it, how many their push service no longer
-// knew and were deleted, and which push services failed.
-type TestNotificationResultJSON struct {
-	Sent    int                           `json:"sent"`
-	Removed int                           `json:"removed"`
-	Failed  []TestNotificationFailureJSON `json:"failed"`
-}
-
-// TestNotificationFailureJSON is a push service that didn't take the test
-// Notification, named by its host so that the endpoint, a secret capability
-// URL, never leaves the server.
-type TestNotificationFailureJSON struct {
-	PushService string `json:"pushService"`
-	// Status is what the push service answered, or 0 (left out) if it didn't.
-	Status int    `json:"status,omitempty"`
-	Reason string `json:"reason"`
 }

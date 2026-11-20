@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
-
-	"github.com/feriosch/nando-server/internal/testpush"
 )
 
 // marked is when the Owner marks Tanaka's Suggested Reply replied in
@@ -158,22 +156,22 @@ func TestAMarkedLateReplyIsNotInLateReplies(t *testing.T) {
 }
 
 func TestNotLookingTheOwnerDoesNotHearOfAMarkedSuggestedReply(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	filed := answeredTanaka(t, phone)
 	// Before the 19:00 slot.
 	n.clock.Set(at(0, 12, 0))
 	phone.markReplied(filed.Conversation.ID)
 
 	n.tickAt(at(0, 19, 0))
-	received(t, push, nil, "Monday at 19:00, with only a marked Suggested Reply")
+	received(t, n, nil, "Monday at 19:00, with only a marked Suggested Reply")
 }
 
 func TestLookingTheOwnerDoesNotHearOfASyncWhoseSuggestedReplyIsMarked(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	phone.setLooking(true)
 	answeredTanaka(t, phone)
 	n.tickAt(at(0, 8, 10))
-	received(t, push, []testpush.Notification{waiting("1")}, "once the first Sync's work was done, with Tanaka waiting")
+	received(t, n, []notification{waiting("1")}, "once the first Sync's work was done, with Tanaka waiting")
 
 	// The second Sync brings Sato, whom the Owner answers in LinkedIn
 	// before the tick.
@@ -190,7 +188,7 @@ func TestLookingTheOwnerDoesNotHearOfASyncWhoseSuggestedReplyIsMarked(t *testing
 	phone.markReplied(sato)
 
 	n.tickAt(at(1, 8, 5))
-	received(t, push, []testpush.Notification{waiting("1")}, "after the second Sync, whose only Suggested Reply is marked replied")
+	received(t, n, []notification{waiting("1")}, "after the second Sync, whose only Suggested Reply is marked replied")
 }
 
 func TestTheToolsShowThatTheOwnerMarkedASuggestedReplyReplied(t *testing.T) {

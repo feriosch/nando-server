@@ -435,7 +435,6 @@ func (s *WordRequestsService) DueNotifications(ctx context.Context, slot time.Ti
 			ID:    wordRequestNotificationID(request),
 			Title: title,
 			Body:  body,
-			URL:   "/japanese",
 		})
 	}
 	return due, nil

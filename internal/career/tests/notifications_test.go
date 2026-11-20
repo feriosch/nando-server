@@ -8,42 +8,24 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-
-	"github.com/feriosch/nando-server/internal/testpush"
 )
 
-// subscribe registers push's Push Subscription, as the web app does once the
-// Owner allows Notifications on this device.
-func (d *browser) subscribe(push *testpush.Service) {
-	d.nando.t.Helper()
-	d.must(http.MethodPost, "/api/push-subscriptions", push.SubscriptionJSON(), http.StatusNoContent)
-}
-
-// subscribedPhone is a signed-in browser on the Owner's iPhone that has
-// allowed Notifications, and the push service its Notifications reach.
-func subscribedPhone(t *testing.T) (*nando, *browser, *testpush.Service) {
+// received fails the test unless the Owner has received want in Telegram, in
+// order.
+func received(t *testing.T, n *nando, want []notification, when string) {
 	t.Helper()
-	n, phone := signedInBrowser(t)
-	push := testpush.New(t)
-	phone.subscribe(push)
-	return n, phone, push
-}
-
-// received fails the test unless push has received want, in order.
-func received(t *testing.T, push *testpush.Service, want []testpush.Notification, when string) {
-	t.Helper()
-	if got := push.Received(); !slices.Equal(got, want) {
+	if got := n.received(); !slices.Equal(got, want) {
 		t.Fatalf("%s: received %+v; want %+v", when, got, want)
 	}
 }
 
 // waiting is the Notification that Recruiters wait for the Owner's reply.
-func waiting(n string) testpush.Notification {
+func waiting(n string) notification {
 	body := n + " Recruiters are waiting for your reply"
 	if n == "1" {
 		body = "1 Recruiter is waiting for your reply"
 	}
-	return testpush.Notification{Title: "Recruiters waiting", Body: body, URL: "/career"}
+	return notification{Title: "Recruiters waiting", Body: body}
 }
 
 // answerTanaka has the run write the answer to Tanaka's pitch.
@@ -62,23 +44,23 @@ func (d *browser) emptySyncAt(now time.Time) {
 }
 
 func TestNotLookingTheOwnerHearsOfWaitingRecruitersOnMondayAndThursdayAt19(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	run, filed := fileTanakasConversation(t, phone)
 	answerTanaka(t, run, filed.Conversation.ID)
 
 	n.tickAt(at(0, 18, 55))
-	received(t, push, nil, "Monday at 18:55")
+	received(t, n, nil, "Monday at 18:55")
 	n.tickAt(at(0, 19, 0))
-	received(t, push, []testpush.Notification{waiting("1")}, "Monday at 19:00")
+	received(t, n, []notification{waiting("1")}, "Monday at 19:00")
 	n.tickAt(at(0, 19, 25))
-	received(t, push, []testpush.Notification{waiting("1")}, "Monday at 19:25, a later tick in the same slot")
+	received(t, n, []notification{waiting("1")}, "Monday at 19:25, a later tick in the same slot")
 
 	n.tickAt(at(1, 19, 0))
-	received(t, push, []testpush.Notification{waiting("1")}, "Tuesday at 19:00")
+	received(t, n, []notification{waiting("1")}, "Tuesday at 19:00")
 
 	phone.emptySyncAt(at(3, 8, 0))
 	n.tickAt(at(3, 19, 0))
-	received(t, push, []testpush.Notification{waiting("1"), waiting("1")}, "Thursday at 19:00")
+	received(t, n, []notification{waiting("1"), waiting("1")}, "Thursday at 19:00")
 }
 
 // setLooking saves whether the Owner is Looking, as the web app's Settings do.
@@ -88,18 +70,18 @@ func (d *browser) setLooking(looking bool) {
 }
 
 func TestLookingTheOwnerHearsOfWaitingRecruitersOnceASyncsWorkIsDone(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	phone.setLooking(true)
 	run, filed := fileTanakasConversation(t, phone)
 	n.tickAt(at(0, 8, 5))
-	received(t, push, nil, "after the first Sync's thread was sorted, with no answer yet")
+	received(t, n, nil, "after the first Sync's thread was sorted, with no answer yet")
 
 	answerTanaka(t, run, filed.Conversation.ID)
 	n.tickAt(at(0, 8, 10))
 	n.tickAt(at(0, 8, 15))
-	received(t, push, []testpush.Notification{waiting("1")}, "once the first Sync's work was done, with an answer")
+	received(t, n, []notification{waiting("1")}, "once the first Sync's work was done, with an answer")
 	n.tickAt(at(0, 19, 0))
-	received(t, push, []testpush.Notification{waiting("1")}, "Monday at 19:00, Looking")
+	received(t, n, []notification{waiting("1")}, "Monday at 19:00, Looking")
 
 	// The second Sync brings Tanaka's answer and a new Recruiter.
 	asked := at(1, 7, 30)
@@ -117,7 +99,7 @@ func TestLookingTheOwnerHearsOfWaitingRecruitersOnceASyncsWorkIsDone(t *testing.
 		"language": "en", "kind": "answer", "answers": asked.Format(time.RFC3339),
 	})
 	n.tickAt(at(1, 8, 5))
-	received(t, push, []testpush.Notification{waiting("1")}, "while the second Sync's new thread is still unsorted")
+	received(t, n, []notification{waiting("1")}, "while the second Sync's new thread is still unsorted")
 
 	satoID := items[1].Conversation.ID
 	if items[0].Kind == "sort" {
@@ -131,7 +113,7 @@ func TestLookingTheOwnerHearsOfWaitingRecruitersOnceASyncsWorkIsDone(t *testing.
 		"language": "en", "kind": "answer", "answers": at(1, 7, 45).Format(time.RFC3339),
 	})
 	n.tickAt(at(1, 8, 10))
-	received(t, push, []testpush.Notification{waiting("1"), waiting("2")}, "once the second Sync's work was done")
+	received(t, n, []notification{waiting("1"), waiting("2")}, "once the second Sync's work was done")
 }
 
 // saveStep adds a Step to the Opportunity with id.
@@ -142,7 +124,7 @@ func saveStep(t *testing.T, run *mcp.ClientSession, id string, step map[string]a
 }
 
 func TestTheOwnerHearsOfTomorrowsStepsAt20TheEveningBefore(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	run, tanaka := fileTanaka(t, phone)
 	o := newOpportunity(t, run, tanaka)
 	saveStep(t, run, o.ID, map[string]any{"kind": "Casual interview", "date": "2026-11-17", "time": "14:00"})
@@ -150,16 +132,16 @@ func TestTheOwnerHearsOfTomorrowsStepsAt20TheEveningBefore(t *testing.T) {
 	saveStep(t, run, o.ID, map[string]any{"kind": "Final interview", "date": "2026-11-18", "time": "10:00"})
 
 	n.tickAt(at(0, 19, 55))
-	received(t, push, nil, "Monday at 19:55")
+	received(t, n, nil, "Monday at 19:55")
 	n.tickAt(at(0, 20, 0))
 	n.tickAt(at(0, 20, 5))
-	want := []testpush.Notification{
-		{Title: "Tomorrow: Casual interview", Body: "Kumo Pay, 14:00", URL: "/career/opportunities/" + o.ID},
-		{Title: "Tomorrow: Take-home assignment", Body: "Kumo Pay", URL: "/career/opportunities/" + o.ID},
+	want := []notification{
+		{Title: "Tomorrow: Casual interview", Body: "Kumo Pay, 14:00"},
+		{Title: "Tomorrow: Take-home assignment", Body: "Kumo Pay"},
 	}
-	slices.SortFunc(want, func(a, b testpush.Notification) int { return strings.Compare(a.Title, b.Title) })
-	got := push.Received()
-	slices.SortFunc(got, func(a, b testpush.Notification) int { return strings.Compare(a.Title, b.Title) })
+	slices.SortFunc(want, func(a, b notification) int { return strings.Compare(a.Title, b.Title) })
+	got := n.received()
+	slices.SortFunc(got, func(a, b notification) int { return strings.Compare(a.Title, b.Title) })
 	if !slices.Equal(got, want) {
 		t.Fatalf("Monday at 20:00 and 20:05: received %+v; want %+v", got, want)
 	}
@@ -173,32 +155,32 @@ func (d *browser) sessionExpiredAt(now time.Time) {
 }
 
 func TestTheOwnerHearsOnceThatLinkedInWantsThemToLogInAgain(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.emptySyncAt(at(0, 8, 0))
-	logIn := testpush.Notification{Title: "Log in to LinkedIn again", Body: "Open the Mac and run the Sync's login", URL: "/career"}
+	logIn := notification{Title: "Log in to LinkedIn again", Body: "Open the Mac and run the Sync's login"}
 
 	phone.sessionExpiredAt(at(0, 14, 0))
 	n.tickAt(at(0, 14, 5))
-	received(t, push, []testpush.Notification{logIn}, "after the Sync reported session_expired")
+	received(t, n, []notification{logIn}, "after the Sync reported session_expired")
 
 	// The Mac tries again every hour until the Owner logs in.
 	phone.sessionExpiredAt(at(0, 15, 0))
 	n.tickAt(at(0, 15, 5))
-	received(t, push, []testpush.Notification{logIn}, "after the next hour's session_expired")
+	received(t, n, []notification{logIn}, "after the next hour's session_expired")
 
 	phone.emptySyncAt(at(0, 20, 0))
 	phone.sessionExpiredAt(at(1, 8, 0))
 	n.tickAt(at(1, 8, 5))
-	received(t, push, []testpush.Notification{logIn, logIn}, "after a Sync read LinkedIn, and the session expired again")
+	received(t, n, []notification{logIn, logIn}, "after a Sync read LinkedIn, and the session expired again")
 }
 
 func TestTheOwnerHearsWhenNoSyncHasReadLinkedInFor36Hours(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.emptySyncAt(at(0, 8, 0))
-	noSync := func(day string) testpush.Notification {
-		return testpush.Notification{Title: "No LinkedIn Sync since " + day, Body: "Check that the Mac is on and its Sync job is loaded", URL: "/career"}
+	noSync := func(day string) notification {
+		return notification{Title: "No LinkedIn Sync since " + day, Body: "Check that the Mac is on and its Sync job is loaded"}
 	}
 	// A Sync that couldn't read LinkedIn doesn't count.
 	callTool[recordedJSON](t, phone.macAt(at(1, 10, 0)), "career_record_sync", map[string]any{
@@ -206,20 +188,20 @@ func TestTheOwnerHearsWhenNoSyncHasReadLinkedInFor36Hours(t *testing.T) {
 	})
 
 	n.tickAt(at(1, 19, 55))
-	received(t, push, nil, "35 hours and 55 minutes after the last Sync")
+	received(t, n, nil, "35 hours and 55 minutes after the last Sync")
 	n.tickAt(at(1, 20, 0))
 	n.tickAt(at(2, 7, 0))
-	received(t, push, []testpush.Notification{noSync("Monday")}, "36 hours after the last Sync, and later")
+	received(t, n, []notification{noSync("Monday")}, "36 hours after the last Sync, and later")
 
 	phone.emptySyncAt(at(2, 8, 0))
 	n.tickAt(at(3, 19, 55))
-	received(t, push, []testpush.Notification{noSync("Monday")}, "under 36 hours after Wednesday's Sync")
+	received(t, n, []notification{noSync("Monday")}, "under 36 hours after Wednesday's Sync")
 	n.tickAt(at(3, 20, 0))
-	received(t, push, []testpush.Notification{noSync("Monday"), noSync("Wednesday")}, "36 hours after Wednesday's Sync")
+	received(t, n, []notification{noSync("Monday"), noSync("Wednesday")}, "36 hours after Wednesday's Sync")
 }
 
 func TestALateReplyNeverNotifiesTheOwner(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	run, filed := fileTanakasConversation(t, phone)
 	answerTanaka(t, run, filed.Conversation.ID)
 	// Monday 2026-12-14, over 30 days after Tanaka's pitch.
@@ -230,11 +212,11 @@ func TestALateReplyNeverNotifiesTheOwner(t *testing.T) {
 	}
 
 	n.tickAt(at(28, 19, 0))
-	received(t, push, nil, "Monday at 19:00, with only a Late Reply")
+	received(t, n, nil, "Monday at 19:00, with only a Late Reply")
 }
 
 func TestAReplyTurningLateAtThe19SlotIsNotCountedAsWaiting(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	_, filed := fileTanakasConversation(t, phone)
 	// Thirty days and two minutes before Monday 2026-12-14 at 19:00.
 	asked := at(-2, 18, 58)
@@ -249,11 +231,11 @@ func TestAReplyTurningLateAtThe19SlotIsNotCountedAsWaiting(t *testing.T) {
 
 	// The tick sends Notifications before its rules turn the reply late.
 	n.tickAt(at(28, 19, 0))
-	received(t, push, nil, "Monday at 19:00, the first tick after the answer's message turned 30 days old")
+	received(t, n, nil, "Monday at 19:00, the first tick after the answer's message turned 30 days old")
 }
 
 func TestSyncProblemsAreToldOnlyWithin7Days(t *testing.T) {
-	n, phone, push := subscribedPhone(t)
+	n, phone := signedInBrowser(t)
 	phone.saveTimeZone("Asia/Tokyo")
 	phone.emptySyncAt(at(0, 8, 0))
 	phone.sessionExpiredAt(at(0, 9, 0))
@@ -261,5 +243,5 @@ func TestSyncProblemsAreToldOnlyWithin7Days(t *testing.T) {
 	// Core forgets a sent ID after 30 days, so a problem told for longer
 	// would be told again: the first tick in 9 days tells neither.
 	n.tickAt(at(9, 9, 5))
-	received(t, push, nil, "9 days after the last Sync and the expired session, at the first tick since")
+	received(t, n, nil, "9 days after the last Sync and the expired session, at the first tick since")
 }

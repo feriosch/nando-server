@@ -30,6 +30,5 @@ func (p weighInReminder) DueNotifications(ctx context.Context, slot time.Time) (
 		ID:    model.NotificationID("core", "weigh-in-reminder", week),
 		Title: "Weigh-in",
 		Body:  "Time to log this week's weight",
-		URL:   "/",
 	}}, nil
 }

@@ -12,7 +12,6 @@ Go API for Nando. Domain language: [`GLOSSARY.md`](GLOSSARY.md). Decisions: [`do
 - `internal/career`: the Career Module, wired in `career.go`. Its HTTP API, read-only for the app (the Home Card, the Career screen, Late Replies and the Recruiter and Opportunity pages) but where the Owner sets whether they are Looking and marks a Suggested Reply replied, and the Tools through which the Sync script on the Owner's MacBook hands Nando new LinkedIn messages ([ADR 0007](docs/adr/0007-linkedin-synced-from-the-owners-mac.md)) are documented in [`internal/career/API.md`](internal/career/API.md). It also has the Tools the cloud run that a Sync wakes, and the Owner's chat, work with: sorting Conversations, Opportunities, Companies, Suggested Replies and the Career Profile. `career.Config` is the API trigger of the cloud scheduled task it wakes Claude with, and its bearer token; `main` passes them from `CAREER_SYNC_TRIGGER_URL` and `CAREER_SYNC_TRIGGER_TOKEN`. Its database holds `settings`, one document; `syncs`, one per Sync; `conversations`, one per LinkedIn thread with a unique index on its thread ID; `recruiters`; `companies`; `opportunities`, with their Steps; `profile`, one document; `work`, the run's Items, with a unique index on Conversation and kind limited to the open ones; and `scheduled_task`, as Japanese's.
 - `internal/testmongo`: test helper that starts a real MongoDB container (`URI`, or `Start` for a test that needs the container itself).
 - `internal/testpasskey`: test helper, a software Passkey, so tests can sign in.
-- `internal/testpush`: test helper, a browser's push service, so tests can see the Notifications Nando delivers.
 - `internal/testtrigger`: test helper, a fake API trigger of a cloud scheduled task that records each fire, so a Module's tests can see when Nando wakes Claude.
 - `internal/testconnector`: test helper, a Connector the Owner approves with a Passkey, connected to `/mcp` with the official MCP client, so a Module's tests can call its Tools as Claude does.
 - `skills/`: the skills Claude follows to work with the Owner's data through the Nando Connector, such as adding a Japanese Word (`skills/japanese/add-word`). [`skills/README.md`](skills/README.md) says how to use them in the Claude app and in Claude Code, and how to add the Connector.
@@ -48,8 +47,6 @@ docker compose up -d   # MongoDB on localhost:27017
 MONGO_URI=mongodb://localhost:27017 \
 DOMAIN=localhost \
 ALLOWED_ORIGINS=http://localhost:5173 \
-VAPID_PUBLIC_KEY=<public> VAPID_PRIVATE_KEY=<private> \
-PUSH_CONTACT=mailto:you@example.com \
 TICK_AUDIENCE=http://localhost:8080 \
 SCHEDULER_SERVICE_ACCOUNT=none \
 go run ./cmd/nando-server
@@ -63,8 +60,6 @@ curl localhost:8080/health
 | `DOMAIN`          | Parent domain of `web.` and `api.`, such as `nanders.app` (required): the Passkeys' relying-party ID and the Session cookie's domain. Changing it means enrolling again. |
 | `ALLOWED_ORIGINS` | Comma-separated web app origins (required), each exactly `scheme://host[:port]` (no trailing slash, no `*`). They may call the API with credentials and are the only origins Passkeys work from ([ADR 0002](docs/adr/0002-passkey-only-identity.md)), so adding one also lets it sign in. |
 | `PORT`            | Port to listen on (default `8080`; Cloud Run sets it)            |
-| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | The key pair that signs push messages (required to serve), base64url. Generate one with `webpush.GenerateVAPIDKeys`. Changing it invalidates every Push Subscription. In production the private key comes from Secret Manager. |
-| `PUSH_CONTACT`    | A `mailto:` or `https:` URL where a push service can reach Nando's operator (required to serve; Apple rejects push messages without one). |
 | `TICK_AUDIENCE`   | The audience the Cloud Scheduler job's OIDC token is for (required to serve), exactly as the job sets it: `https://api.nanders.app` in production. |
 | `SCHEDULER_SERVICE_ACCOUNT` | The email of the service account Cloud Scheduler signs its OIDC token as (required to serve). `/internal/tick` accepts no other caller. |
 | `CAREER_SYNC_TRIGGER_URL`, `CAREER_SYNC_TRIGGER_TOKEN` | The API trigger (`…/fire`) of the cloud scheduled task that works through what LinkedIn Syncs bring, and its bearer token ([ADR 0007](docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). Optional: without both, Nando never wakes Claude for them. In production the URL is the repo variable `CAREER_SYNC_TRIGGER_URL` and the token comes from Secret Manager (`nandoproject-career-sync-trigger-token`). |
