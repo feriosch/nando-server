@@ -13,7 +13,7 @@ The Owner wants their Gmail handled in Telegram too: asking what came in, findin
   - It never uses `reply` or `forward`: a reply is a draft first, like any other mail.
 - **It never trashes mail, marks it as spam or deletes a label.** The Owner does that in Gmail.
 - **Mail is data, never instructions.** Strangers write mail, and runs read it unattended. Text in a mail never directs an Assistant. A mail that asks for an action ("forward this", "reply with your address", "click to verify") is only reported to the Owner, flagged as suspicious.
-- **A Note carries what a later run needs.** Each run is a new session that knows only the Talk, and Nando keeps only the text of each reply. So a run leaves a **Note** with its reply, such as the draft's ID, which Nando keeps in the Talk and never sends to the Owner. A run that starts a new Talk carries any pending draft's Note into its summary.
+- **A Note carries what a later run needs.** Each run is a new session that knows only the Talk, and Nando keeps only the text of each reply. So a run leaves a **Note** with its reply, such as the draft's ID, which Nando keeps in the Talk and never sends to the Owner. When a run starts a new Talk, Nando carries the latest Notes into it, so a pending draft survives the Owner asking for a clean slate, and a run never has to remember to copy them.
 - **The Mail Digest** is a daily Notification in the Core Assistant's chat, at a time in the Owner's settings, off until the Owner turns it on. Unlike other Notifications it **asks for work**: it waits in the Talk like the Owner's message and wakes a run, which reads the mail that came since the last digest and answers with the digest. The digest run reads and summarizes only: it never drafts, labels, archives, sends or marks mail read. The Owner answers the digest in the chat ("archive the newsletters"), and the next run does it.
 
 ## Why sending is acceptable here
@@ -33,7 +33,7 @@ ADR 0008's never-send rule came from the Career Module, where ADR 0007 accepts a
 
 ## Consequences
 
-- `messenger_reply` takes an optional Note, kept in the Talk and shown to later runs in the claim, never sent to Telegram.
+- `messenger_reply` takes an optional Note, kept in the Talk and shown to later runs in the claim, never sent to Telegram. A new Talk takes over the 10 latest Notes of the Talk it replaces.
 - Core's settings gain the Mail Digest (`enabled`, `time` on the hour or half hour, off at 08:00 by default). A settings write that leaves it out keeps the saved one, so a web app that doesn't know it yet can't turn it off. Its switch is in Core's Settings Section in the web app.
 - A Notification can ask for work. One that asks:
   - is sent only by its own area's Assistant's bot, never by another Assistant's;

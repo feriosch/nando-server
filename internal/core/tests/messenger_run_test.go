@@ -44,14 +44,16 @@ func TestTheOwnersMessageWakesTheScheduledTaskOncePerAssistant(t *testing.T) {
 
 // claimJSON is what messenger_claim_talk answers.
 type claimJSON struct {
-	Assistant string `json:"assistant"`
-	Skill     string `json:"skill"`
-	Summary   string `json:"summary"`
+	Assistant string   `json:"assistant"`
+	Skill     string   `json:"skill"`
+	Summary   string   `json:"summary"`
+	Notes     []string `json:"notes"`
 	Messages  []struct {
 		From    string `json:"from"`
 		Text    string `json:"text"`
 		Waiting bool   `json:"waiting"`
 		Failed  bool   `json:"failed"`
+		Note    string `json:"note"`
 		Photos  []struct {
 			ID string `json:"id"`
 		} `json:"photos"`

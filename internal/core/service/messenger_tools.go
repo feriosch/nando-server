@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/feriosch/nando-server/internal/core/model"
 )
@@ -32,7 +33,7 @@ func (s *MessengerService) Tools() []model.Tool {
 		{
 			Name: "messenger_claim_talk",
 			Description: "Claims a Talk whose messages from the Owner wait for a reply, for 15 minutes, and returns it: " +
-				"the Assistant to be, the path of its skill, the Talk's opening summary, its messages (the waiting ones " +
+				"the Assistant to be, the path of its skill, the Talk's opening summary, the Notes carried over from the Talk it replaced, its messages (the waiting ones " +
 				"marked), and the other Assistants. Without assistant, it claims the Talk waiting longest; with it, only " +
 				"that Assistant's, to look for messages that arrived meanwhile. An empty answer means nothing waits: stop.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{"assistant":{"type":"string","description":"Only this Assistant's Talk, such as career."}}}`),
@@ -49,19 +50,23 @@ func (s *MessengerService) Tools() []model.Tool {
 		{
 			Name: "messenger_reply",
 			Description: "Sends text to the Owner as the Assistant, in its chat, and marks the messages waiting when its Talk " +
-				"was claimed as answered. Messages that came since stay waiting: claim the Talk again with assistant to get them.",
+				"was claimed as answered. Messages that came since stay waiting: claim the Talk again with assistant to get them. " +
+				"A note is kept with the reply for later runs, which see it in messenger_claim_talk, and is never sent to the Owner.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"assistant":{"type":"string","description":"The Assistant the run is, as messenger_claim_talk said."},` +
-				`"text":{"type":"string","description":"The reply, as plain text."}},"required":["assistant","text"]}`),
+				`"text":{"type":"string","description":"The reply, as plain text."},` +
+				`"note":{"type":"string","description":"What a later run needs and the Owner shouldn't read, such as the ID of a draft shown in text; at most 1000 characters."}},` +
+				`"required":["assistant","text"]}`),
 			Handle: func(ctx context.Context, arguments json.RawMessage) (any, error) {
 				var args struct {
 					Assistant string `json:"assistant"`
 					Text      string `json:"text"`
+					Note      string `json:"note"`
 				}
 				if err := json.Unmarshal(arguments, &args); err != nil {
 					return nil, err
 				}
-				return s.reply(ctx, args.Assistant, args.Text)
+				return s.reply(ctx, args.Assistant, args.Text, strings.TrimSpace(args.Note))
 			},
 		},
 		{
@@ -109,10 +114,11 @@ func (s *MessengerService) Tools() []model.Tool {
 			Name: "messenger_new_talk",
 			Description: "Closes the Assistant's Talk and opens a new one, telling the Owner in one line. Messages still " +
 				"waiting move to the new Talk, and the run's claim goes with them. Without summary the new Talk starts " +
-				"blank, as when the Owner asks for a new chat; with it, it opens with the summary, as when the Talk grew too long.",
+				"blank, as when the Owner asks for a new chat; with it, it opens with the summary, as when the Talk grew too long. " +
+				"Either way, the 10 latest Notes carry over to the new Talk.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"assistant":{"type":"string","description":"The Assistant the run is."},` +
-				`"summary":{"type":"string","description":"What the new Talk opens with: open threads, decisions, anything half done."}},` +
+				`"summary":{"type":"string","description":"What the new Talk opens with: open threads, decisions, anything half done. Notes carry over on their own."}},` +
 				`"required":["assistant"]}`),
 			Handle: func(ctx context.Context, arguments json.RawMessage) (any, error) {
 				var args struct {
@@ -279,6 +285,7 @@ func (s *MessengerService) newTalk(ctx context.Context, assistant, summary strin
 		next = model.Talk{
 			Assistant:    assistant,
 			Summary:      summary,
+			Notes:        carriedNotes(old),
 			Messages:     []model.TalkMessage{},
 			ClaimedUntil: old.ClaimedUntil,
 			Claims:       old.Claims,
@@ -325,7 +332,24 @@ func (s *MessengerService) newTalk(ctx context.Context, assistant, summary strin
 	return newTalkJSON{Moved: len(next.Messages)}, nil
 }
 
-// mergeInto puts next's summary, messages and claim into the Talk a message
+// maxCarriedNotes is how many Notes a new Talk takes over: what still waits,
+// such as a draft for the Owner's yes, is among the latest.
+const maxCarriedNotes = 10
+
+// carriedNotes are the Notes a new Talk takes over from old: the latest
+// maxCarriedNotes of those old took over itself and those of its replies,
+// oldest first.
+func carriedNotes(old model.Talk) []string {
+	notes := slices.Clone(old.Notes)
+	for _, m := range old.Messages {
+		if m.Note != "" {
+			notes = append(notes, m.Note)
+		}
+	}
+	return notes[max(0, len(notes)-maxCarriedNotes):]
+}
+
+// mergeInto puts next's summary, Notes, messages and claim into the Talk a message
 // opened for assistant while next replaced the old one.
 func (s *MessengerService) mergeInto(ctx context.Context, assistant string, next model.Talk) error {
 	for {
@@ -333,7 +357,7 @@ func (s *MessengerService) mergeInto(ctx context.Context, assistant string, next
 		if err != nil {
 			return err
 		}
-		opened.Summary = next.Summary
+		opened.Summary, opened.Notes = next.Summary, next.Notes
 		opened.Messages = append(slices.Clone(next.Messages), opened.Messages...)
 		opened.ClaimedUntil, opened.Claims, opened.ClaimedUpTo = next.ClaimedUntil, next.Claims, next.ClaimedUpTo
 		if err := s.talks.Save(ctx, opened); !errors.Is(err, model.ErrTalkChanged) {
@@ -368,15 +392,22 @@ type replyJSON struct {
 	Answered int `json:"answered"`
 }
 
-// reply sends text to the Owner as assistant, keeps it in assistant's Talk,
-// and answers the messages waiting when the Talk was claimed.
-func (s *MessengerService) reply(ctx context.Context, assistant, text string) (replyJSON, error) {
+// maxNote is the longest Note a run may leave with a reply, in characters.
+const maxNote = 1000
+
+// reply sends text to the Owner as assistant, keeps it in assistant's Talk
+// with note, which is never sent, and answers the messages waiting when the
+// Talk was claimed.
+func (s *MessengerService) reply(ctx context.Context, assistant, text, note string) (replyJSON, error) {
 	token, ok := s.bot(assistant)
 	if !ok {
 		return replyJSON{}, fmt.Errorf("there is no Assistant %q with a bot", assistant)
 	}
 	if strings.TrimSpace(text) == "" {
 		return replyJSON{}, errors.New("text is empty")
+	}
+	if n := utf8.RuneCountInString(note); n > maxNote {
+		return replyJSON{}, fmt.Errorf("note is %d characters; it may be at most %d", n, maxNote)
 	}
 	var replies []model.TalkMessage
 	for _, part := range splitMessage(text) {
@@ -394,9 +425,14 @@ func (s *MessengerService) reply(ctx context.Context, assistant, text string) (r
 			log.Printf("messenger: send the rest of a reply: %v", err)
 			break
 		}
-		replies = append(replies, model.TalkMessage{
+		reply := model.TalkMessage{
 			From: model.FromAssistant, At: s.now(), Text: part, TelegramMessageID: sent.MessageID,
-		})
+		}
+		if len(replies) == 0 {
+			// On the first part only: the reply is one answer, however it was split.
+			reply.Note = note
+		}
+		replies = append(replies, reply)
 	}
 	// Recorded before the claim is released, so that a message coming in
 	// between doesn't wake a second run while this one looks again.
@@ -437,9 +473,11 @@ func (s *MessengerService) reply(ctx context.Context, assistant, text string) (r
 
 // claimJSON is what messenger_claim_talk answers.
 type claimJSON struct {
-	Assistant       string        `json:"assistant,omitempty"`
-	Skill           string        `json:"skill,omitempty"`
-	Summary         string        `json:"summary,omitempty"`
+	Assistant string `json:"assistant,omitempty"`
+	Skill     string `json:"skill,omitempty"`
+	Summary   string `json:"summary,omitempty"`
+	// Notes are those carried over from the Talk this one replaced.
+	Notes           []string      `json:"notes,omitempty"`
 	Messages        []messageJSON `json:"messages,omitempty"`
 	OtherAssistants []string      `json:"otherAssistants,omitempty"`
 }
@@ -450,6 +488,8 @@ type messageJSON struct {
 	At      time.Time         `json:"at"`
 	Text    string            `json:"text"`
 	Waiting bool              `json:"waiting,omitempty"`
+	// Note is what an earlier run left with its reply, for later runs.
+	Note string `json:"note,omitempty"`
 	// Failed marks a message no run answered, which the Owner was asked to
 	// send again.
 	Failed bool `json:"failed,omitempty"`
@@ -547,11 +587,12 @@ func (s *MessengerService) claimAnswer(talk model.Talk) claimJSON {
 		Assistant: talk.Assistant,
 		Skill:     "skills/assistants/" + talk.Assistant + "/SKILL.md",
 		Summary:   talk.Summary,
+		Notes:     talk.Notes,
 		Messages:  []messageJSON{},
 	}
 	for _, m := range talk.Messages {
 		message := messageJSON{
-			From: m.From, At: m.At, Text: m.Text,
+			From: m.From, At: m.At, Text: m.Text, Note: m.Note,
 			Waiting: m.State == model.MessageWaiting, Failed: m.State == model.MessageFailed,
 		}
 		for _, p := range m.Photos {

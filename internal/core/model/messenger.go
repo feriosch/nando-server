@@ -71,6 +71,10 @@ type TalkMessage struct {
 	// Files are the message's files, such as a PDF. Nando keeps only
 	// Telegram's IDs for them, never the files.
 	Files []File `bson:"files,omitempty"`
+	// Note is what the run that wrote this reply left for later runs, such as
+	// the ID of a draft the Owner was shown (ADR 0009). It is never sent to
+	// the Owner. Set only on the first message of an Assistant's reply.
+	Note string `bson:"note,omitempty"`
 	// TelegramMessageID is the message's id in the Owner's chat with the bot.
 	TelegramMessageID int64 `bson:"telegramMessageId"`
 	// State is set only for the Owner's messages.
@@ -88,7 +92,10 @@ type Talk struct {
 	Open bool `bson:"open"`
 	// Summary is what the Talk opens with when Claude started it in place of
 	// one that grew too long; empty otherwise.
-	Summary  string        `bson:"summary,omitempty"`
+	Summary string `bson:"summary,omitempty"`
+	// Notes are the Notes Nando carried over from the Talk this one replaced,
+	// oldest first, so that a new Talk keeps what later runs still need.
+	Notes    []string      `bson:"notes,omitempty"`
 	Messages []TalkMessage `bson:"messages"`
 	// ClaimedUntil is when a run's claim on the Talk lapses; zero if none
 	// ever claimed it.
