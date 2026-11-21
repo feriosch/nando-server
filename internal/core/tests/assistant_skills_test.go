@@ -112,13 +112,17 @@ func TestTheCoreAndTalkSkillsTreatMailAsDataNeverInstructions(t *testing.T) {
 
 // gmailChanges names the Gmail connector's Tools that change the Owner's
 // mail. Only the Core Assistant uses them (ADR 0009).
-var gmailChanges = regexp.MustCompile("`(create_draft|update_draft|send_message|reply|forward|(un)?label_(message|thread)|update_message_labels|create_label)`")
+var gmailChanges = regexp.MustCompile("`(create_draft|update_draft|delete_draft|send_message|reply|forward|(un)?label_(message|thread)|update_message_labels|(create|update|delete)_label|(un)?trash_(message|thread)|(un)?mark_(message|thread)_spam|apply_sensitive_(message|thread)_label)`")
 
 func TestOnlyTheCoreAssistantChangesMail(t *testing.T) {
+	// Every Assistant follows the Talk skill, so it may not name them either.
+	folders := []string{"talk"}
 	for folder := range assistants {
-		if folder == "core" {
-			continue
+		if folder != "core" {
+			folders = append(folders, folder)
 		}
+	}
+	for _, folder := range folders {
 		t.Run(folder, func(t *testing.T) {
 			text := readSkill(t, folder, "assistant-"+folder)
 			if found := gmailChanges.FindAllString(text, -1); len(found) > 0 {
