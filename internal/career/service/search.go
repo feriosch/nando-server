@@ -35,7 +35,7 @@ func (s *SearchService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "career_search",
 		Description: "Finds Recruiters (by name or their agency or Company), Companies (by name) and Opportunities " +
-			"(by role, or by their Company's name), open or closed, ignoring case, and Recruiters by their LinkedIn profileUrl, matched exactly, case included. A Recruiter comes with their Conversations, " +
+			"(by role, or by their Company's name), open or closed, ignoring case, Recruiters by their LinkedIn profileUrl, matched exactly, case included, and Recruiters by an email address they are known by, ignoring case. A Recruiter comes with their Conversations, " +
 			"each with whether it has a Suggested Reply (career_get_conversation reads one), and the Opportunities they brought, " +
 			"in short (none for a Lead; career_get_opportunity reads one). " +
 			"Answers {\"recruiters\": [{\"id\", \"name\", \"profileUrl\", \"kind\", \"organisation\", " +

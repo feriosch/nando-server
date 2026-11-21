@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -43,6 +44,11 @@ func (r conversations) AddMessages(ctx context.Context, update model.ThreadUpdat
 	if err != nil && !errors.Is(err, utils.ErrNotFound) {
 		return model.Added{}, err
 	}
+	// A thread id is never both LinkedIn's and Gmail's: one sent on the other
+	// channel would mix the two threads' messages and replace its person.
+	if err == nil && held.Channel != update.Channel {
+		return model.Added{}, fmt.Errorf("thread %s is a Conversation on another channel", update.ThreadID)
+	}
 	// An ignored thread isn't about a role: its messages are dropped.
 	if held.Ignored {
 		return model.Added{ConversationID: held.ID, Ignored: true}, nil
@@ -65,7 +71,14 @@ func (r conversations) AddMessages(ctx context.Context, update model.ThreadUpdat
 	if update.Person != (model.Person{}) {
 		set = append(set, bson.E{Key: "person", Value: update.Person})
 	}
-	change := bson.D{{Key: "$setOnInsert", Value: bson.D{{Key: "ignored", Value: false}}}}
+	onInsert := bson.D{{Key: "ignored", Value: false}}
+	if update.Channel != "" {
+		onInsert = append(onInsert, bson.E{Key: "channel", Value: update.Channel})
+	}
+	if update.Subject != "" {
+		set = append(set, bson.E{Key: "subject", Value: update.Subject})
+	}
+	change := bson.D{{Key: "$setOnInsert", Value: onInsert}}
 	if len(set) > 0 {
 		change = append(change, bson.E{Key: "$set", Value: set})
 	}
@@ -122,7 +135,9 @@ func (r conversations) GetByID(ctx context.Context, id bson.ObjectID) (model.Con
 }
 
 func (r conversations) Threads(ctx context.Context) ([]model.Conversation, error) {
-	cursor, err := r.collection.Find(ctx, bson.D{}, options.Find().SetProjection(bson.D{{Key: "messages", Value: 0}}))
+	// LinkedIn threads only: a Gmail one is no business of the LinkedIn Sync's.
+	cursor, err := r.collection.Find(ctx, bson.D{{Key: "channel", Value: bson.D{{Key: "$ne", Value: model.ChannelGmail}}}},
+		options.Find().SetProjection(bson.D{{Key: "messages", Value: 0}}))
 	if err != nil {
 		return nil, err
 	}
@@ -137,6 +152,9 @@ func sameMessage(held, m model.Message) bool {
 	if held.LinkedInID != "" && m.LinkedInID != "" {
 		return held.LinkedInID == m.LinkedInID
 	}
+	if held.GmailID != "" && m.GmailID != "" {
+		return held.GmailID == m.GmailID
+	}
 	return held.From == m.From && held.Text == m.Text &&
 		held.SentAt.Truncate(time.Millisecond).Equal(m.SentAt.Truncate(time.Millisecond))
 }
@@ -149,6 +167,7 @@ func (r conversations) Ignore(ctx context.Context, id bson.ObjectID) (model.Conv
 			{Key: "$set", Value: bson.D{{Key: "ignored", Value: true}, {Key: "messages", Value: bson.A{}}}},
 			{Key: "$unset", Value: bson.D{
 				{Key: "url", Value: ""},
+				{Key: "subject", Value: ""},
 				{Key: "person", Value: ""},
 				{Key: "recruiterId", Value: ""},
 				{Key: "suggestedReply", Value: ""},

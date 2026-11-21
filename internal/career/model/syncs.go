@@ -117,6 +117,7 @@ type ThreadUpdateJSON struct {
 type PersonJSON struct {
 	Name       string `json:"name"`
 	ProfileURL string `json:"profileUrl"`
+	Email      string `json:"email,omitempty"`
 }
 
 // MessageJSON is one LinkedIn message as the Sync script sends it.
@@ -125,6 +126,9 @@ type MessageJSON struct {
 	From   string    `json:"from"`
 	SentAt time.Time `json:"sentAt"`
 	Text   string    `json:"text"`
+	// GmailID and Attachments are a Gmail message's.
+	GmailID     string   `json:"gmailId,omitempty"`
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 // RecordedSyncJSON is what career_record_sync answers: the Sync's id and how

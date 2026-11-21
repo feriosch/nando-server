@@ -2,9 +2,11 @@ package repository
 
 import (
 	"context"
+	"strings"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/career/model"
 	careerutils "github.com/feriosch/nando-server/internal/career/utils"
@@ -42,11 +44,39 @@ func (r recruiters) GiveProfileURL(ctx context.Context, id bson.ObjectID, url st
 	return err
 }
 
+func (r recruiters) AddEmail(ctx context.Context, id bson.ObjectID, email string) error {
+	// An address is one Recruiter's: the latest filing takes it from any
+	// other, so ByEmail never has two to choose from.
+	if _, err := r.collection.UpdateMany(ctx,
+		bson.D{{Key: "_id", Value: bson.D{{Key: "$ne", Value: id}}}, {Key: "emails", Value: email}},
+		bson.D{{Key: "$pull", Value: bson.D{{Key: "emails", Value: email}}}}); err != nil {
+		return err
+	}
+	_, err := r.collection.UpdateOne(ctx, bson.D{{Key: "_id", Value: id}},
+		bson.D{{Key: "$addToSet", Value: bson.D{{Key: "emails", Value: email}}}})
+	return err
+}
+
+func (r recruiters) RemoveEmail(ctx context.Context, id bson.ObjectID, email string) (model.Recruiter, error) {
+	var recruiter model.Recruiter
+	err := r.collection.FindOneAndUpdate(ctx, bson.D{{Key: "_id", Value: id}},
+		bson.D{{Key: "$pull", Value: bson.D{{Key: "emails", Value: email}}}},
+		options.FindOneAndUpdate().SetReturnDocument(options.After)).Decode(&recruiter)
+	return recruiter, utils.NotFound(err)
+}
+
+func (r recruiters) ByEmail(ctx context.Context, email string) (model.Recruiter, error) {
+	var recruiter model.Recruiter
+	err := r.collection.FindOne(ctx, bson.D{{Key: "emails", Value: email}}).Decode(&recruiter)
+	return recruiter, utils.NotFound(err)
+}
+
 func (r recruiters) Search(ctx context.Context, query string) ([]model.Recruiter, error) {
 	cursor, err := r.collection.Find(ctx, bson.D{{Key: "$or", Value: bson.A{
 		bson.D{{Key: "name", Value: careerutils.Containing(query)}},
 		bson.D{{Key: "organisation", Value: careerutils.Containing(query)}},
 		bson.D{{Key: "profileUrl", Value: query}},
+		bson.D{{Key: "emails", Value: strings.ToLower(query)}},
 	}}}, careerutils.ByName())
 	if err != nil {
 		return nil, err
