@@ -409,6 +409,7 @@ Served to every Connector while any bot has a token (ADR 0004). Each one shows t
 - **`messenger_claim_talk`** (`assistant` optional): claims the Talk for 15 minutes and returns:
   - `assistant`, and `skill` (`skills/assistants/<assistant>/SKILL.md`);
   - `summary`;
+  - `notes`: the Notes carried over from the Talk this one replaced, oldest first, at most 10;
   - `messages` (`from`, `at`, `text`; `note` on a reply whose run left one; `waiting` on those waiting, `failed` on those no run answered, `photos`, each photo's `id`, and `files`, each PDF's `id` and `name`, on those with them);
   - `otherAssistants`, those with a bot.
 
@@ -421,7 +422,7 @@ Served to every Connector while any bot has a token (ADR 0004). Each one shows t
   - A page with no text, such as a scanned one, is marked `image: true` and follows the answer as a JPEG of up to 1280 px, in page order. When none of the pages read has text, as in a scan, the answer also says `scanned: true`.
   - A PDF that takes poppler over 30 seconds is an error that says to read fewer pages.
   - Pages outside the PDF, a broken PDF, or a file Telegram no longer has are Tool errors, which never include the bot token.
-- **`messenger_new_talk`** (`assistant`, `summary` optional): closes the open Talk and opens one starting from `summary`. Waiting messages and the run's claim move to it; Notes don't, so a run puts any Note a later run still needs, such as a draft awaiting the Owner's yes, in `summary` (ADR 0009). The bot says "Started a new chat.", or "Started a new chat (kept a short summary)." with a summary. It answers `{"moved": n}`.
+- **`messenger_new_talk`** (`assistant`, `summary` optional): closes the open Talk and opens one starting from `summary`. Waiting messages and the run's claim move to it, and so do the 10 latest Notes, those the old Talk carried and those of its replies, oldest first (ADR 0009), with or without a `summary`. The bot says "Started a new chat.", or "Started a new chat (kept a short summary)." with a summary. It answers `{"moved": n}`.
 
 Core's database holds:
 - `talks`: one document per Talk, with its messages, and at most one open Talk per Assistant;

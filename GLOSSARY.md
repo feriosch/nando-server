@@ -261,7 +261,7 @@ An app outside Nando that serves the Owner's whole life rather than one Module: 
 _Avoid_: Integration, external app, Connector (that is the reverse: an outside app using Nando)
 
 **Note**:
-What a run leaves in a Talk for later runs with its reply, such as the ID of a draft the Owner was shown. Nando keeps it in the Talk but never sends it to the Owner.
+What a run leaves in a Talk for later runs with its reply, such as the ID of a draft the Owner was shown. Nando keeps it in the Talk, and carries the latest ones into a new Talk, but never sends it to the Owner.
 _Avoid_: Memo, comment, metadata, hidden message
 
 **Mail Digest**:

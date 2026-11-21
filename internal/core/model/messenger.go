@@ -92,7 +92,10 @@ type Talk struct {
 	Open bool `bson:"open"`
 	// Summary is what the Talk opens with when Claude started it in place of
 	// one that grew too long; empty otherwise.
-	Summary  string        `bson:"summary,omitempty"`
+	Summary string `bson:"summary,omitempty"`
+	// Notes are the Notes Nando carried over from the Talk this one replaced,
+	// oldest first, so that a new Talk keeps what later runs still need.
+	Notes    []string      `bson:"notes,omitempty"`
 	Messages []TalkMessage `bson:"messages"`
 	// ClaimedUntil is when a run's claim on the Talk lapses; zero if none
 	// ever claimed it.

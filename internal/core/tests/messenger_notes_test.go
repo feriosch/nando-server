@@ -2,6 +2,8 @@ package tests
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -97,5 +99,71 @@ func TestASplitReplyKeepsItsNoteOnTheFirstPartOnly(t *testing.T) {
 	}
 	if len(notes) < 2 || notes[0] != "thread 18c2f" || strings.Join(notes[1:], "") != "" {
 		t.Errorf("the reply's parts carry Notes %q; want it on the first part only", notes)
+	}
+}
+
+func TestNotesCarryIntoANewTalkEvenACleanSlate(t *testing.T) {
+	n, telegram := messengerNando(t)
+	n.mustPostUpdate("core", ownerSays(5001, 42, "answer Tanaka that Tuesday works"))
+	r := n.startRun()
+	r.claim("")
+	note := "Gmail draft r-8812 to tanaka@example.com, awaiting the Owner's yes"
+	if result := r.replyWithNote("core", "Here's the draft. Send it?", note); result.IsError {
+		t.Fatalf("messenger_reply failed: %+v", result.Content)
+	}
+
+	// The Owner asks for a clean slate, and the run gives no summary.
+	n.mustPostUpdate("core", ownerSays(5002, 44, "new chat"))
+	r.claim("core")
+	r.newTalk("core", "")
+
+	if last := telegram.CallsTo("sendMessage"); last[len(last)-1].Params["text"] != "Started a new chat." {
+		t.Errorf("the bot said %q; want the plain line for a clean slate", last[len(last)-1].Params["text"])
+	}
+	r.reply("core", "Fresh start!")
+	n.mustPostUpdate("core", ownerSays(5003, 47, "yes, send it"))
+	got := n.startRun().claim("")
+	if got.Summary != "" || len(got.Notes) != 1 || got.Notes[0] != note {
+		t.Errorf("claim in the new Talk: summary %q, notes %q; want no summary and the draft's Note carried over", got.Summary, got.Notes)
+	}
+}
+
+func TestANewTalkCarriesOnlyTheTenLatestNotes(t *testing.T) {
+	n, _ := messengerNando(t)
+	r := n.startRun()
+	id := int64(100)
+	// say has the Owner send a message, and the run answer it with note.
+	say := func(note string) {
+		t.Helper()
+		id += 2
+		n.mustPostUpdate("core", ownerSays(id, id, "next"))
+		r.claim("core")
+		if result := r.replyWithNote("core", "Done.", note); result.IsError {
+			t.Fatalf("messenger_reply failed: %+v", result.Content)
+		}
+	}
+	for i := 1; i <= 7; i++ {
+		say(fmt.Sprintf("note %d", i))
+	}
+	n.mustPostUpdate("core", ownerSays(500, 500, "new chat"))
+	r.claim("core")
+	r.newTalk("core", "")
+	r.reply("core", "Fresh start!")
+	for i := 8; i <= 12; i++ {
+		say(fmt.Sprintf("note %d", i))
+	}
+	n.mustPostUpdate("core", ownerSays(600, 600, "new chat again"))
+	r.claim("core")
+	r.newTalk("core", "")
+	r.reply("core", "Fresh start!")
+
+	n.mustPostUpdate("core", ownerSays(700, 700, "hi"))
+	got := r.claim("core")
+	var want []string
+	for i := 3; i <= 12; i++ {
+		want = append(want, fmt.Sprintf("note %d", i))
+	}
+	if !slices.Equal(got.Notes, want) {
+		t.Errorf("notes after two new Talks = %q; want the 10 latest, oldest first: %q", got.Notes, want)
 	}
 }
