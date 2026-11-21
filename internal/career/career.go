@@ -82,7 +82,7 @@ func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 		profile:       service.NewProfile(profile),
 		recruiters:    service.NewRecruiters(recruiters, conversations),
 		overview:      service.NewOverview(conversations, recruiters, opportunitiesService, settingsService),
-		gmailSync:     service.NewGmailCareerSync(repository.NewGmailPasses(db), core.Now),
+		gmailSync:     service.NewGmailCareerSync(repository.NewGmailPasses(db), conversations, core.Now),
 	}, nil
 }
 

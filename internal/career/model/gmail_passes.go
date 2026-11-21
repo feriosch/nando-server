@@ -33,9 +33,10 @@ type GmailPassesRepository interface {
 	LastFinished(ctx context.Context) (GmailPass, error)
 }
 
-// GmailPassJSON is what career_start_gmail_career_sync answers: the pass, and
-// since when to read the labeled threads Nando holds.
+// GmailPassJSON is what career_start_gmail_career_sync answers: the pass, since
+// when to read the labeled threads Nando holds, and which those are.
 type GmailPassJSON struct {
-	PassID string    `json:"passId"`
-	Since  time.Time `json:"since"`
+	PassID string       `json:"passId"`
+	Since  time.Time    `json:"since"`
+	Held   []ThreadJSON `json:"held"`
 }
