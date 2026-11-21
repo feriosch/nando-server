@@ -257,20 +257,20 @@ The Assistant for Core, and for anything the Owner asks that belongs to no Modul
 _Avoid_: Nando Assistant, general bot, main bot
 
 **Outside Service**:
-An app outside Nando that serves the Owner's whole life rather than one Module: Google Calendar and Gmail so far, and perhaps documents later. Every Assistant reads the Outside Services, and only the Core Assistant changes the Owner's mail.
+An app outside Nando that serves the Owner's whole life rather than one Module: Google Calendar and Gmail so far, and perhaps documents later. Every Assistant reads the Outside Services, and only the Core Assistant changes the Owner's Gmail.
 _Avoid_: Integration, external app, Connector (that is the reverse: an outside app using Nando)
 
 **Note**:
 What a run leaves in a Talk for later runs with its reply, such as the ID of a draft the Owner was shown. Nando keeps it in the Talk, and carries the latest ones into a new Talk, but never sends it to the Owner.
 _Avoid_: Memo, comment, metadata, hidden message
 
-**Mail Digest**:
+**Gmail Digest**:
 The Core Assistant's short daily summary of the mail that came since the last one, at the time in the Owner's settings. Nando only asks for it, with a Notification; Claude reads the mail and writes it, changing nothing.
-_Avoid_: Inbox summary, newsletter, briefing, report
+_Avoid_: Mail Digest (its old name), inbox summary, newsletter, briefing, report
 
 ## Notifications
 
 **Notification**:
-A short message Nando sends the Owner first, without being asked. Core always sends it, either on a Module's behalf or for itself (such as the Weigh-in reminder), in the Messenger: in the chat of that Module's Assistant, or the Core Assistant's when the Module has none. It becomes part of that Assistant's Talk, so the Owner can answer it there. A Notification can also ask that Assistant for work, such as the Mail Digest: then it waits in the Talk like the Owner's message, and a run answers it.
+A short message Nando sends the Owner first, without being asked. Core always sends it, either on a Module's behalf or for itself (such as the Weigh-in reminder), in the Messenger: in the chat of that Module's Assistant, or the Core Assistant's when the Module has none. It becomes part of that Assistant's Talk, so the Owner can answer it there. A Notification can also ask that Assistant for work, such as the Gmail Digest: then it waits in the Talk like the Owner's message, and a run answers it.
 _Avoid_: Alert, push, message
 

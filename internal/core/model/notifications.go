@@ -17,7 +17,7 @@ type Notification struct {
 	Title string
 	Body  string
 	// Asks marks a Notification that asks its area's Assistant for work, such
-	// as the Mail Digest (ADR 0009): it waits in that Assistant's Talk like
+	// as the Gmail Digest (ADR 0009): it waits in that Assistant's Talk like
 	// the Owner's message and wakes a run, which answers it.
 	Asks bool
 }

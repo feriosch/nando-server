@@ -12,7 +12,7 @@ type Settings struct {
 	// HeightCm is the Owner's height; 0 means not set yet.
 	HeightCm        int             `bson:"heightCm"`
 	WeighInReminder WeighInReminder `bson:"weighInReminder"`
-	MailDigest      MailDigest      `bson:"mailDigest"`
+	GmailDigest     GmailDigest     `bson:"gmailDigest"`
 }
 
 // WeighInReminder is the weekly Notification reminding the Owner to weigh in.
@@ -24,9 +24,9 @@ type WeighInReminder struct {
 	Time string `bson:"time"`
 }
 
-// MailDigest is the daily Notification that asks the Core Assistant for
-// the Mail Digest (ADR 0009).
-type MailDigest struct {
+// GmailDigest is the daily Notification that asks the Core Assistant for
+// the Gmail Digest (ADR 0009).
+type GmailDigest struct {
 	Enabled bool `bson:"enabled"`
 	// Time is the clock time in the Owner Time Zone, "HH:MM" on the hour or
 	// half hour.
@@ -37,7 +37,7 @@ type MailDigest struct {
 var DefaultSettings = Settings{
 	TimeZone:        "UTC",
 	WeighInReminder: WeighInReminder{Enabled: false, Weekday: time.Monday, Time: "08:00"},
-	MailDigest:      MailDigest{Enabled: false, Time: "08:00"},
+	GmailDigest:     GmailDigest{Enabled: false, Time: "08:00"},
 }
 
 // SettingsRepository reads and writes the settings collection.
@@ -49,14 +49,14 @@ type SettingsRepository interface {
 
 // SettingsJSON is the settings as the API reads and writes them.
 type SettingsJSON struct {
-	TimeZone        string          `json:"timeZone"`
-	HeightCm        *int            `json:"heightCm"`
-	WeighInReminder ReminderJSON    `json:"weighInReminder"`
-	MailDigest      *MailDigestJSON `json:"mailDigest,omitempty"`
+	TimeZone        string           `json:"timeZone"`
+	HeightCm        *int             `json:"heightCm"`
+	WeighInReminder ReminderJSON     `json:"weighInReminder"`
+	GmailDigest     *GmailDigestJSON `json:"gmailDigest,omitempty"`
 }
 
-// MailDigestJSON is the Mail Digest as the API reads and writes it.
-type MailDigestJSON struct {
+// GmailDigestJSON is the Gmail Digest as the API reads and writes it.
+type GmailDigestJSON struct {
 	Enabled bool   `json:"enabled"`
 	Time    string `json:"time"`
 }

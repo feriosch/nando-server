@@ -28,7 +28,7 @@ const (
 	FromOwner     MessageFrom = "owner"
 	FromAssistant MessageFrom = "assistant"
 	// FromNando is a Notification that asks the Assistant for work, such as
-	// the Mail Digest: Nando sent it in the chat, and it waits like the
+	// the Gmail Digest: Nando sent it in the chat, and it waits like the
 	// Owner's message until a reply answers it.
 	FromNando MessageFrom = "nando"
 )

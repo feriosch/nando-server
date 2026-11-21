@@ -39,9 +39,9 @@ func (s *SettingsService) Settings(ctx context.Context) (model.Settings, error) 
 	if errors.Is(err, utils.ErrNotFound) {
 		return model.DefaultSettings, nil
 	}
-	if err == nil && settings.MailDigest.Time == "" {
-		// Saved before the Mail Digest existed: it is off, at its default time.
-		settings.MailDigest = model.DefaultSettings.MailDigest
+	if err == nil && settings.GmailDigest.Time == "" {
+		// Saved before the Gmail Digest existed: it is off, at its default time.
+		settings.GmailDigest = model.DefaultSettings.GmailDigest
 	}
 	return settings, err
 }
@@ -59,9 +59,9 @@ func toSettingsJSON(settings model.Settings) model.SettingsJSON {
 			Weekday: strings.ToLower(settings.WeighInReminder.Weekday.String()),
 			Time:    settings.WeighInReminder.Time,
 		},
-		MailDigest: &model.MailDigestJSON{
-			Enabled: settings.MailDigest.Enabled,
-			Time:    settings.MailDigest.Time,
+		GmailDigest: &model.GmailDigestJSON{
+			Enabled: settings.GmailDigest.Enabled,
+			Time:    settings.GmailDigest.Time,
 		},
 	}
 }
@@ -102,16 +102,16 @@ func fromSettingsJSON(j model.SettingsJSON, saved model.Settings) (model.Setting
 	if !utils.IsHalfHour(j.WeighInReminder.Time) {
 		return model.Settings{}, errors.New("weighInReminder.time must be HH:MM on the hour or half hour")
 	}
-	digest := saved.MailDigest
-	if j.MailDigest != nil {
-		if !utils.IsHalfHour(j.MailDigest.Time) {
-			return model.Settings{}, errors.New("mailDigest.time must be HH:MM on the hour or half hour")
+	digest := saved.GmailDigest
+	if j.GmailDigest != nil {
+		if !utils.IsHalfHour(j.GmailDigest.Time) {
+			return model.Settings{}, errors.New("gmailDigest.time must be HH:MM on the hour or half hour")
 		}
-		digest = model.MailDigest{Enabled: j.MailDigest.Enabled, Time: j.MailDigest.Time}
+		digest = model.GmailDigest{Enabled: j.GmailDigest.Enabled, Time: j.GmailDigest.Time}
 	}
 	settings := model.Settings{
-		TimeZone:   j.TimeZone,
-		MailDigest: digest,
+		TimeZone:    j.TimeZone,
+		GmailDigest: digest,
 		WeighInReminder: model.WeighInReminder{
 			Enabled: j.WeighInReminder.Enabled,
 			Weekday: weekday,
@@ -124,7 +124,7 @@ func fromSettingsJSON(j model.SettingsJSON, saved model.Settings) (model.Setting
 	return settings, nil
 }
 
-// putSettings replaces all of the settings, keeping the saved Mail Digest
+// putSettings replaces all of the settings, keeping the saved Gmail Digest
 // when the body leaves it out.
 func (s *SettingsService) putSettings(w http.ResponseWriter, r *http.Request) {
 	var j model.SettingsJSON
