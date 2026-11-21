@@ -157,7 +157,8 @@ func TestTheCoreSkillAnswersTheGmailDigestChangingNothingAndTheTalkSkillKnowsNan
 
 func TestTheCareerAssistantDraftsInGmailAndNeverSends(t *testing.T) {
 	text := readSkill(t, "career", "assistant-career")
-	for _, want := range []string{"`create_draft`", "`replyToMessageId`", "`note`", "never send"} {
+	// get_draft before update_draft, so the Owner's own edits aren't overwritten.
+	for _, want := range []string{"`create_draft`", "`replyToMessageId`", "`note`", "never send", "`get_draft`"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the Career skill never says %s: it drafts a Gmail Conversation's reply in its thread, notes the draft, and never sends", want)
 		}
@@ -166,7 +167,8 @@ func TestTheCareerAssistantDraftsInGmailAndNeverSends(t *testing.T) {
 
 func TestTheCoreAssistantSendsTheCareerAssistantsDraftOnlyOnTheOwnersYes(t *testing.T) {
 	text := readSkill(t, "core", "assistant-core")
-	for _, want := range []string{"Career Assistant's draft", "`list_drafts`"} {
+	// Only drafts in that thread, and a question when there's more than one.
+	for _, want := range []string{"Career Assistant's draft", "`list_drafts`", "`threadId`", "more than one"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the Core skill never says %s: it finds the Career Assistant's draft, shows it, and sends it on the Owner's yes", want)
 		}
