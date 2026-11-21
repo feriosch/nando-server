@@ -30,7 +30,7 @@ The Owner's Assistants answer them in Telegram ([ADR 0008](../docs/adr/0008-assi
 | Skill | What it does |
 | --- | --- |
 | [`assistants/talk`](assistants/talk/SKILL.md) | The loop every run follows: claims the Talk that waits, becomes its Assistant, answers through the Messenger's Tools, and looks again until nothing waits (scheduled task) |
-| [`assistants/core`](assistants/core/SKILL.md) | The Core Assistant: the Owner's calendar and Gmail, and their life outside any Module |
+| [`assistants/core`](assistants/core/SKILL.md) | The Core Assistant: the Owner's calendar and Gmail, the daily Mail Digest, and their life outside any Module |
 | [`assistants/career`](assistants/career/SKILL.md) | The Career Assistant: Recruiters, Opportunities and replies, leaning on the `career-*` chat skills |
 | [`assistants/japanese`](assistants/japanese/SKILL.md) | The Japanese Assistant: adds and improves Words right in the chat, leaning on `add-word` and `suggest-related` |
 | [`assistants/calories`](assistants/calories/SKILL.md) | The Calories Assistant: logs what the Owner eats from a saved Meal, a label or its own estimate, says how the Day stands against the Daily Limit, and offers to save new Meals |
@@ -125,7 +125,7 @@ The Owner messages their Assistants' bots in Telegram, and Nando wakes a third c
   Follow skills/assistants/talk/SKILL.md
   ```
 
-One run is one Assistant. It replies to the Owner only through `messenger_reply`, sends nothing to anyone else but a mail the Owner said yes to, and asks before anything destructive, acting on the Owner's yes in a later run. Setting the task up is issue #125.
+One run is one Assistant. It replies to the Owner only through `messenger_reply`, sends nothing to anyone else but a mail the Owner said yes to, and asks before anything destructive, acting on the Owner's yes in a later run. The Mail Digest is a run too: once a day, at the time in Settings, Nando asks the Core Assistant for it in its chat. Setting the task up is issue #125.
 
 ## Add the Nando Connector
 

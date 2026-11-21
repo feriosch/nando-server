@@ -100,23 +100,25 @@ Core's own Settings Section.
 
 ### `GET /api/settings`
 
-`200`: the settings. Until the Owner first saves them, they are `"UTC"`, no height, and the reminder off, set for Monday at 08:00.
+`200`: the settings. Until the Owner first saves them, they are `"UTC"`, no height, the reminder off, set for Monday at 08:00, and the Mail Digest off, set for 08:00.
 
 ```json
 {
   "timeZone": "UTC",
   "heightCm": 175,
-  "weighInReminder": { "enabled": false, "weekday": "monday", "time": "08:00" }
+  "weighInReminder": { "enabled": false, "weekday": "monday", "time": "08:00" },
+  "mailDigest": { "enabled": false, "time": "08:00" }
 }
 ```
 
 - `timeZone`: the Owner Time Zone, an IANA name such as `"Asia/Tokyo"`. Every Day, and every clock time such as the reminder's, is in this zone. Changing it never moves stored data: a Weigh-in stays in its week. Only which Day is today changes.
 - `heightCm`: a whole number of cm, or `null` until it is set.
 - `weighInReminder`: the weekly Notification reminding the Owner to weigh in. `weekday` is `"monday"` to `"sunday"`, and `time` is `"HH:MM"` on the hour or half hour (`"00:00"` to `"23:30"`).
+- `mailDigest`: the daily Notification asking the Core Assistant for the Mail Digest ([ADR 0009](../../docs/adr/0009-gmail-for-the-core-assistant.md)). `time` is `"HH:MM"` on the hour or half hour.
 
 ### `PUT /api/settings`
 
-Body: all of the settings, as `GET` answers them.
+Body: all of the settings, as `GET` answers them. `mailDigest` may be left out, which keeps the saved one, so a web app that doesn't know it yet can't turn it off.
 
 - `204`: saved.
 - `400`: the body isn't settings, or one is invalid: an unknown time zone, a height outside 1 to 300 cm or not a whole number, an unknown weekday, or a time that isn't on the hour or half hour. The message says which.
@@ -180,10 +182,11 @@ Core sends every Notification, for a Module or for itself, in the Messenger when
 - It goes to the chat of the Assistant its ID's area names, such as the Career Assistant's for `career:…`. When that Assistant has no bot, it goes to the Core Assistant's chat, or, if Core has no bot either, to any Assistant's that has one.
 - It is sent as plain text: the title, a line break and the body, leaving out either if it is empty.
 - It joins that Assistant's Talk as a message from the Assistant, so the Owner can answer it there. It wakes no run on its own.
+- A Notification that **asks** for work, such as the Mail Digest (ADR 0009), is the exception. It goes only to its own area's Assistant, and only if that one has a bot. It joins the Talk as a message `from` `nando`, waiting like the Owner's, and wakes a run. A reply answers it like the Owner's messages, and it never gets a 👀. If three claims lapse without a reply, the bot says "Sorry, something went wrong and I couldn't do that. Ask me if you still want it.", without asking the Owner to send anything again.
 
 Each Notification is sent at most once, even if the scheduler retries a tick. With no bot configured, as in local development, nothing is sent or recorded as sent, and the tick says so. Web Push was retired ([#137](https://github.com/feriosch/nando-server/issues/137)): Telegram is the only channel.
 
-Core's own Notification is the Weigh-in reminder, "Weigh-in" / "Time to log this week's weight", sent once a week at the `weighInReminder`'s weekday and time while it is `enabled`.
+Core's own Notifications are the Weigh-in reminder, "Weigh-in" / "Time to log this week's weight", sent once a week at the `weighInReminder`'s weekday and time while it is `enabled`, and the Mail Digest's ask, `core:mail-digest:<day>`, "📬 Mail Digest" / "Reading your new mail…", sent once a day at the `mailDigest`'s time while it is `enabled`.
 
 ### `POST /internal/tick`
 
@@ -410,7 +413,7 @@ Served to every Connector while any bot has a token (ADR 0004). Each one shows t
   - `assistant`, and `skill` (`skills/assistants/<assistant>/SKILL.md`);
   - `summary`;
   - `notes`: the Notes carried over from the Talk this one replaced, oldest first, at most 10;
-  - `messages` (`from`, `at`, `text`; `note` on a reply whose run left one; `waiting` on those waiting, `failed` on those no run answered, `photos`, each photo's `id`, and `files`, each PDF's `id` and `name`, on those with them);
+  - `messages` (`from`: `owner`, `assistant`, or `nando` for a Notification that asks for work; `at`, `text`; `note` on a reply whose run left one; `waiting` on those waiting, `failed` on those no run answered, `photos`, each photo's `id`, and `files`, each PDF's `id` and `name`, on those with them);
   - `otherAssistants`, those with a bot.
 
   Without `assistant`, it takes the Talk whose oldest waiting message is oldest; with it, only that Assistant's. `{}` means nothing waits, and with `assistant` it records that the run stopped. A claim that lapses leaves the Talk claimable again, until its third.

@@ -134,3 +134,18 @@ func TestOnlyTheCoreAssistantChangesMail(t *testing.T) {
 		})
 	}
 }
+
+func TestTheCoreSkillAnswersTheMailDigestChangingNothingAndTheTalkSkillKnowsNandosAsks(t *testing.T) {
+	core := readSkill(t, "core", "assistant-core")
+	for _, want := range []string{
+		"📬 Mail Digest", // the ask, as Nando sends it
+		"The digest run changes nothing",
+	} {
+		if !strings.Contains(core, want) {
+			t.Errorf("the Core skill never says %s", want)
+		}
+	}
+	if talk := readSkill(t, "talk", "assistant-talk"); !strings.Contains(talk, "`nando`") {
+		t.Error("the Talk skill never says what a message `from` `nando` is")
+	}
+}

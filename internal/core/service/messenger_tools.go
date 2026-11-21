@@ -388,7 +388,8 @@ func (s *MessengerService) typing(ctx context.Context, token string) {
 
 // replyJSON is what messenger_reply answers.
 type replyJSON struct {
-	// Answered counts the Owner's messages the reply answered.
+	// Answered counts the messages the reply answered: the Owner's, and
+	// Nando's that asked for work.
 	Answered int `json:"answered"`
 }
 
@@ -437,7 +438,7 @@ func (s *MessengerService) reply(ctx context.Context, assistant, text, note stri
 	// Recorded before the claim is released, so that a message coming in
 	// between doesn't wake a second run while this one looks again.
 	s.tasks[assistant].RunWorking(ctx)
-	var answered []int64
+	var answered, reacted []int64
 	for {
 		talk, err := s.talks.Open(ctx, assistant)
 		if err != nil {
@@ -446,11 +447,14 @@ func (s *MessengerService) reply(ctx context.Context, assistant, text, note stri
 		if talk.ID.IsZero() {
 			return replyJSON{}, fmt.Errorf("the %s Assistant has no Talk", assistant)
 		}
-		answered = nil
+		answered, reacted = nil, nil
 		for i, m := range talk.Messages {
 			if m.State == model.MessageWaiting && m.TelegramMessageID <= talk.ClaimedUpTo {
 				talk.Messages[i].State = model.MessageAnswered
 				answered = append(answered, m.TelegramMessageID)
+				if m.From == model.FromOwner {
+					reacted = append(reacted, m.TelegramMessageID)
+				}
 			}
 		}
 		talk.Messages = append(talk.Messages, replies...)
@@ -467,7 +471,7 @@ func (s *MessengerService) reply(ctx context.Context, assistant, text, note stri
 		}
 		break
 	}
-	s.clearReactions(ctx, token, answered)
+	s.clearReactions(ctx, token, reacted)
 	return replyJSON{Answered: len(answered)}, nil
 }
 
@@ -543,7 +547,7 @@ func (s *MessengerService) claim(ctx context.Context, assistant string) (claimJS
 		}
 		talk.ClaimedUntil = now.Add(claimFor)
 		talk.Claims++
-		talk.ClaimedUpTo = talk.LastOwnerMessageID()
+		talk.ClaimedUpTo = talk.LastWaitableMessageID()
 		if err := s.talks.Save(ctx, talk); errors.Is(err, model.ErrTalkChanged) {
 			continue
 		} else if err != nil {
@@ -673,6 +677,10 @@ func (s *MessengerService) RunAtTick(ctx context.Context) error {
 // stuck is what a bot tells the Owner when their messages failed.
 const stuck = "Sorry, something went wrong and I couldn't answer that. Please send it again."
 
+// stuckAsk is what a bot tells the Owner when only Nando's ask for work, such
+// as the Mail Digest, failed.
+const stuckAsk = "Sorry, something went wrong and I couldn't do that. Ask me if you still want it."
+
 // failStuck fails assistant's waiting messages if MaxClaims runs claimed them
 // and the last claim lapsed with no reply, and tells the Owner.
 func (s *MessengerService) failStuck(ctx context.Context, assistant string) error {
@@ -689,7 +697,9 @@ func (s *MessengerService) failStuck(ctx context.Context, assistant string) erro
 		for i, m := range talk.Messages {
 			if m.State == model.MessageWaiting {
 				talk.Messages[i].State = model.MessageFailed
-				failed = append(failed, m.TelegramMessageID)
+				if m.From == model.FromOwner {
+					failed = append(failed, m.TelegramMessageID)
+				}
 			}
 		}
 		talk.ClaimedUntil, talk.Claims = time.Time{}, 0
@@ -701,7 +711,12 @@ func (s *MessengerService) failStuck(ctx context.Context, assistant string) erro
 		break
 	}
 	token, _ := s.bot(assistant)
-	if err := s.telegram.call(ctx, token, "sendMessage", map[string]any{"chat_id": s.cfg.OwnerID, "text": stuck}); err != nil {
+	text := stuck
+	if len(failed) == 0 {
+		// Only Nando's own asks failed: there's nothing for the Owner to send.
+		text = stuckAsk
+	}
+	if err := s.telegram.call(ctx, token, "sendMessage", map[string]any{"chat_id": s.cfg.OwnerID, "text": text}); err != nil {
 		log.Printf("messenger: tell the Owner their messages failed: %v", err)
 	}
 	s.clearReactions(ctx, token, failed)
@@ -709,6 +724,7 @@ func (s *MessengerService) failStuck(ctx context.Context, assistant string) erro
 }
 
 // clearReactions removes the bot's 👀 from each of the Owner's messages ids.
+// Nando's own messages never get one.
 func (s *MessengerService) clearReactions(ctx context.Context, token string, ids []int64) {
 	for _, id := range ids {
 		if err := s.telegram.call(ctx, token, "setMessageReaction", map[string]any{
@@ -775,12 +791,20 @@ func (s *MessengerService) Notify(ctx context.Context, n model.Notification) err
 	area, _, _ := strings.Cut(n.ID, ":")
 	assistant, token := "", ""
 	// Its area's Assistant, or the Core Assistant's, or, while bots are set
-	// up one at a time, any Assistant's with a bot: never lost.
-	for _, candidate := range append([]string{area, model.CoreAssistant}, s.on()...) {
+	// up one at a time, any Assistant's with a bot: never lost. One that asks
+	// for work goes only to the Assistant that does it.
+	candidates := append([]string{area, model.CoreAssistant}, s.on()...)
+	if n.Asks {
+		candidates = []string{area}
+	}
+	for _, candidate := range candidates {
 		if t, ok := s.bot(candidate); ok {
 			assistant, token = candidate, t
 			break
 		}
+	}
+	if token == "" && n.Asks {
+		return fmt.Errorf("the %s Assistant has no bot to ask", area)
 	}
 	if token == "" {
 		return errors.New("no Assistant has a bot")
@@ -797,6 +821,18 @@ func (s *MessengerService) Notify(ctx context.Context, n model.Notification) err
 	}
 	if err := s.telegram.callFor(ctx, token, "sendMessage", map[string]any{"chat_id": s.cfg.OwnerID, "text": text}, &sent); err != nil {
 		return err
+	}
+	if n.Asks {
+		// It waits for a run like the Owner's message, so it must be kept:
+		// unkept, no run would ever answer it.
+		if err := s.talks.AddMessage(ctx, assistant, model.TalkMessage{
+			From: model.FromNando, At: s.now(), Text: text, TelegramMessageID: sent.MessageID,
+			State: model.MessageWaiting,
+		}); err != nil {
+			return fmt.Errorf("keep it in the %s Talk: %w", assistant, err)
+		}
+		s.tasks[assistant].Wake(ctx)
+		return nil
 	}
 	// In the Talk, so the Owner's answer has it as context. It answers
 	// nothing and waits for nothing, so no run is woken. The Owner has it
