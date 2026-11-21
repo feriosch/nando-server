@@ -117,8 +117,8 @@ func TestNotesCarryIntoANewTalkEvenACleanSlate(t *testing.T) {
 	r.claim("core")
 	r.newTalk("core", "")
 
-	if last := telegram.CallsTo("sendMessage"); last[len(last)-1].Params["text"] != "Started a new chat." {
-		t.Errorf("the bot said %q; want the plain line for a clean slate", last[len(last)-1].Params["text"])
+	if sent := telegram.CallsTo("sendMessage"); len(sent) == 0 || sent[len(sent)-1].Params["text"] != "Started a new chat." {
+		t.Errorf("sendMessage calls = %+v; want the last to be the plain line for a clean slate", sent)
 	}
 	r.reply("core", "Fresh start!")
 	n.mustPostUpdate("core", ownerSays(5003, 47, "yes, send it"))
