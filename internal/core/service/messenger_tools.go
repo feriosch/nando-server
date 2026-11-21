@@ -448,8 +448,12 @@ func (s *MessengerService) reply(ctx context.Context, assistant, text, note stri
 			return replyJSON{}, fmt.Errorf("the %s Assistant has no Talk", assistant)
 		}
 		answered, reacted = nil, nil
+		// Only what the run was given: a message Telegram numbered before the
+		// claim's last one can still be stored after the claim, as Nando's ask
+		// is when its sending and keeping straddle the claim.
+		claimedAt := talk.ClaimedUntil.Add(-claimFor)
 		for i, m := range talk.Messages {
-			if m.State == model.MessageWaiting && m.TelegramMessageID <= talk.ClaimedUpTo {
+			if m.State == model.MessageWaiting && m.TelegramMessageID <= talk.ClaimedUpTo && !m.At.After(claimedAt) {
 				talk.Messages[i].State = model.MessageAnswered
 				answered = append(answered, m.TelegramMessageID)
 				if m.From == model.FromOwner {
@@ -829,6 +833,11 @@ func (s *MessengerService) Notify(ctx context.Context, n model.Notification) err
 			From: model.FromNando, At: s.now(), Text: text, TelegramMessageID: sent.MessageID,
 			State: model.MessageWaiting,
 		}); err != nil {
+			// The Owner already has the ask, but no run will answer it: say so
+			// rather than leave it promising work that never comes.
+			if err := s.telegram.call(ctx, token, "sendMessage", map[string]any{"chat_id": s.cfg.OwnerID, "text": stuckAsk}); err != nil {
+				log.Printf("messenger: tell the Owner Notification %s can't be answered: %v", n.ID, err)
+			}
 			return fmt.Errorf("keep it in the %s Talk: %w", assistant, err)
 		}
 		s.tasks[assistant].Wake(ctx)

@@ -39,6 +39,10 @@ func (s *SettingsService) Settings(ctx context.Context) (model.Settings, error) 
 	if errors.Is(err, utils.ErrNotFound) {
 		return model.DefaultSettings, nil
 	}
+	if err == nil && settings.MailDigest.Time == "" {
+		// Saved before the Mail Digest existed: it is off, at its default time.
+		settings.MailDigest = model.DefaultSettings.MailDigest
+	}
 	return settings, err
 }
 

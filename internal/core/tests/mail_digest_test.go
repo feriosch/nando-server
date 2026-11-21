@@ -1,11 +1,14 @@
 package tests
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
 
 	"github.com/feriosch/nando-server/internal/core"
 	"github.com/feriosch/nando-server/internal/core/model"
@@ -70,6 +73,28 @@ func TestTheMailDigestIsSavedAndKeptBySettingsSavedWithoutIt(t *testing.T) {
 
 	if got := phone.mailDigest(); got != on {
 		t.Errorf("Mail Digest after saving the time zone = %+v, want it kept as %+v", got, on)
+	}
+}
+
+func TestSettingsSavedBeforeTheMailDigestHaveItOffAtItsDefaultTime(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	// As saved before the Mail Digest existed: no mailDigest field at all.
+	if _, err := n.db.Collection("settings").InsertOne(context.Background(), bson.D{
+		{Key: "_id", Value: "settings"},
+		{Key: "timeZone", Value: "UTC"},
+		{Key: "heightCm", Value: 175},
+		{Key: "weighInReminder", Value: bson.D{{Key: "enabled", Value: false}, {Key: "weekday", Value: 1}, {Key: "time", Value: "08:00"}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := mailDigestJSON{Enabled: false, Time: "08:00"}
+	if got := phone.mailDigest(); got != want {
+		t.Fatalf("Mail Digest = %+v, want %+v", got, want)
+	}
+	// A web app that sends back the Mail Digest it was given can still save.
+	if rec := phone.putMailDigest(phone.mailDigest()); rec.Code != http.StatusNoContent {
+		t.Errorf("PUT the settings as given: status = %d, body %q; want 204", rec.Code, rec.Body)
 	}
 }
 
@@ -209,5 +234,32 @@ func TestTheMailDigestIsNeverAskedOfAnotherAssistantsBot(t *testing.T) {
 	}
 	if talk := n.talk("career"); len(talk.Messages) != 0 {
 		t.Errorf("Career Talk = %+v; want the ask kept out of it", talk.Messages)
+	}
+}
+
+func TestAReplyNeverAnswersAMailDigestStoredAfterItsClaim(t *testing.T) {
+	n, _, _, morning := digestNando(t)
+	n.clock.Set(morning.Add(-time.Minute))
+	n.mustPostUpdate("core", ownerSays(5001, 100, "what's on today?"))
+	r := n.startRun()
+	if got := r.claim(""); len(got.Messages) != 1 {
+		t.Fatalf("claim = %+v; want the Owner's message alone", got.Messages)
+	}
+
+	// The ask is stored after the claim, though Telegram numbered it before the
+	// Owner's message: the race between sending it and storing it.
+	n.clock.Set(morning)
+	n.mustTick()
+	r.reply("core", "Nothing on the calendar today.")
+
+	got := r.claim("core")
+	waiting := false
+	for _, m := range got.Messages {
+		if m.From == "nando" {
+			waiting = m.Waiting
+		}
+	}
+	if !waiting {
+		t.Errorf("claim after the reply = %+v; want the ask still waiting, since no run saw it", got.Messages)
 	}
 }
