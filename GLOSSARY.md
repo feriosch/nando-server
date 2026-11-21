@@ -266,7 +266,7 @@ _Avoid_: Memo, comment, metadata, hidden message
 
 **Gmail Digest**:
 The Core Assistant's short daily summary of the mail that came since the last one, at the time in the Owner's settings. Nando only asks for it, with a Notification; Claude reads the mail and writes it, changing nothing.
-_Avoid_: Inbox summary, newsletter, briefing, report
+_Avoid_: Mail Digest (its old name), inbox summary, newsletter, briefing, report
 
 ## Notifications
 
