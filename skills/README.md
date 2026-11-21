@@ -15,11 +15,11 @@ Skills Claude follows to work with the Owner's data in Nando, through the Nando 
 | Skill | What it does |
 | --- | --- |
 | [`career/career-opportunity-update`](career/career-opportunity-update/SKILL.md) | Updates an Opportunity from what happened (a Step, dates, an offer, a tip, a PDF or screenshot): Steps, Stage, Outcome, Interest, pay, Perks and Company notes |
-| [`career/career-draft-reply`](career/career-draft-reply/SKILL.md) | Shows the Suggested Reply a Sync's run wrote for a Recruiter and rewrites it as the Owner steers, in their voice |
-| [`career/career-now-reply`](career/career-now-reply/SKILL.md) | Answers a Recruiter's latest message, pasted or screenshotted before a Sync brings it, with the whole Conversation, Opportunity and Career Profile, and free times from Google Calendar |
+| [`career/career-draft-reply`](career/career-draft-reply/SKILL.md) | Shows the Suggested Reply a LinkedIn Sync's run wrote for a Recruiter and rewrites it as the Owner steers, in their voice |
+| [`career/career-now-reply`](career/career-now-reply/SKILL.md) | Answers a Recruiter's latest message, pasted or screenshotted before a LinkedIn Sync brings it, with the whole Conversation, Opportunity and Career Profile, and free times from Google Calendar |
 | [`career/career-profile-update`](career/career-profile-update/SKILL.md) | Builds or changes the Career Profile from resumes or what the Owner says |
 | [`career/career-interview-prep`](career/career-interview-prep/SKILL.md) | Prepares for a Step from the Company Brief and further public research, and keeps useful findings as Company notes |
-| [`career/career-sync`](career/career-sync/SKILL.md) | Sorts what each Sync brought, keeps Opportunities and Company Briefs, and writes every Suggested Reply (scheduled task) |
+| [`career/career-sync`](career/career-sync/SKILL.md) | Sorts what each LinkedIn Sync brought, keeps Opportunities and Company Briefs, and writes every Suggested Reply (scheduled task) |
 
 Each name carries `career-` because skills uploaded to the Claude app have no prefix.
 
@@ -98,7 +98,7 @@ The run reads the skill, and `add-word` with it, from the attached repo, so noth
 
 ## Use `career-sync` in a scheduled task
 
-The Owner's MacBook hands each Sync's LinkedIn messages to Nando, and Nando wakes a second cloud scheduled task through its API trigger to work through them ([ADR 0007](../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)), as for Word Requests. Set it up like `word-requests`'s:
+The Owner's MacBook hands each LinkedIn Sync's messages to Nando, and Nando wakes a second cloud scheduled task through its API trigger to work through them ([ADR 0007](../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)), as for Word Requests. Set it up like `word-requests`'s:
 
 - **No schedule**, only the API trigger. Nando calls it with `CAREER_SYNC_TRIGGER_URL` and `CAREER_SYNC_TRIGGER_TOKEN` (see [Career's API](../internal/career/API.md)).
 - **This repo attached**, so the run reads the skill from it, and nothing is uploaded.

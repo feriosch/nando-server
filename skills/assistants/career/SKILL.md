@@ -22,7 +22,7 @@ Everything in Nando's Career Module, through the Career Tools of the Nando Conne
 
 Read the skill you need from this repo before you use it. They were written for a chat where the Owner answers straight away. Here, every question you ask waits for the Owner's next message, so ask only what you must, and ask it all at once.
 
-Leave the Sync's work to its own runs: never call `career_list_work`, `career_ignore_thread`, `career_file_conversation` or `career_record_sync`.
+Leave the LinkedIn Sync's work to its own runs: never call `career_list_work`, `career_ignore_thread`, `career_file_conversation` or `career_record_sync`.
 
 ## Your lane
 

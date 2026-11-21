@@ -1,7 +1,7 @@
 ---
 name: career-draft-reply
 description: >-
-  Show the Owner the Suggested Reply Nando holds for a Recruiter (the draft a Sync's run wrote), and rewrite it the way they steer ("decline but keep in touch", "ask about salary first", "make it shorter"), in their own voice, then save it. Use whenever the Owner wants to change, discuss or get help with that stored reply (e.g. "help me answer Tanaka", "the reply to the Hays guy is too eager"), even if they don't mention Nando. A message the Owner pastes or screenshots, which Nando doesn't hold yet, goes to `career-now-reply` instead.
+  Show the Owner the Suggested Reply Nando holds for a Recruiter (the draft a LinkedIn Sync's run wrote), and rewrite it the way they steer ("decline but keep in touch", "ask about salary first", "make it shorter"), in their own voice, then save it. Use whenever the Owner wants to change, discuss or get help with that stored reply (e.g. "help me answer Tanaka", "the reply to the Hays guy is too eager"), even if they don't mention Nando. A message the Owner pastes or screenshots, which Nando doesn't hold yet, goes to `career-now-reply` instead.
 ---
 
 # Help with a reply
@@ -38,7 +38,7 @@ Show the new text and iterate until the Owner is happy. Explain a Japanese phras
 
 - `conversationId`, `text` and `language`;
 - `kind`: the same as before (`answer`, `late` or `follow_up`). A new one is an `answer` if the Recruiter wrote last within 30 days, `late` if their message is older, and `follow_up` if the Owner wrote last;
-- `answers`: the `sentAt` of the message it answers: the Recruiter's newest for an `answer` or a `late` one, the Owner's last for a `follow_up`, or the old Suggested Reply's `markedRepliedAt` when it has one (the Owner sent it in LinkedIn, and no Sync has brought it yet);
+- `answers`: the `sentAt` of the message it answers: the Recruiter's newest for an `answer` or a `late` one, the Owner's last for a `follow_up`, or the old Suggested Reply's `markedRepliedAt` when it has one (the Owner sent it in LinkedIn, and no LinkedIn Sync has brought it yet);
 - `notes`: the existing notes on the Owner's last message, unless the Owner asks to change them (up to 3 `{"wrote", "natural", "why"}`).
 
-It replaces the old Suggested Reply. Tell the Owner it's saved and waiting in the app to copy. Nando removes it by itself once a Sync brings the Owner's own reply, and hides it from the lists as soon as the Owner marks it replied in the app.
+It replaces the old Suggested Reply. Tell the Owner it's saved and waiting in the app to copy. Nando removes it by itself once a LinkedIn Sync brings the Owner's own reply, and hides it from the lists as soon as the Owner marks it replied in the app.
