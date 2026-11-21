@@ -36,7 +36,7 @@ ADR 0008's never-send rule came from the Career Module, where ADR 0007 accepts a
 - `messenger_reply` takes an optional Note, kept in the Talk and shown to later runs in the claim, never sent to Telegram.
 - Core's settings gain the Mail Digest (`enabled`, `time` on the hour or half hour, off at 08:00 by default). A settings write that leaves it out keeps the saved one, so a web app that doesn't know it yet can't turn it off. Its switch is in Core's Settings Section in the web app.
 - A Notification can ask for work. One that asks:
-  - is sent only in the Messenger, and only by its own area's Assistant's bot, never by Web Push or another Assistant's bot;
+  - is sent only by its own area's Assistant's bot, never by another Assistant's;
   - waits in the Talk as a message `from` `nando`, and wakes a run under ADR 0008's wake rules;
   - is answered by a reply like the Owner's messages, since Telegram numbers the bot's and the Owner's messages in one sequence;
   - gets no 👀. If no run answers it after three claims, the bot says it couldn't do it, without asking the Owner to send anything again.
