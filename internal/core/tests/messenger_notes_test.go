@@ -60,7 +60,10 @@ func TestANoteOverAThousandCharactersIsRefusedAndNothingIsSent(t *testing.T) {
 	// 1,001 characters, each several bytes: the limit counts characters.
 	result := r.replyWithNote("core", "Hello!", strings.Repeat("下", 1001))
 
-	text, _ := result.Content[0].(*mcp.TextContent)
+	var text *mcp.TextContent
+	if len(result.Content) > 0 {
+		text, _ = result.Content[0].(*mcp.TextContent)
+	}
 	if !result.IsError || text == nil || !strings.Contains(text.Text, "at most 1000") {
 		t.Errorf("messenger_reply with a 1,001-character note = %+v; want a Tool error naming the limit", result.Content)
 	}
