@@ -39,6 +39,7 @@ type Module struct {
 	profile       *service.ProfileService
 	recruiters    *service.RecruitersService
 	overview      *service.OverviewService
+	gmailSync     *service.GmailCareerSyncService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -81,6 +82,7 @@ func NewCareerModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 		profile:       service.NewProfile(profile),
 		recruiters:    service.NewRecruiters(recruiters, conversations),
 		overview:      service.NewOverview(conversations, recruiters, opportunitiesService, settingsService),
+		gmailSync:     service.NewGmailCareerSync(repository.NewGmailPasses(db), core.Now),
 	}, nil
 }
 
@@ -131,11 +133,12 @@ func (m *Module) ToolProvider() coremodel.ToolProvider {
 type toolProvider struct{ m *Module }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.settings.Tools(), p.m.syncs.Tools(), p.m.work.Tools(), p.m.conversations.Tools(), p.m.opportunities.Tools(), p.m.companies.Tools(), p.m.search.Tools(), p.m.profile.Tools())
+	return slices.Concat(p.m.settings.Tools(), p.m.syncs.Tools(), p.m.work.Tools(), p.m.conversations.Tools(), p.m.opportunities.Tools(), p.m.companies.Tools(), p.m.search.Tools(), p.m.profile.Tools(), p.m.gmailSync.Tools())
 }
 
 func (p toolProvider) ToolsDescription() string {
 	return "see whether you are Looking for a new role, record the LinkedIn messages your Mac's Sync reads, " +
 		"sort your Conversations under Recruiters, keep your Opportunities, their Steps and Companies, " +
-		"write Suggested Replies, read and change your Career Profile, and delete Steps and Opportunities, which can't be undone"
+		"write Suggested Replies, read and change your Career Profile, file the Gmail threads you labeled Career, " +
+		"and delete Steps and Opportunities, which can't be undone"
 }
