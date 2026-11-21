@@ -145,6 +145,16 @@ func (r conversations) Threads(ctx context.Context) ([]model.Conversation, error
 	return threads, cursor.All(ctx, &threads)
 }
 
+func (r conversations) GmailThreads(ctx context.Context) ([]model.Conversation, error) {
+	cursor, err := r.collection.Find(ctx, bson.D{{Key: "channel", Value: model.ChannelGmail}},
+		options.Find().SetProjection(bson.D{{Key: "messages", Value: 0}}))
+	if err != nil {
+		return nil, err
+	}
+	threads := []model.Conversation{}
+	return threads, cursor.All(ctx, &threads)
+}
+
 // sameMessage reports whether held, a message Nando holds, is m: the same
 // LinkedIn id, or, when either has none, the same sender, time and text.
 // MongoDB keeps times to the millisecond.

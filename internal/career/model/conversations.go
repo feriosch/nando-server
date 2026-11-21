@@ -171,6 +171,9 @@ type ConversationsRepository interface {
 	// Threads returns every LinkedIn Conversation's thread id, newest message
 	// time and whether it is ignored, without its messages.
 	Threads(ctx context.Context) ([]Conversation, error)
+	// GmailThreads returns every Gmail Conversation's thread id, newest
+	// message time and whether it is ignored, without its messages.
+	GmailThreads(ctx context.Context) ([]Conversation, error)
 	// WithWaitingReplyBefore returns the Conversations whose Suggested Reply
 	// is of one of WaitingReplyKinds, not marked replied, and answers a
 	// message sent before before.

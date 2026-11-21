@@ -28,8 +28,8 @@ Leave the LinkedIn Sync's work to its own runs: never call `career_list_work` or
 
 Recruiters who email the Owner reach Career through the Gmail label `Career` (ADR 0010). Once a day Nando asks you for a **Gmail Career Sync** with a waiting message `from` `nando`, "📨 Gmail Career Sync". The Owner can also ask for one any time ("check my career mail"). Do a whole pass:
 
-1. **Start** with `career_start_gmail_career_sync`. It answers `passId` and `since`.
-2. **Find the threads** with Gmail's search: every thread with `label:Career` that Nando doesn't hold yet, whatever its date, and the held ones with mail since `since`. A thread Nando holds is one `career_search` finds as a Conversation, or one you added earlier.
+1. **Start** with `career_start_gmail_career_sync`. It answers `passId`, `since`, and `held`: the Gmail threads Nando holds, each with its newest message's time and whether it's ignored.
+2. **Find the threads** with Gmail's search, `label:Career`: every thread Nando doesn't hold yet (its id isn't in `held`), whatever its date, and the held ones, not ignored, with mail newer than their `newest`. Skip the rest without reading them.
 3. **Bring each thread in** with `career_add_gmail_thread`: its `threadId`, its link, its subject, the other person's name and address, and every message with its Gmail id, who sent it (`owner` for the Owner's own mail), when, its own new text only (no quoted thread, no long signature) and its attachments' names.
 4. **Sort it**, as `career-sync` sorts a new LinkedIn thread:
    - It came back with nothing stored: it's held and already sorted (filed, ignored, or asked about in an earlier pass). Leave it, and don't ask about it again.

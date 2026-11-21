@@ -15,21 +15,23 @@ import (
 // GmailCareerSyncService serves the Tools that record a Gmail Career Sync's
 // passes (ADR 0010).
 type GmailCareerSyncService struct {
-	passes model.GmailPassesRepository
-	now    func() time.Time
+	passes        model.GmailPassesRepository
+	conversations model.ConversationsRepository
+	now           func() time.Time
 }
 
 // NewGmailCareerSync returns the GmailCareerSyncService.
-func NewGmailCareerSync(passes model.GmailPassesRepository, now func() time.Time) *GmailCareerSyncService {
-	return &GmailCareerSyncService{passes: passes, now: now}
+func NewGmailCareerSync(passes model.GmailPassesRepository, conversations model.ConversationsRepository, now func() time.Time) *GmailCareerSyncService {
+	return &GmailCareerSyncService{passes: passes, conversations: conversations, now: now}
 }
 
 // Tools are what the Career Assistant's run records its passes with.
 func (s *GmailCareerSyncService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "career_start_gmail_career_sync",
-		Description: "Starts a Gmail Career Sync's pass (ADR 0010). Answers {\"passId\", \"since\"}: read every thread labeled Career that Nando " +
-			"doesn't hold yet, whatever its date, and the held ones with mail since since. since is when the last finished pass started, " +
+		Description: "Starts a Gmail Career Sync's pass (ADR 0010). Answers {\"passId\", \"since\", \"held\"}: read every thread labeled Career that Nando " +
+			"doesn't hold yet, whatever its date, and the held ones with mail since since. held lists the Gmail threads Nando holds, each " +
+			"{\"threadId\", \"newest\", \"ignored\"}: skip an ignored one. since is when the last finished pass started, " +
 			"or 2025-01-01 before any has finished. Finish the pass with career_finish_gmail_career_sync once every thread is read; " +
 			"a pass that never finishes doesn't move since, so the next one picks up what it missed.",
 		InputSchema: json.RawMessage(`{"type":"object"}`),
@@ -51,11 +53,19 @@ func (s *GmailCareerSyncService) startTool(ctx context.Context, _ json.RawMessag
 	case !errors.Is(err, coreutils.ErrNotFound):
 		return nil, err
 	}
+	held, err := s.conversations.GmailThreads(ctx)
+	if err != nil {
+		return nil, err
+	}
 	pass, err := s.passes.Start(ctx, s.now())
 	if err != nil {
 		return nil, err
 	}
-	return model.GmailPassJSON{PassID: pass.ID.Hex(), Since: since}, nil
+	answer := model.GmailPassJSON{PassID: pass.ID.Hex(), Since: since, Held: []model.ThreadJSON{}}
+	for _, c := range held {
+		answer.Held = append(answer.Held, model.ThreadJSON{ThreadID: c.ThreadID, Newest: c.Newest, Ignored: c.Ignored})
+	}
+	return answer, nil
 }
 
 func (s *GmailCareerSyncService) finishTool(ctx context.Context, arguments json.RawMessage) (any, error) {

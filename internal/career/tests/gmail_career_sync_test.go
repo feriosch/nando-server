@@ -108,3 +108,30 @@ func TestAGmailCareerSyncReadsSinceTheLastFinishedPass(t *testing.T) {
 		t.Errorf("career_sync_status after Gmail passes = %+v, want it as before: %+v", after, statusBefore)
 	}
 }
+
+func TestStartingAPassAnswersTheGmailThreadsNandoHolds(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	syncTanaka(t, phone) // a LinkedIn thread, which isn't listed
+	run := phone.connect()
+	filed := addGmail(t, run, hays(mail("g1", "other", at(-3, 10, 15), "Hello!")))
+	newsletter := hays(mail("n1", "other", at(-2, 10, 15), "Our newsletter."))
+	newsletter["threadId"] = "18c2f0cccccccccc"
+	ignored := addGmail(t, run, newsletter)
+	callTool[conversationJSON](t, run, "career_ignore_thread", map[string]any{"conversationId": ignored.Conversation.ID})
+
+	got := callTool[struct {
+		Held []struct {
+			ThreadID string    `json:"threadId"`
+			Newest   time.Time `json:"newest"`
+			Ignored  bool      `json:"ignored"`
+		} `json:"held"`
+	}](t, run, "career_start_gmail_career_sync", nil)
+
+	byID := map[string]bool{}
+	for _, h := range got.Held {
+		byID[h.ThreadID] = h.Ignored
+	}
+	if len(got.Held) != 2 || byID[filed.Conversation.ThreadID] || !byID["18c2f0cccccccccc"] {
+		t.Errorf("held = %+v; want the two Gmail threads, the newsletter marked ignored, and no LinkedIn one", got.Held)
+	}
+}

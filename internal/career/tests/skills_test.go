@@ -243,6 +243,7 @@ func TestTheCareerAssistantRunsTheGmailCareerSync(t *testing.T) {
 		"📨 Gmail Career Sync",               // the ask, as Nando sends it
 		"`career_start_gmail_career_sync`",  // a pass starts,
 		"`label:Career`",                    // reads the labeled threads,
+		"`held`",                            // knowing which Nando holds,
 		"doesn't hold",                      // including those Nando doesn't hold yet,
 		"`career_add_gmail_thread`",         // brings each in,
 		"`career_finish_gmail_career_sync`", // and finishes.
