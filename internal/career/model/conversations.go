@@ -7,15 +7,23 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-// Conversation is one LinkedIn thread between the Owner and one other person,
-// with the copy of its messages that Syncs brought. Until it is filed under a
-// Recruiter it is unsorted.
+// Conversation is one thread between the Owner and one other person, on
+// LinkedIn or in Gmail (ADR 0010), with the copy of its messages that LinkedIn
+// Syncs or Gmail Career Syncs brought. Until it is filed under a Recruiter it
+// is unsorted.
 type Conversation struct {
-	ID       bson.ObjectID `bson:"_id,omitempty"`
-	ThreadID string        `bson:"threadId"`
-	URL      string        `bson:"url"`
-	Person   Person        `bson:"person"`
-	Messages []Message     `bson:"messages"`
+	ID bson.ObjectID `bson:"_id,omitempty"`
+	// Channel is ChannelGmail for a Gmail thread, and empty for a LinkedIn
+	// one, as every Conversation was before Gmail.
+	Channel string `bson:"channel,omitempty"`
+	// ThreadID is LinkedIn's or Gmail's id for the thread. The two never
+	// look alike, so one unique index holds both.
+	ThreadID string `bson:"threadId"`
+	// Subject is a Gmail thread's subject; LinkedIn threads have none.
+	Subject  string    `bson:"subject,omitempty"`
+	URL      string    `bson:"url"`
+	Person   Person    `bson:"person"`
+	Messages []Message `bson:"messages"`
 	// Newest is when the newest message Nando holds was sent.
 	Newest time.Time `bson:"newest"`
 	// Ignored is a thread that isn't about a role: it keeps no messages.
@@ -76,16 +84,29 @@ var WaitingReplyKinds = []string{ReplyAnswer, ReplyFollowUp}
 // MaxLanguageNotes is the most language notes a Suggested Reply has.
 const MaxLanguageNotes = 3
 
-// Person is the other side of a LinkedIn thread, as LinkedIn names them.
+// Person is the other side of a thread, as LinkedIn or Gmail names them.
 type Person struct {
 	Name       string `bson:"name"`
 	ProfileURL string `bson:"profileUrl"`
+	// Email is a Gmail thread's sender's address.
+	Email string `bson:"email,omitempty"`
 }
+
+// The channels a Conversation can be on. A LinkedIn one stores no channel.
+const (
+	ChannelLinkedIn = "linkedin"
+	ChannelGmail    = "gmail"
+)
 
 // Message is one message in a Conversation.
 type Message struct {
 	// LinkedInID is LinkedIn's id for the message, if the reader gave one.
 	LinkedInID string `bson:"linkedInId,omitempty"`
+	// GmailID is Gmail's id for a message in a Gmail thread.
+	GmailID string `bson:"gmailId,omitempty"`
+	// Attachments are the names of a Gmail message's attachments. Nando
+	// keeps only their names (ADR 0010).
+	Attachments []string `bson:"attachments,omitempty"`
 	// From is MessageFromOwner or MessageFromOther.
 	From   string    `bson:"from"`
 	SentAt time.Time `bson:"sentAt"`
@@ -100,8 +121,12 @@ const (
 	MessageFromOther = "other"
 )
 
-// ThreadUpdate is what one Sync brought for one LinkedIn thread.
+// ThreadUpdate is what one LinkedIn Sync brought for one LinkedIn thread, or a
+// Gmail Career Sync for one Gmail thread.
 type ThreadUpdate struct {
+	// Channel is ChannelGmail for a Gmail thread, else empty.
+	Channel  string
+	Subject  string
 	ThreadID string
 	URL      string
 	Person   Person
@@ -143,8 +168,8 @@ type ConversationsRepository interface {
 	// SetSuggestedReply replaces the Conversation's Suggested Reply, unless
 	// it is ignored, and returns it, or Core's utils.ErrNotFound.
 	SetSuggestedReply(ctx context.Context, id bson.ObjectID, reply SuggestedReply) (Conversation, error)
-	// Threads returns every Conversation's thread id, newest message time and
-	// whether it is ignored, without its messages.
+	// Threads returns every LinkedIn Conversation's thread id, newest message
+	// time and whether it is ignored, without its messages.
 	Threads(ctx context.Context) ([]Conversation, error)
 	// WithWaitingReplyBefore returns the Conversations whose Suggested Reply
 	// is of one of WaitingReplyKinds, not marked replied, and answers a
@@ -181,8 +206,11 @@ type ConversationsRepository interface {
 
 // ConversationJSON is a Conversation as the Tools answer it.
 type ConversationJSON struct {
-	ID       string        `json:"id"`
+	ID string `json:"id"`
+	// Channel is linkedin or gmail.
+	Channel  string        `json:"channel"`
 	ThreadID string        `json:"threadId"`
+	Subject  string        `json:"subject,omitempty"`
 	URL      string        `json:"url"`
 	Person   PersonJSON    `json:"person"`
 	Messages []MessageJSON `json:"messages"`
@@ -210,7 +238,10 @@ type SuggestedReplyJSON struct {
 // shows it: its LinkedIn URL, its last messages, oldest first, and its
 // Suggested Reply.
 type RecruiterPageConversationJSON struct {
-	ID       string        `json:"id"`
+	ID string `json:"id"`
+	// Channel is linkedin or gmail, and Subject a Gmail thread's subject.
+	Channel  string        `json:"channel"`
+	Subject  string        `json:"subject,omitempty"`
 	URL      string        `json:"url"`
 	Messages []MessageJSON `json:"messages"`
 	// SuggestedReply is null when there is none.

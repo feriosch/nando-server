@@ -38,18 +38,30 @@ func Trimmed(list []string) []string {
 	return out
 }
 
+// channelOf is c's channel: linkedin for a Conversation that stores none.
+func channelOf(c model.Conversation) string {
+	if c.Channel == "" {
+		return model.ChannelLinkedIn
+	}
+	return c.Channel
+}
+
 // ToConversationJSON returns c as the Tools answer it.
 func ToConversationJSON(c model.Conversation) model.ConversationJSON {
 	j := model.ConversationJSON{
 		ID:       c.ID.Hex(),
+		Channel:  channelOf(c),
 		ThreadID: c.ThreadID,
+		Subject:  c.Subject,
 		URL:      c.URL,
-		Person:   model.PersonJSON{Name: c.Person.Name, ProfileURL: c.Person.ProfileURL},
+		Person:   model.PersonJSON{Name: c.Person.Name, ProfileURL: c.Person.ProfileURL, Email: c.Person.Email},
 		Messages: []model.MessageJSON{},
 		Ignored:  c.Ignored,
 	}
 	for _, m := range c.Messages {
-		j.Messages = append(j.Messages, model.MessageJSON{ID: m.LinkedInID, From: m.From, SentAt: m.SentAt, Text: m.Text})
+		j.Messages = append(j.Messages, model.MessageJSON{
+			ID: m.LinkedInID, From: m.From, SentAt: m.SentAt, Text: m.Text, GmailID: m.GmailID, Attachments: m.Attachments,
+		})
 	}
 	if c.RecruiterID != nil {
 		id := c.RecruiterID.Hex()
@@ -67,7 +79,10 @@ func ToConversationJSON(c model.Conversation) model.ConversationJSON {
 
 // ToRecruiterJSON returns r as the Tools answer it.
 func ToRecruiterJSON(r model.Recruiter) model.RecruiterJSON {
-	return model.RecruiterJSON{ID: r.ID.Hex(), Name: r.Name, ProfileURL: r.ProfileURL, Kind: r.Kind, Organisation: r.Organisation}
+	return model.RecruiterJSON{
+		ID: r.ID.Hex(), Name: r.Name, ProfileURL: r.ProfileURL, Kind: r.Kind, Organisation: r.Organisation,
+		Emails: append([]string{}, r.Emails...),
+	}
 }
 
 // ToOpportunityJSON returns o in short, at company.
@@ -160,7 +175,7 @@ func ToRecruiterPageConversationJSON(c model.Conversation, n int) model.Recruite
 	if len(messages) > n {
 		messages = messages[len(messages)-n:]
 	}
-	j := model.RecruiterPageConversationJSON{ID: c.ID.Hex(), URL: c.URL, Messages: []model.MessageJSON{}}
+	j := model.RecruiterPageConversationJSON{ID: c.ID.Hex(), Channel: channelOf(c), Subject: c.Subject, URL: c.URL, Messages: []model.MessageJSON{}}
 	for _, m := range messages {
 		j.Messages = append(j.Messages, model.MessageJSON{ID: m.LinkedInID, From: m.From, SentAt: m.SentAt, Text: m.Text})
 	}

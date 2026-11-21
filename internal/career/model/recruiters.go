@@ -17,6 +17,9 @@ type Recruiter struct {
 	Kind string `bson:"kind"`
 	// Organisation is their agency or Company, by name.
 	Organisation string `bson:"organisation"`
+	// Emails are the addresses their filed Gmail threads came from,
+	// lowercase (ADR 0010).
+	Emails []string `bson:"emails,omitempty"`
 }
 
 // The kinds of Recruiter.
@@ -34,6 +37,14 @@ type RecruitersRepository interface {
 	// GiveProfileURL sets the Recruiter's profileUrl to url if they have
 	// none, and leaves one they have as it is.
 	GiveProfileURL(ctx context.Context, id bson.ObjectID, url string) error
+	// AddEmail remembers that the Recruiter writes from email, lowercase.
+	AddEmail(ctx context.Context, id bson.ObjectID, email string) error
+	// RemoveEmail forgets that the Recruiter writes from email, lowercase,
+	// and returns them, or Core's utils.ErrNotFound.
+	RemoveEmail(ctx context.Context, id bson.ObjectID, email string) (Recruiter, error)
+	// ByEmail returns the Recruiter who writes from email, lowercase, or
+	// Core's utils.ErrNotFound.
+	ByEmail(ctx context.Context, email string) (Recruiter, error)
 	// Search returns the Recruiters whose name or organisation has query in
 	// it, ignoring case, or whose profileUrl is query.
 	Search(ctx context.Context, query string) ([]Recruiter, error)
@@ -49,6 +60,8 @@ type RecruiterJSON struct {
 	ProfileURL   string `json:"profileUrl"`
 	Kind         string `json:"kind"`
 	Organisation string `json:"organisation"`
+	// Emails are the addresses Nando knows them by.
+	Emails []string `json:"emails"`
 }
 
 // FiledJSON is what career_file_conversation answers: the Conversation and

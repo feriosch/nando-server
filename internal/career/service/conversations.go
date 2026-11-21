@@ -98,7 +98,7 @@ func (s *ConversationsService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "career_ignore_thread",
 		Description: "Marks a Conversation as a thread that isn't about a role, such as a friend's message or a sales pitch. " +
-			"Its messages, person and URL are deleted and only its LinkedIn thread ID stays, so later Syncs drop its messages. " +
+			"Its messages, person and URL are deleted and only its thread ID stays, LinkedIn's or Gmail's, so later LinkedIn Syncs and Gmail Career Syncs drop its messages. " +
 			"It does the Conversation's sort Item. Answers the Conversation as it now is.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"conversationId":{"type":"string"}},` +
@@ -122,6 +122,37 @@ func (s *ConversationsService) Tools() []coremodel.Tool {
 			`"required":["name","kind"]}},` +
 			`"required":["conversationId"]}`),
 		Handle: s.fileTool,
+	}, {
+		Name: "career_add_gmail_thread",
+		Description: "Adds a Gmail thread the Owner labeled Career to Nando, in a Gmail Career Sync (ADR 0010): it becomes a Gmail Conversation " +
+			"the first time, and later only its messages Nando doesn't hold are stored. Give each message's gmailId, from (owner for the Owner's " +
+			"own mail, else other), sentAt, its own new text only (no quoted thread or long signature) and its attachments' names. " +
+			"person is the thread's other side: name and email. A thread already ignored stores nothing. A message from the Owner newer than the " +
+			"message the Suggested Reply answers removes it, as on LinkedIn. Answers {\"conversation\", \"stored\", \"recruiter\"}: " +
+			"recruiter is the one it is filed under, or null.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"threadId":{"type":"string","description":"Gmail's thread id."},` +
+			`"url":{"type":"string","description":"The thread in Gmail."},` +
+			`"subject":{"type":"string"},` +
+			`"person":{"type":"object","properties":{"name":{"type":"string"},"email":{"type":"string"}},"required":["email"]},` +
+			`"messages":{"type":"array","items":{"type":"object","properties":{` +
+			`"gmailId":{"type":"string"},` +
+			`"from":{"type":"string","enum":["owner","other"]},` +
+			`"sentAt":{"type":"string","format":"date-time"},` +
+			`"text":{"type":"string"},` +
+			`"attachments":{"type":"array","items":{"type":"string"}}},` +
+			`"required":["gmailId","from","sentAt","text"]}}},` +
+			`"required":["threadId","person","messages"]}`),
+		Handle: s.addGmailThreadTool,
+	}, {
+		Name: "career_remove_recruiter_email",
+		Description: "Forgets an email address a Recruiter was remembered by, when it isn't theirs, such as an agency's shared inbox: " +
+			"later Gmail threads from it are no longer filed to them. Conversations already filed stay filed. Answers the Recruiter.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"recruiterId":{"type":"string"},` +
+			`"email":{"type":"string"}},` +
+			`"required":["recruiterId","email"]}`),
+		Handle: s.removeRecruiterEmailTool,
 	}, {
 		Name: "career_get_conversation",
 		Description: "A Conversation, with its messages, the Recruiter it is filed under (recruiterId) and its current Suggested Reply. " +
@@ -335,6 +366,14 @@ func (s *ConversationsService) fileTool(ctx context.Context, arguments json.RawM
 		}
 		recruiter.ProfileURL = link
 	}
+	// And a Gmail thread's address is remembered, so the next thread from it
+	// is filed to them (ADR 0010).
+	if email := conversation.Person.Email; email != "" && !slices.Contains(recruiter.Emails, email) {
+		if err := s.recruiters.AddEmail(ctx, recruiter.ID, email); err != nil {
+			return nil, err
+		}
+		recruiter.Emails = append(recruiter.Emails, email)
+	}
 	if err := s.complete(ctx, id, model.ItemSort); err != nil {
 		return nil, err
 	}
@@ -361,4 +400,92 @@ func (s *ConversationsService) ignoreTool(ctx context.Context, arguments json.Ra
 		return nil, err
 	}
 	return careerutils.ToConversationJSON(conversation), nil
+}
+
+// addedGmailJSON is what career_add_gmail_thread answers.
+type addedGmailJSON struct {
+	Conversation model.ConversationJSON `json:"conversation"`
+	Stored       int                    `json:"stored"`
+	Recruiter    *model.RecruiterJSON   `json:"recruiter"`
+}
+
+func (s *ConversationsService) addGmailThreadTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		ThreadID string              `json:"threadId"`
+		URL      string              `json:"url"`
+		Subject  string              `json:"subject"`
+		Person   model.PersonJSON    `json:"person"`
+		Messages []model.MessageJSON `json:"messages"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	update := model.ThreadUpdate{
+		Channel:  model.ChannelGmail,
+		ThreadID: strings.TrimSpace(args.ThreadID),
+		URL:      strings.TrimSpace(args.URL),
+		Subject:  strings.TrimSpace(args.Subject),
+		Person:   model.Person{Name: strings.TrimSpace(args.Person.Name), Email: strings.ToLower(strings.TrimSpace(args.Person.Email))},
+	}
+	if update.ThreadID == "" || update.Person.Email == "" {
+		return nil, errors.New("a Gmail thread needs its threadId and its person's email")
+	}
+	for _, m := range args.Messages {
+		if m.GmailID == "" || m.SentAt.IsZero() || (m.From != model.MessageFromOwner && m.From != model.MessageFromOther) {
+			return nil, errors.New("every message needs its gmailId and sentAt, and from is owner or other")
+		}
+		update.Messages = append(update.Messages, model.Message{
+			GmailID: m.GmailID, From: m.From, SentAt: m.SentAt, Text: m.Text, Attachments: careerutils.Trimmed(m.Attachments),
+		})
+	}
+	added, err := s.conversations.AddMessages(ctx, update)
+	if err != nil {
+		return nil, err
+	}
+	if added.RecruiterID == nil && !added.Ignored {
+		// A thread from an address a Recruiter writes from is theirs.
+		known, err := s.recruiters.ByEmail(ctx, update.Person.Email)
+		switch {
+		case err == nil:
+			if _, err := s.conversations.File(ctx, added.ConversationID, known.ID); err != nil {
+				return nil, err
+			}
+			added.RecruiterID = &known.ID
+		case !errors.Is(err, coreutils.ErrNotFound):
+			return nil, err
+		}
+	}
+	conversation, err := s.conversations.GetByID(ctx, added.ConversationID)
+	if err != nil {
+		return nil, err
+	}
+	answer := addedGmailJSON{Conversation: careerutils.ToConversationJSON(conversation), Stored: added.Stored}
+	if added.RecruiterID != nil {
+		recruiter, err := s.recruiters.GetByID(ctx, *added.RecruiterID)
+		if err != nil {
+			return nil, err
+		}
+		j := careerutils.ToRecruiterJSON(recruiter)
+		answer.Recruiter = &j
+	}
+	return answer, nil
+}
+
+func (s *ConversationsService) removeRecruiterEmailTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		RecruiterID string `json:"recruiterId"`
+		Email       string `json:"email"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	id, err := careerutils.ID("Recruiter", args.RecruiterID)
+	if err != nil {
+		return nil, err
+	}
+	recruiter, err := s.recruiters.RemoveEmail(ctx, id, strings.ToLower(strings.TrimSpace(args.Email)))
+	if err != nil {
+		return nil, careerutils.Found(err, "Recruiter", args.RecruiterID)
+	}
+	return careerutils.ToRecruiterJSON(recruiter), nil
 }
