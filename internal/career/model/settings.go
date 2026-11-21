@@ -38,8 +38,10 @@ type SettingsRepository interface {
 // Looking is nil, so it can be rejected.
 type SettingsJSON struct {
 	Looking *bool `json:"looking"`
-	// GmailCareerSync is always answered. A PUT may leave it out, keeping
-	// the saved one, so a web app that doesn't know it yet can't turn it off.
+	// GmailCareerSync is always answered by GET /api/career/settings, but
+	// left out of career_get_settings, which answers Looking alone. A PUT
+	// may leave it out, keeping the saved one, so a web app that doesn't
+	// know it yet can't turn it off.
 	GmailCareerSync *GmailCareerSyncJSON `json:"gmailCareerSync,omitempty"`
 }
 
