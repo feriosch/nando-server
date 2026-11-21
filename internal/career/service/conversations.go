@@ -98,7 +98,7 @@ func (s *ConversationsService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "career_ignore_thread",
 		Description: "Marks a Conversation as a thread that isn't about a role, such as a friend's message or a sales pitch. " +
-			"Its messages, person and URL are deleted and only its thread ID stays, LinkedIn's or Gmail's, so later LinkedIn Syncs and Gmail Career Syncs drop its messages. " +
+			"Its messages, person, URL and subject are deleted and only its thread ID stays, LinkedIn's or Gmail's, so later LinkedIn Syncs and Gmail Career Syncs drop its messages. " +
 			"It does the Conversation's sort Item. Answers the Conversation as it now is.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"conversationId":{"type":"string"}},` +

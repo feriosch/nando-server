@@ -177,7 +177,14 @@ func ToRecruiterPageConversationJSON(c model.Conversation, n int) model.Recruite
 	}
 	j := model.RecruiterPageConversationJSON{ID: c.ID.Hex(), Channel: channelOf(c), Subject: c.Subject, URL: c.URL, Messages: []model.MessageJSON{}}
 	for _, m := range messages {
-		j.Messages = append(j.Messages, model.MessageJSON{ID: m.LinkedInID, From: m.From, SentAt: m.SentAt, Text: m.Text})
+		// A Gmail message has no LinkedIn id: the page keys it by Gmail's.
+		id := m.LinkedInID
+		if id == "" {
+			id = m.GmailID
+		}
+		j.Messages = append(j.Messages, model.MessageJSON{
+			ID: id, From: m.From, SentAt: m.SentAt, Text: m.Text, GmailID: m.GmailID, Attachments: m.Attachments,
+		})
 	}
 	if r := c.SuggestedReply; r != nil {
 		j.SuggestedReply = &model.RecruiterPageReplyJSON{

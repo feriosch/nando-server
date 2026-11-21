@@ -231,3 +231,72 @@ func TestARecruitersPageShowsWhichConversationsAreGmail(t *testing.T) {
 		t.Errorf("Recruiter page = %+v; want the Gmail Conversation with its channel, subject and Gmail link", page)
 	}
 }
+
+func TestALinkedInThreadIDSentAsGmailIsRefused(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	syncTanaka(t, phone) // 2-tanaka, on LinkedIn
+	wrong := hays(mail("g1", "other", at(-1, 10, 15), "Hello!"))
+	wrong["threadId"] = "2-tanaka"
+
+	toolFails(t, phone.connect(), "career_add_gmail_thread", wrong)
+}
+
+func TestAnIgnoredGmailThreadKeepsNoSubject(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run := phone.connect()
+	added := addGmail(t, run, hays(mail("g1", "other", at(-3, 10, 15), "Our newsletter for November.")))
+
+	got := callTool[gmailConversationJSON](t, run, "career_ignore_thread", map[string]any{"conversationId": added.Conversation.ID})
+
+	if got.Subject != "" {
+		t.Errorf("ignored Conversation's subject = %q; want only its thread ID kept", got.Subject)
+	}
+}
+
+func TestAnAddressBelongsToTheRecruiterItWasLastFiledUnder(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run := phone.connect()
+	first := addGmail(t, run, hays(mail("g1", "other", at(-3, 10, 15), "From the shared inbox.")))
+	callTool[struct{}](t, run, "career_file_conversation", map[string]any{
+		"conversationId": first.Conversation.ID,
+		"recruiter":      map[string]any{"name": "Yui Tanaka", "kind": "agency", "organisation": "Hays"},
+	})
+	second := hays(mail("g2", "other", at(-2, 10, 15), "Also from the shared inbox."))
+	second["threadId"] = "18c2f0eeeeeeeeee"
+	moved := addGmail(t, run, second)
+	other := callTool[struct {
+		Recruiter recruiterWithEmailsJSON `json:"recruiter"`
+	}](t, run, "career_file_conversation", map[string]any{
+		"conversationId": moved.Conversation.ID,
+		"recruiter":      map[string]any{"name": "Ken Sato", "kind": "agency", "organisation": "Hays"},
+	})
+	// Filing the second thread under Sato isn't enough: it was filed to
+	// Tanaka on arrival, so file the next one to check whose the address is.
+	third := hays(mail("g3", "other", at(-1, 10, 15), "Still the shared inbox."))
+	third["threadId"] = "18c2f0dddddddddd"
+
+	if got := addGmail(t, run, third); got.Recruiter == nil || got.Recruiter.ID != other.Recruiter.ID {
+		t.Errorf("third thread filed to %+v; want %s, the Recruiter the address was last filed under", got.Recruiter, other.Recruiter.ID)
+	}
+}
+
+func TestARecruitersPageIdentifiesEachGmailMessage(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	_, recruiter := fileHays(t, phone.connect(),
+		mail("g1", "other", at(-3, 10, 15), "Hello!", "JD.pdf"),
+		mail("g2", "owner", at(-2, 10, 15), "Thanks!"))
+
+	page := get[struct {
+		Conversations []struct {
+			Messages []struct {
+				ID          string   `json:"id"`
+				Attachments []string `json:"attachments"`
+			} `json:"messages"`
+		} `json:"conversations"`
+	}](phone, "/api/career/recruiters/"+recruiter.ID)
+
+	m := page.Conversations[0].Messages
+	if len(m) != 2 || m[0].ID != "g1" || m[1].ID != "g2" || len(m[0].Attachments) != 1 {
+		t.Errorf("page messages = %+v; want g1 (with its attachment) and g2, each with its id", m)
+	}
+}

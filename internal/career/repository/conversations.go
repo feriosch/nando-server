@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"time"
 
@@ -42,6 +43,11 @@ func (r conversations) AddMessages(ctx context.Context, update model.ThreadUpdat
 	err := utils.NotFound(r.collection.FindOne(ctx, bson.D{{Key: "threadId", Value: update.ThreadID}}).Decode(&held))
 	if err != nil && !errors.Is(err, utils.ErrNotFound) {
 		return model.Added{}, err
+	}
+	// A thread id is never both LinkedIn's and Gmail's: one sent on the other
+	// channel would mix the two threads' messages and replace its person.
+	if err == nil && held.Channel != update.Channel {
+		return model.Added{}, fmt.Errorf("thread %s is a Conversation on another channel", update.ThreadID)
 	}
 	// An ignored thread isn't about a role: its messages are dropped.
 	if held.Ignored {
@@ -161,6 +167,7 @@ func (r conversations) Ignore(ctx context.Context, id bson.ObjectID) (model.Conv
 			{Key: "$set", Value: bson.D{{Key: "ignored", Value: true}, {Key: "messages", Value: bson.A{}}}},
 			{Key: "$unset", Value: bson.D{
 				{Key: "url", Value: ""},
+				{Key: "subject", Value: ""},
 				{Key: "person", Value: ""},
 				{Key: "recruiterId", Value: ""},
 				{Key: "suggestedReply", Value: ""},

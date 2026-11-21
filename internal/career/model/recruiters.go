@@ -37,7 +37,8 @@ type RecruitersRepository interface {
 	// GiveProfileURL sets the Recruiter's profileUrl to url if they have
 	// none, and leaves one they have as it is.
 	GiveProfileURL(ctx context.Context, id bson.ObjectID, url string) error
-	// AddEmail remembers that the Recruiter writes from email, lowercase.
+	// AddEmail remembers that the Recruiter writes from email, lowercase,
+	// and forgets it for any other Recruiter.
 	AddEmail(ctx context.Context, id bson.ObjectID, email string) error
 	// RemoveEmail forgets that the Recruiter writes from email, lowercase,
 	// and returns them, or Core's utils.ErrNotFound.
@@ -46,7 +47,8 @@ type RecruitersRepository interface {
 	// Core's utils.ErrNotFound.
 	ByEmail(ctx context.Context, email string) (Recruiter, error)
 	// Search returns the Recruiters whose name or organisation has query in
-	// it, ignoring case, or whose profileUrl is query.
+	// it, ignoring case, whose profileUrl is query, or who write from query,
+	// ignoring case.
 	Search(ctx context.Context, query string) ([]Recruiter, error)
 }
 
