@@ -283,7 +283,10 @@ func TestAConnectorArchivesAMealAndRestoresIt(t *testing.T) {
 func TestTheConsentPageSaysWhatCaloriessToolsLetAConnectorDo(t *testing.T) {
 	n := newNando(t)
 
-	got := testconnector.ToolsDescriptions(t, n.handler, webOrigin)
+	// Core's Messenger Tools are offered too, as these tests' Nando has bots (#128).
+	got := slices.DeleteFunc(testconnector.ToolsDescriptions(t, n.handler, webOrigin), func(d string) bool {
+		return strings.Contains(d, "Telegram")
+	})
 
 	// Deleting and archiving are said, as the Owner is asked first.
 	if want := []string{"read your Days and Daily Limit, log, correct and delete what you eat, and save, change and archive your Meals"}; !slices.Equal(got, want) {
@@ -303,6 +306,9 @@ func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
 
 	got := map[string]hints{}
 	for _, tool := range listed.Tools {
+		if strings.HasPrefix(tool.Name, "messenger_") {
+			continue // Core's, offered as these tests' Nando has bots (#128)
+		}
 		if !strings.HasPrefix(tool.Name, "calories_") {
 			t.Errorf("Tool %s: a Module's Tool names start with the Module's name", tool.Name)
 		}

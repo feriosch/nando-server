@@ -231,7 +231,7 @@ Proving it is the Owner with a Passkey, either an existing one or one just regis
 _Avoid_: Log in, login, authenticate
 
 **Session**:
-One browser or Home Screen app in which the Owner is signed in, so one iPhone can have two, and separate from any Push Subscription on the same device. It expires if left unused, and deleting it signs that browser or Home Screen app out.
+One browser or Home Screen app in which the Owner is signed in, so one iPhone can have two. It expires if left unused, and deleting it signs that browser or Home Screen app out.
 _Avoid_: Login, token, device
 
 **Connector**:
@@ -263,9 +263,6 @@ _Avoid_: Integration, external app, Connector (that is the reverse: an outside a
 ## Notifications
 
 **Notification**:
-A short message Nando sends the Owner first, without being asked. Core always sends it, either on a Module's behalf or for itself (such as the Weigh-in reminder), in the Messenger: in the chat of that Module's Assistant, or the Core Assistant's when the Module has none. It becomes part of that Assistant's Talk, so the Owner can answer it there. Before the Messenger it went to the Owner's installed devices by Web Push, which is being retired.
+A short message Nando sends the Owner first, without being asked. Core always sends it, either on a Module's behalf or for itself (such as the Weigh-in reminder), in the Messenger: in the chat of that Module's Assistant, or the Core Assistant's when the Module has none. It becomes part of that Assistant's Talk, so the Owner can answer it there.
 _Avoid_: Alert, push, message
 
-**Push Subscription**:
-The permission and delivery address of one installed copy of Nando on one device; a Notification is sent to every Push Subscription the Owner has.
-_Avoid_: Device, token, registration

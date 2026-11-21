@@ -12,8 +12,6 @@ import (
 const (
 	// notificationTitle is the title of every Calories Notification.
 	notificationTitle = "Calories"
-	// notificationURL is where every Calories Notification opens the web app.
-	notificationURL = "/calories"
 )
 
 // NotificationsService is the Module's Notification provider, which Core asks
@@ -66,7 +64,6 @@ func notification(kind string, day coremodel.Day, body string) coremodel.Notific
 		ID:    coremodel.NotificationID("calories", kind, day),
 		Title: notificationTitle,
 		Body:  body,
-		URL:   notificationURL,
 	}
 }
 

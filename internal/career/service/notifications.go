@@ -15,8 +15,6 @@ import (
 const (
 	// notificationArea names the Module in its Notifications' IDs.
 	notificationArea = "career"
-	// careerPath is the Career screen in the web app.
-	careerPath = "/career"
 	// waitingReminderAt is when, on waitingReminderDays, a Not Looking Owner
 	// hears of the Recruiters waiting for their reply.
 	waitingReminderAt = "19:00"
@@ -120,7 +118,6 @@ func (s *NotificationsService) syncProblems(ctx context.Context, loc *time.Locat
 				ID:    notificationID("no-sync", latest[0].ID.Hex()),
 				Title: "No LinkedIn Sync since " + lastRead.In(loc).Weekday().String(),
 				Body:  "Check that the Mac is on and its Sync job is loaded",
-				URL:   careerPath,
 			})
 		}
 	}
@@ -138,7 +135,6 @@ func (s *NotificationsService) syncProblems(ctx context.Context, loc *time.Locat
 		ID:    notificationID("sync-problem", expired.ID.Hex()),
 		Title: "Log in to LinkedIn again",
 		Body:  "Open the Mac and run the Sync's login",
-		URL:   careerPath,
 	}), nil
 }
 
@@ -167,7 +163,6 @@ func (s *NotificationsService) tomorrowsSteps(ctx context.Context, tomorrow core
 				ID:    notificationID("step", o.ID.Hex(), step.ID.Hex(), step.Date),
 				Title: "Tomorrow: " + step.Kind,
 				Body:  body,
-				URL:   "/career/opportunities/" + o.ID.Hex(),
 			})
 		}
 	}
@@ -241,5 +236,5 @@ func waitingNotification(id string, waiting int) coremodel.Notification {
 	if waiting == 1 {
 		body = "1 Recruiter is waiting for your reply"
 	}
-	return coremodel.Notification{ID: id, Title: "Recruiters waiting", Body: body, URL: careerPath}
+	return coremodel.Notification{ID: id, Title: "Recruiters waiting", Body: body}
 }

@@ -2,7 +2,7 @@
 
 Identity: Passkeys, Enrollment Codes and Sessions ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)).
 Settings and body measurements: the Owner Time Zone, height and Weigh-ins ([ADR 0003](../../docs/adr/0003-body-measurements-in-core.md)).
-Notifications: Push Subscriptions, the push messages Core sends, and the scheduler's tick ([ADR 0001](../../docs/adr/0001-cloud-run-hosting.md)).
+Notifications: sent in the Messenger at the scheduler's tick ([ADR 0001](../../docs/adr/0001-cloud-run-hosting.md), [ADR 0008](../../docs/adr/0008-assistants-on-telegram.md)).
 Connectors: Nando as its own OAuth 2.1 authorization server, the consent page's calls, the Tools at `/mcp`, and the Owner's list of Connectors ([ADR 0004](../../docs/adr/0004-connectors-over-oauth.md)).
 
 The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors are a status code with a short plain-text message. Answers to the origins in `ALLOWED_ORIGINS` expose `Content-Disposition` (`Access-Control-Expose-Headers`), which a browser otherwise hides from another origin, so the web app can name a file it downloads, such as the JLPT deck.
@@ -181,86 +181,9 @@ Core sends every Notification, for a Module or for itself, in the Messenger when
 - It is sent as plain text: the title, a line break and the body, leaving out either if it is empty.
 - It joins that Assistant's Talk as a message from the Assistant, so the Owner can answer it there. It wakes no run on its own.
 
-Web Push is deprecated, and is used only when no bot is configured, as in local development. Removing it is #137 here and feriosch/nando-web#88. Either way, each Notification is sent at most once, through one channel, even if the scheduler retries a tick. The test Notification is the exception: the Owner sends it on demand, always by Web Push.
+Each Notification is sent at most once, even if the scheduler retries a tick. With no bot configured, as in local development, nothing is sent or recorded as sent, and the tick says so. Web Push was retired ([#137](https://github.com/feriosch/nando-server/issues/137)): Telegram is the only channel.
 
-### `GET /api/push-subscriptions/vapid-public-key`
-
-`200`: the key to pass as `applicationServerKey` to `registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey })`. It is base64url, without padding.
-
-```json
-{ "publicKey": "BNc…" }
-```
-
-### `POST /api/push-subscriptions`
-
-Registers this copy of Nando for Notifications. Body: the `PushSubscription` from `pushManager.subscribe` (or `getSubscription`), as `subscription.toJSON()`.
-
-```json
-{
-  "endpoint": "https://web.push.apple.com/QG…",
-  "expirationTime": null,
-  "keys": { "p256dh": "BOr…", "auth": "Ys5…" }
-}
-```
-
-- `204`: registered. Registering the same `endpoint` again replaces its keys, so it is safe to send on every launch.
-- `400`: the body isn't a `PushSubscription`: `endpoint` isn't an absolute URL, `keys.p256dh` isn't a P-256 public key, or `keys.auth` isn't 16 bytes (both base64url). The message says which.
-- `410`: this `endpoint`'s push service no longer knows it, so Core won't register it. The browser still holds it, though: call `subscription.unsubscribe()`, subscribe afresh with the VAPID public key (the permission is still granted, so no prompt) and register the new one. The message never quotes the endpoint.
-
-When a push service says it no longer knows a Push Subscription (`404` or `410`, for example after the Owner turned Notifications off or removed the app), Core deletes it, at the tick or for the test Notification. It also remembers that endpoint for 30 days, by its SHA-256 alone, in `forgotten_push_subscriptions`, and answers `410` to registering it again. After that it can be registered again. One the Owner unregistered, or whose push service merely failed, can be registered again at once.
-
-### `DELETE /api/push-subscriptions?endpoint={endpoint}`
-
-Unregisters the Push Subscription with this `endpoint` (URL-encoded), for example after `subscription.unsubscribe()`.
-
-- `204`: that endpoint gets no more Notifications. This is also the answer if it wasn't registered.
-- `400`: `endpoint` is missing.
-
-### `POST /api/push-subscriptions/test`
-
-Sends the test Notification to every Push Subscription right away, so the Owner can check that Notifications reach their devices from Settings. No body.
-
-```json
-{ "title": "Test Notification", "body": "Notifications reach this device.", "url": "/settings" }
-```
-
-It goes outside the tick and isn't recorded as sent, so the Owner can send it again at any time.
-
-`200`: what happened to each Push Subscription.
-
-```json
-{
-  "sent": 1,
-  "removed": 1,
-  "failed": [{ "pushService": "web.push.apple.com", "status": 403, "reason": "push service answered 403 Forbidden" }]
-}
-```
-
-- `sent`: how many push services took it. With no Push Subscription, it is `0`, `removed` is `0` and `failed` is empty.
-- `removed`: how many push services no longer knew theirs (`404` or `410`). Core deleted them, as at the tick.
-- `failed`: the others, always a list. `pushService` is the endpoint's host, never the endpoint, which is a secret capability URL. `status` is what the push service answered, left out if it didn't answer. `reason` is one of:
-  - `push service answered {status}`, such as `push service answered 403 Forbidden`,
-  - `push service didn't answer within 10s`: Core gives up on a push service after 10 seconds, at the tick too,
-  - `couldn't reach the push service`, such as a network error,
-  - `push service no longer knows it, and it couldn't be removed`: Core tries again at the next send.
-
-`500`: the Push Subscriptions couldn't be read, so nothing was sent.
-
-### The push message
-
-Each push message carries one Notification as JSON, encrypted for the Push Subscription (`aes128gcm`) and signed with the VAPID key above:
-
-```json
-{ "title": "Calories", "body": "Nothing logged today", "url": "/calories" }
-```
-
-- `title`, `body`: shown as-is. Core leaves out a field that is empty, so the service worker's default applies.
-- `url`: the path in the web app to open when the Owner taps the Notification, such as `/calories`. The service worker opens `/` (Home) if it is missing or `null`.
-- The service worker falls back to a default for any field that is missing or `null` (`title` → "Nando"). A push message with no payload, or one that isn't JSON, still shows a plain "Nando" Notification, since Safari revokes a Push Subscription whose push message shows nothing.
-
-A push service keeps an undelivered message for up to 12 hours.
-
-Core's own Notification is the Weigh-in reminder: `{ "title": "Weigh-in", "body": "Time to log this week's weight", "url": "/" }`, sent once a week at the `weighInReminder`'s weekday and time while it is `enabled`.
+Core's own Notification is the Weigh-in reminder, "Weigh-in" / "Time to log this week's weight", sent once a week at the `weighInReminder`'s weekday and time while it is `enabled`.
 
 ### `POST /internal/tick`
 
@@ -268,25 +191,18 @@ Called only by Cloud Scheduler, every 5 minutes. It needs no Session, but its `A
 
 At each tick Core asks every Notification provider (Core's own and every Module's) which Notifications are due in the current half hour, the one starting at :00 or :30 in the Owner Time Zone, and sends each one that hasn't been sent before. So the six ticks of a half hour send each of its Notifications once, at the first tick that runs. Every Notification has an ID, such as `calories:evening-summary:2026-10-20`, that Core remembers for 30 days in `sent_notifications`. Then Core runs every Module's tick job, its work to do at every tick, such as the Japanese Module waking Claude for Word Requests still waiting.
 
-- `204`: done. A push service, or Telegram, that failed to take a message doesn't fail the tick; that Notification isn't retried.
+- `204`: done. Telegram failing to take a message doesn't fail the tick; that Notification isn't retried.
 - `401`: no token, or not the scheduler's.
 - `500`: a provider or a tick job failed, or a Notification couldn't be recorded as sent. Everything else was still sent and every other tick job still ran, and Cloud Scheduler's retry won't send a Notification again.
 
 Each tick logs, to Cloud Logging, one line saying what it sent:
 
-- `tick: sent 2 Notifications to 2 Push Subscriptions: calories:no-entries:2026-10-20 (reached 1 of 2), calories:evening-summary:2026-10-20 (reached 1 of 1)`: how many Push Subscriptions there were, and for each Notification sent, its ID and how many of those it was sent to took it. `reached 0` means it reached no device. A Push Subscription removed while sending one Notification isn't sent the next.
-- `tick: sent 1 Notification in Telegram: core:weigh-in:2026-11-16 (sent)`: while the Messenger is on, Push Subscriptions aren't read at all. A Notification Telegram refused shows `(refused)`, with the reason logged on its own line (`send Notification <id> in Telegram: …`). It isn't retried, nor sent by Web Push.
+- `tick: sent 2 Notifications in Telegram: calories:no-entries:2026-10-20 (sent), calories:evening-summary:2026-10-20 (refused)`: each Notification sent, by its ID. One Telegram refused shows `(refused)`, with the reason logged on its own line (`send Notification <id> in Telegram: …`). It isn't retried.
 - `tick: no Notifications due`: nothing was due, or a retried tick found it all sent already, and nothing went wrong.
-- With errors, the line counts them: `tick: no Notifications sent, 1 error`, or `tick: sent 1 Notification to 1 Push Subscription, 1 error: …`. Each error is logged on its own line, and the tick answers `500`.
+- `tick: 1 Notification due, but no Assistant has a bot to send them`: with no bot configured, followed by `, 1 error` when there were errors. Nothing is recorded as sent.
+- With errors, the line counts them: `tick: no Notifications sent, 1 error`, or `tick: sent 1 Notification in Telegram, 1 error: …`. Each error is logged on its own line, and the tick answers `500`.
 
-Whenever Core sends, at the tick or for the test Notification, it also logs:
-
-- `removed Push Subscription at web.push.apple.com: 410 Gone`: the push service no longer knew it (`404` or `410`), so Core deleted it.
-
-When a device registers a Push Subscription its push service no longer knows, Core logs `refused Push Subscription at web.push.apple.com: its push service no longer knows it`, and the web app subscribes afresh.
-- `send Notification calories:evening-summary:2026-10-20: …`: a push service failed to take it, with the error.
-
-Logs name a push service by its host and never hold an endpoint, which is a secret capability URL, nor where a push service redirected to, nor what a Notification says: only its ID.
+Logs never hold what a Notification says: only its ID.
 
 ## Connectors
 

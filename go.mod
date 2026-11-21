@@ -3,7 +3,6 @@ module github.com/feriosch/nando-server
 go 1.25.0
 
 require (
-	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/fxamacker/cbor/v2 v2.9.6
 	github.com/go-webauthn/webauthn v0.18.0
 	github.com/golobby/container/v3 v3.3.2

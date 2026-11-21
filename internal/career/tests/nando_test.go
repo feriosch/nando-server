@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/SherClockHolmes/webpush-go"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
@@ -20,6 +20,7 @@ import (
 	"github.com/feriosch/nando-server/internal/testconnector"
 	"github.com/feriosch/nando-server/internal/testmongo"
 	"github.com/feriosch/nando-server/internal/testpasskey"
+	"github.com/feriosch/nando-server/internal/testtelegram"
 )
 
 const webOrigin = "https://web.example.com"
@@ -37,6 +38,8 @@ type nando struct {
 	core    *core.Core
 	handler http.Handler
 	clock   *clock
+	// telegram is the Messenger's fake Telegram, where Notifications go (#128).
+	telegram *testtelegram.Telegram
 }
 
 func newNando(t *testing.T) *nando {
@@ -53,10 +56,7 @@ func newNandoWith(t *testing.T, cfg career.Config) *nando {
 	}
 	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
 
-	vapidPrivate, vapidPublic, err := webpush.GenerateVAPIDKeys()
-	if err != nil {
-		t.Fatalf("GenerateVAPIDKeys: %v", err)
-	}
+	telegram := testtelegram.New(t)
 	// Real time to start with: go-webauthn checks its ceremony timeouts against it.
 	clk := &clock{now: time.Now()}
 	c, err := core.New(context.Background(), client.Database("core"), core.Config{
@@ -64,10 +64,9 @@ func newNandoWith(t *testing.T, cfg career.Config) *nando {
 		Origins:              []string{webOrigin},
 		Now:                  clk.Now,
 		VerifySchedulerToken: func(context.Context, string) error { return nil },
-		VAPID: core.VAPID{
-			PublicKey:  vapidPublic,
-			PrivateKey: vapidPrivate,
-			Contact:    "mailto:owner@example.com",
+		Messenger: core.MessengerConfig{
+			TelegramURL: telegram.URL, OwnerID: 777001, WebhookSecret: "webhook-secret",
+			BotTokens: map[string]string{"core": "111:core-bot", "career": "222:career-bot"},
 		},
 	})
 	if err != nil {
@@ -79,11 +78,13 @@ func newNandoWith(t *testing.T, cfg career.Config) *nando {
 	}
 	c.AddToolProvider(module.ToolProvider())
 	c.AddNotificationProvider(module.NotificationProvider())
+	c.AddAssistant(module.Assistant())
 	c.AddTickJob(module.TickJob())
 	return &nando{
-		t:     t,
-		core:  c,
-		clock: clk,
+		t:        t,
+		core:     c,
+		clock:    clk,
+		telegram: telegram,
 		handler: server.New(server.Config{
 			AllowedOrigins: []string{webOrigin},
 			Core:           c,
@@ -204,4 +205,18 @@ func callTool[T any](t *testing.T, session *mcp.ClientSession, name string, args
 		t.Fatalf("%s: %v in %q", name, err, text.Text)
 	}
 	return v
+}
+
+// notification is a Notification as the Owner got it in Telegram: the bot's
+// message is its title, a line break and its body.
+type notification struct{ Title, Body string }
+
+// received is every Notification the Owner got in Telegram so far.
+func (n *nando) received() []notification {
+	var got []notification
+	for _, c := range n.telegram.CallsTo("sendMessage") {
+		title, body, _ := strings.Cut(c.Params["text"].(string), "\n")
+		got = append(got, notification{Title: title, Body: body})
+	}
+	return got
 }

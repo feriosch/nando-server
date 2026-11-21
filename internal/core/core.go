@@ -36,8 +36,6 @@ type Config struct {
 	// token from the scheduler's service account. In production it is
 	// VerifyGoogleSchedulerToken.
 	VerifySchedulerToken func(ctx context.Context, token string) error
-	// VAPID signs every push message.
-	VAPID VAPID
 	// Messenger is how Nando reaches the Owner in Telegram (ADR 0008).
 	Messenger MessengerConfig
 }
@@ -45,9 +43,6 @@ type Config struct {
 // MessengerConfig is how Nando reaches the Owner in Telegram: the Owner's
 // Telegram user ID, the webhook secret and each Assistant's bot token.
 type MessengerConfig = service.MessengerConfig
-
-// VAPID is the key pair and contact that sign every push message.
-type VAPID = service.VAPID
 
 // VerifyGoogleSchedulerToken returns the production VerifySchedulerToken: it
 // accepts only a Google-signed OIDC token issued for audience (as the Cloud
@@ -69,18 +64,17 @@ func VerifyGoogleSchedulerToken(audience, serviceAccount string) func(ctx contex
 
 // Core is Nando's Core. Its only access to data is its own database.
 type Core struct {
-	identity          *service.IdentityService
-	sessions          *service.SessionsService
-	passkeys          *service.PasskeysService
-	settings          *service.SettingsService
-	weighIns          *service.WeighInsService
-	body              *service.BodyService
-	pushSubscriptions *service.PushSubscriptionsService
-	notifications     *service.NotificationsService
-	mcp               *service.MCPService
-	connectors        *service.ConnectorsService
-	oauth             *service.OAuthService
-	messenger         *service.MessengerService
+	identity      *service.IdentityService
+	sessions      *service.SessionsService
+	passkeys      *service.PasskeysService
+	settings      *service.SettingsService
+	weighIns      *service.WeighInsService
+	body          *service.BodyService
+	notifications *service.NotificationsService
+	mcp           *service.MCPService
+	connectors    *service.ConnectorsService
+	oauth         *service.OAuthService
+	messenger     *service.MessengerService
 	// coreService is what Modules' services are handed.
 	coreService coreService
 }
@@ -129,22 +123,17 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	}
 	passkeys := repository.NewPasskeys(db)
 	weighIns := repository.NewWeighIns(db)
-	pushSubscriptions, err := repository.NewPushSubscriptions(ctx, db)
-	if err != nil {
-		return nil, err
-	}
 
 	// apiURL is the API's own URL, which Connectors reach it at, and webURL
 	// the web app's.
 	apiURL, webURL := "https://api."+cfg.Domain, "https://web."+cfg.Domain
 	mcp := service.NewMCP(connectors, apiURL, now)
 	c := &Core{
-		sessions:          service.NewSessions(sessionsRepo, cfg.Domain, now),
-		passkeys:          service.NewPasskeys(passkeys),
-		settings:          service.NewSettings(repository.NewSettings(db), now),
-		pushSubscriptions: service.NewPushSubscriptions(pushSubscriptions, cfg.VAPID.PublicKey, now),
-		mcp:               mcp,
-		connectors:        service.NewConnectors(connectors, oauthClients, now),
+		sessions:   service.NewSessions(sessionsRepo, cfg.Domain, now),
+		passkeys:   service.NewPasskeys(passkeys),
+		settings:   service.NewSettings(repository.NewSettings(db), now),
+		mcp:        mcp,
+		connectors: service.NewConnectors(connectors, oauthClients, now),
 		messenger: service.NewMessenger(talks, func(assistant string) utils.FireRecord {
 			return repository.NewMessengerFires(db, assistant)
 		}, cfg.Messenger, apiURL, now),
@@ -162,8 +151,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.notifications, err = service.NewNotifications(pushSubscriptions, sentNotifications, c.settings,
-		cfg.VerifySchedulerToken, cfg.VAPID, now)
+	c.notifications, err = service.NewNotifications(sentNotifications, c.settings, cfg.VerifySchedulerToken, now)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +177,6 @@ func (c *Core) Routes(mux *http.ServeMux) {
 	c.settings.Routes(mux)
 	c.weighIns.Routes(mux)
 	c.body.Routes(mux)
-	c.pushSubscriptions.Routes(mux)
 	c.notifications.Routes(mux)
 	c.mcp.Routes(mux)
 	c.connectors.Routes(mux)
