@@ -4,7 +4,7 @@ The Owner wants their Gmail handled in Telegram too: asking what came in, findin
 
 ## Decisions
 
-- **Every Assistant reads Gmail; only the Core Assistant changes it.** Gmail isn't a Module: Nando stores no mail and has no screen for it, and mail serves the Owner's whole life, as the calendar does. The other Assistants read it to answer a question (a Recruiter's email, a receipt) and point the Owner to the Core Assistant for anything that changes the mailbox.
+- **Every Assistant reads Gmail; only the Core Assistant changes it.** (Amended by ADR 0010: the Career Assistant may also create drafts, in `Career` threads only, and never sends.) Gmail isn't a Module: Nando stores no mail and has no screen for it, and mail serves the Owner's whole life, as the calendar does. The other Assistants read it to answer a question (a Recruiter's email, a receipt) and point the Owner to the Core Assistant for anything that changes the mailbox.
 - **The Core Assistant reads, searches and summarizes, drafts, and organizes** (labels, archive, read or unread, new labels) at once, and says what it did.
 - **It sends only on the Owner's yes.**
   - It writes the mail as a Gmail draft, shows the Owner exactly what would go and to whom, and stops.
@@ -18,7 +18,7 @@ The Owner wants their Gmail handled in Telegram too: asking what came in, findin
 
 ## Why sending is acceptable here
 
-ADR 0008's never-send rule came from the Career Module, where ADR 0007 accepts a ban risk: LinkedIn forbids automated access, and the Sync reads it by driving a browser with the Owner's session. Gmail carries no such risk. The claude.ai connector uses Google's official Gmail API, which the Owner authorized with OAuth, the supported way for an app to read and send mail as them. Google acts against spam and bulk mail. The most a heavy personal sender normally meets is the daily sending limit, which pauses sending for about a day. A few mails a day, each on the Owner's yes, are far from both. What remains is the risk that a mail steers a run, which the rule that mail is data answers.
+ADR 0008's never-send rule came from the Career Module, where ADR 0007 accepts a ban risk: LinkedIn forbids automated access, and the LinkedIn Sync reads it by driving a browser with the Owner's session. Gmail carries no such risk. The claude.ai connector uses Google's official Gmail API, which the Owner authorized with OAuth, the supported way for an app to read and send mail as them. Google acts against spam and bulk mail. The most a heavy personal sender normally meets is the daily sending limit, which pauses sending for about a day. A few mails a day, each on the Owner's yes, are far from both. What remains is the risk that a mail steers a run, which the rule that mail is data answers.
 
 ## Considered Options
 

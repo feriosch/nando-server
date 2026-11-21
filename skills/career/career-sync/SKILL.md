@@ -6,7 +6,7 @@ description: >-
 
 # Work through the Career run's Items
 
-A Sync from the Owner's MacBook hands Nando their new LinkedIn messages, and Nando queues them as Items for this run. This run is unattended: the Owner is not reading it. They see only what you write through the Career Tools of the Nando Connector: Conversations filed under Recruiters, Opportunities, Company Briefs and Suggested Replies, which they read in the app and copy into LinkedIn themselves. Nothing you write is ever sent for them.
+A LinkedIn Sync from the Owner's MacBook hands Nando their new LinkedIn messages, and Nando queues them as Items for this run. This run is unattended: the Owner is not reading it. They see only what you write through the Career Tools of the Nando Connector: Conversations filed under Recruiters, Opportunities, Company Briefs and Suggested Replies, which they read in the app and copy into LinkedIn themselves. Nothing you write is ever sent for them.
 
 If the Owner is in the chat with you, this skill isn't for that: follow `career-draft-reply` or `career-opportunity-update` with them.
 
@@ -29,7 +29,7 @@ In a Conversation, a message `from` `"owner"` is the Owner's; `"other"` is the p
 
 ### `sort`: a thread Nando hasn't sorted yet
 
-**Ignore** a thread that isn't about a role for the Owner: a friend or ex-colleague saying "my team is hiring", sales pitches, event or webinar invites, networking with no role in it. `career_ignore_thread` with `conversationId`. Nando deletes its text and keeps only its thread ID, so later Syncs never send it again. Someone at the Company who follows up on a friend's tip writes in their own thread, and is a Recruiter.
+**Ignore** a thread that isn't about a role for the Owner: a friend or ex-colleague saying "my team is hiring", sales pitches, event or webinar invites, networking with no role in it. `career_ignore_thread` with `conversationId`. Nando deletes its text and keeps only its thread ID, so later LinkedIn Syncs never send it again. Someone at the Company who follows up on a friend's tip writes in their own thread, and is a Recruiter.
 
 **An ad** comes as one message whose text starts with `Sponsored` (an InMail ad) or `LinkedIn Offer` (LinkedIn selling Premium), dated the Day it names. Ignore it, unless it advertises a role that could fit the Owner, such as an agency or a Company paying to reach engineers. Then file it under the sender like any Recruiter's thread, and keep the role as a Lead. Write no Suggested Reply to an ad: the Owner answers it, if at all, through its own link.
 
@@ -44,7 +44,7 @@ Then keep its Opportunities (step 3), and write its Suggested Reply when the las
 
 Keep its Opportunities (step 3) with what the new messages say, then write an `answer`, or a `late` reply if the Recruiter's newest message is over 30 days old.
 
-When the Owner's own message is the last (they answered on LinkedIn, and the same Sync brought both), there is nothing to reply to: keep its Opportunities and leave the Item as it is. Nando sets it aside after 3 claims.
+When the Owner's own message is the last (they answered on LinkedIn, and the same LinkedIn Sync brought both), there is nothing to reply to: keep its Opportunities and leave the Item as it is. Nando sets it aside after 3 claims.
 
 ### `late_reply`: a Suggested Reply turned late
 
@@ -52,7 +52,7 @@ The Recruiter's message is now over 30 days old. Rewrite the Suggested Reply as 
 
 ### `follow_up`: an open Opportunity silent since the Owner's message
 
-The Owner wrote last, 14 days ago or more, on an Opportunity In Process or at Offer. Write a `follow_up`: a short, friendly nudge asking where things stand, in the Owner's voice (step 4), with nothing about being late. `answers` is the `sentAt` of the Owner's message it follows up. When the Conversation's `suggestedReply` has a `markedRepliedAt`, the Owner sent that reply in LinkedIn and no Sync has brought it yet: follow up that reply, with `answers` set to its `markedRepliedAt`.
+The Owner wrote last, 14 days ago or more, on an Opportunity In Process or at Offer. Write a `follow_up`: a short, friendly nudge asking where things stand, in the Owner's voice (step 4), with nothing about being late. `answers` is the `sentAt` of the Owner's message it follows up. When the Conversation's `suggestedReply` has a `markedRepliedAt`, the Owner sent that reply in LinkedIn and no LinkedIn Sync has brought it yet: follow up that reply, with `answers` set to its `markedRepliedAt`.
 
 ## 3. Opportunities
 
@@ -79,7 +79,7 @@ Stop where only the Owner could add more, such as what the team is like inside o
 
 **An Opportunity the Recruiter takes further** changes with what they say, all through `career_save_opportunity` (only the fields you send change; `pay` and `conditions` are replaced whole, so start from `career_get_opportunity`) and `career_save_step`:
 
-- a date set for an interview, a call or an assignment is a Step: `kind` as they name it ("Casual interview", "Coding test"), `date`, `time` if they gave one, and short `notes`. The Owner may have saved it already in chat, before this Sync: a Step the Opportunity already has on that date is the same one, so update it with its `stepId` rather than adding a second;
+- a date set for an interview, a call or an assignment is a Step: `kind` as they name it ("Casual interview", "Coding test"), `date`, `time` if they gave one, and short `notes`. The Owner may have saved it already in chat, before this LinkedIn Sync: a Step the Opportunity already has on that date is the same one, so update it with its `stepId` rather than adding a second;
 - the first Step makes it `in_process`; an offer makes it `offer`. The Stage skips ahead but never goes back;
 - an offered salary goes in `pay.offered`;
 - the Company saying no goes in `details`, dated, leaving the Opportunity open: closing it as `rejected` is the Owner's, in chat.
@@ -166,4 +166,4 @@ Deleting is the Owner's, in chat. NEVER call `career_delete_step` or `career_del
 
 ## 7. Repeat
 
-Back to step 1 until it answers no Items, or until this run has done 30 Items: then stop, so the run's context stays short. Nando wakes another run for any left, at the next Sync or tick.
+Back to step 1 until it answers no Items, or until this run has done 30 Items: then stop, so the run's context stays short. Nando wakes another run for any left, at the next LinkedIn Sync or tick.

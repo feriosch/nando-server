@@ -1,6 +1,6 @@
 # Career API
 
-The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Opportunities they bring, and whether the Owner is Looking. The app reads them through the routes below and changes only Looking and whether the Owner replied to a Suggested Reply. Everything else is changed through the Tools. The script on the Owner's MacBook reads LinkedIn and hands each Sync to Nando through the Tools below ([ADR 0007](../../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). A cloud Claude run then sorts what it brought, and the Owner's chat skills keep the rest, through the same Tools. Every route is under `/api/career/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
+The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Opportunities they bring, and whether the Owner is Looking. The app reads them through the routes below and changes only Looking and whether the Owner replied to a Suggested Reply. Everything else is changed through the Tools. The script on the Owner's MacBook reads LinkedIn and hands each LinkedIn Sync to Nando through the Tools below ([ADR 0007](../../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). A cloud Claude run then sorts what it brought, and the Owner's chat skills keep the rest, through the same Tools. Every route is under `/api/career/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message.
 
 ## Settings
 
@@ -162,11 +162,11 @@ A Recruiter is **waiting** when one of their Conversations has a Suggested Reply
 
 ### Marking a Suggested Reply replied
 
-A Suggested Reply leaves the lists on its own only once a Sync brings the Owner's own message. The Owner may mark it **replied** sooner, once they've sent it in LinkedIn. The Suggested Reply then gets a `markedRepliedAt`:
+A Suggested Reply leaves the lists on its own only once a LinkedIn Sync brings the Owner's own message. The Owner may mark it **replied** sooner, once they've sent it in LinkedIn. The Suggested Reply then gets a `markedRepliedAt`:
 
 - It is left out of the waiting Recruiters (`GET /api/career` and the Home Card's `waiting`), Late Replies and the Career screen's `lateReplies`, and the "Recruiters waiting" Notifications, Looking or not.
 - It stays on the Recruiter's page, with `markedRepliedAt`.
-- A Sync that brings an Owner message newer than the one it answers removes it, as any Suggested Reply. When the Recruiter has written again since, that Sync also queues a `reply` Item.
+- A LinkedIn Sync that brings an Owner message newer than the one it answers removes it, as any Suggested Reply. When the Recruiter has written again since, that LinkedIn Sync also queues a `reply` Item.
 - `career_set_suggested_reply` replaces it with one that isn't marked.
 - The tick's rules: it never turns `late`, and for the follow-up it counts as the Owner's last message, sent at `markedRepliedAt` (see [The tick's rules](#the-ticks-rules)).
 
@@ -190,30 +190,30 @@ These are the web app's own paths, for Notifications to open (#91) and nando-web
 | `/career/opportunities/{id}` | an Opportunity's page |
 | `/career/late` | Late Replies |
 
-## Syncs
+## LinkedIn Syncs
 
-A Sync is one pass in which the Mac's script picks up the Owner's new LinkedIn messages. Nando, not the script, decides when one is due:
+A LinkedIn Sync is one pass in which the Mac's script picks up the Owner's new LinkedIn messages. Nando, not the script, decides when one is due:
 
 - not before 07:00 in the Owner Time Zone;
 - at most 2 on a Day;
 - at least 6 hours after the last.
 
-Only Syncs that read LinkedIn count. One that reports a problem doesn't. A Sync sent in batches counts once however many batches it took, as long as each batch after the first names the Sync the first started (see `career_record_sync`).
+Only LinkedIn Syncs that read LinkedIn count. One that reports a problem doesn't. A LinkedIn Sync sent in batches counts once however many batches it took, as long as each batch after the first names the LinkedIn Sync the first started (see `career_record_sync`).
 
-The script skips the threads Nando holds after the first one with nothing new, since the inbox is in order of activity. That is safe only after a Sync that read every thread it had to. So Nando records whether a Sync stopped early, at a problem or at the script's cap of 30 threads, and `career_sync_status` answers `readThrough: false` while the newest Sync that read LinkedIn did. The script then opens those held threads too, up to its cap. A Sync that only reports a problem read nothing, so it leaves `readThrough` as it was.
+The script skips the threads Nando holds after the first one with nothing new, since the inbox is in order of activity. That is safe only after a LinkedIn Sync that read every thread it had to. So Nando records whether a LinkedIn Sync stopped early, at a problem or at the script's cap of 30 threads, and `career_sync_status` answers `readThrough: false` while the newest LinkedIn Sync that read LinkedIn did. The script then opens those held threads too, up to its cap. A LinkedIn Sync that only reports a problem read nothing, so it leaves `readThrough` as it was.
 
-Each LinkedIn thread is one Conversation (collection `conversations`, unique on the thread ID), holding a copy of its messages. A Conversation a Sync brings is unsorted until the cloud run (below) files it under a Recruiter or ignores it. An ignored thread keeps only its thread ID: later Syncs drop its messages.
+Each LinkedIn thread is one Conversation (collection `conversations`, unique on the thread ID), holding a copy of its messages. A Conversation a LinkedIn Sync brings is unsorted until the cloud run (below) files it under a Recruiter or ignores it. An ignored thread keeps only its thread ID: later LinkedIn Syncs drop its messages.
 
-A Sync that brings a message from the Owner newer than the message a Conversation's Suggested Reply answers removes that Suggested Reply, marked replied or not: the Owner has replied themselves.
+A LinkedIn Sync that brings a message from the Owner newer than the message a Conversation's Suggested Reply answers removes that Suggested Reply, marked replied or not: the Owner has replied themselves.
 
 ## The run's work
 
-What a Sync brings waits as Items (collection `work`) for a cloud Claude run, which follows `skills/career/career-sync` ([ADR 0006](../../docs/adr/0006-word-requests-through-a-scheduled-task.md), [ADR 0007](../../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). A Conversation has at most one open Item of each kind:
+What a LinkedIn Sync brings waits as Items (collection `work`) for a cloud Claude run, which follows `skills/career/career-sync` ([ADR 0006](../../docs/adr/0006-word-requests-through-a-scheduled-task.md), [ADR 0007](../../docs/adr/0007-linkedin-synced-from-the-owners-mac.md)). A Conversation has at most one open Item of each kind:
 
 | Kind | Queued when | Done by |
 | --- | --- | --- |
-| `sort` | a Sync stores messages in a Conversation not filed yet | `career_ignore_thread` or `career_file_conversation` |
-| `reply` | a Sync stores a message from the Recruiter in a filed Conversation | `career_set_suggested_reply` |
+| `sort` | a LinkedIn Sync stores messages in a Conversation not filed yet | `career_ignore_thread` or `career_file_conversation` |
+| `reply` | a LinkedIn Sync stores a message from the Recruiter in a filed Conversation | `career_set_suggested_reply` |
 | `late_reply` | an `answer` Suggested Reply turns `late` (see The tick's rules) | `career_set_suggested_reply` |
 | `follow_up` | an Opportunity waits on its Recruiter for 14 days (see The tick's rules) | `career_set_suggested_reply` |
 
@@ -221,12 +221,12 @@ What a Sync brings waits as Items (collection `work`) for a cloud Claude run, wh
 
 ### Waking the run
 
-Nando wakes the run by calling the `/fire` API trigger of a cloud scheduled task (`CAREER_SYNC_TRIGGER_URL` and `CAREER_SYNC_TRIGGER_TOKEN`), when a Sync stores new messages and at each tick while an Item waits. It follows the same rules as Japanese's Word Requests, shared through Core's `utils`:
+Nando wakes the run by calling the `/fire` API trigger of a cloud scheduled task (`CAREER_SYNC_TRIGGER_URL` and `CAREER_SYNC_TRIGGER_TOKEN`), when a LinkedIn Sync stores new messages and at each tick while an Item waits. It follows the same rules as Japanese's Word Requests, shared through Core's `utils`:
 
 - It fires only while an Item is claimable, and never while a run holds a claim.
-- A fire is in flight until its run claims or does an Item, for up to 10 minutes: no Sync and no tick starts a second run meanwhile.
+- A fire is in flight until its run claims or does an Item, for up to 10 minutes: no LinkedIn Sync and no tick starts a second run meanwhile.
 - A run that claimed or did an Item in the last 2 minutes may list the work again, so nothing fires until it stops.
-- A trigger that fails is logged and fails nothing. The next Sync or tick tries again.
+- A trigger that fails is logged and fails nothing. The next LinkedIn Sync or tick tries again.
 
 Without both variables, Nando never wakes the run. The last fire and the run's activity are kept in `scheduled_task`, one document.
 
@@ -236,7 +236,7 @@ At every tick (Core's `/internal/tick`, every 5 minutes), before it sets aside f
 
 - **Faded.** An open Opportunity closes with Outcome `faded` once 30 days have passed with no new message (from either side) in its Recruiter's Conversations and no change to it through the Tools. One with no Recruiter counts only changes through the Tools. It keeps the Stage it had, for `career_reopen_opportunity`, which counts as a change.
 - **Late Reply.** A Suggested Reply of kind `answer` that answers a message more than 30 days old becomes kind `late`, and a `late_reply` Item is queued for the run to rewrite it from the late templates. A `follow_up` that answers a message more than 30 days old never turns late: it is dropped, with no Item, since a Late Reply apologises for the Owner's delay and a follow-up waits on the Recruiter's. By then its Opportunity has usually faded. A reply the run rewrote in the meantime is left alone, and so is one the Owner marked replied.
-- **Follow-up.** For an Opportunity in `in_process` or `offer`, each of its Recruiter's Conversations whose last message is the Owner's, at least 14 days and at most 30 days old, with no Suggested Reply, gets a `follow_up` Item. A Suggested Reply the Owner marked replied counts as the Owner's last message, sent at `markedRepliedAt`, until a Sync brings the real one; the run's follow-up then answers `markedRepliedAt` and replaces it. A message gets one at most, ever: not again if no run writes it and it is set aside, nor if it is dropped after 30 days, nor when a Sync later brings the message a mark stood for.
+- **Follow-up.** For an Opportunity in `in_process` or `offer`, each of its Recruiter's Conversations whose last message is the Owner's, at least 14 days and at most 30 days old, with no Suggested Reply, gets a `follow_up` Item. A Suggested Reply the Owner marked replied counts as the Owner's last message, sent at `markedRepliedAt`, until a LinkedIn Sync brings the real one; the run's follow-up then answers `markedRepliedAt` and replaces it. A message gets one at most, ever: not again if no run writes it and it is set aside, nor if it is dropped after 30 days, nor when a LinkedIn Sync later brings the message a mark stood for.
 
 ## Notifications
 
@@ -244,13 +244,13 @@ Core asks the Module at every tick (see [Core's API](../core/API.md)), and sends
 
 | When | Title / body | Opens | ID |
 | --- | --- | --- | --- |
-| **Looking**, every Item a Sync queued is done or set aside, and an `answer` Suggested Reply now answers a message it brought, within 48 hours of the Sync | "Recruiters waiting" / "N Recruiters are waiting for your reply" | `/career` | `career:replies:<sync id>` |
+| **Looking**, every Item a LinkedIn Sync queued is done or set aside, and an `answer` Suggested Reply now answers a message it brought, within 48 hours of the LinkedIn Sync | "Recruiters waiting" / "N Recruiters are waiting for your reply" | `/career` | `career:replies:<sync id>` |
 | **Not Looking**, Monday and Thursday in the 19:00 slot, when any Recruiter is waiting | the same | `/career` | `career:replies:<YYYY-MM-DD>` |
 | The 20:00 slot, for each Step on the next Day in an open Opportunity | "Tomorrow: \<Step kind\>" / "\<Company\>, \<HH:MM\>", or only the Company with no time | `/career/opportunities/{id}` | `career:step:<opportunity id>:<step id>:<YYYY-MM-DD>` |
-| A Sync reported `session_expired`: once for the first such report since the last Sync that read LinkedIn, as the Mac reports it again every hour, and only within 7 days of it | "Log in to LinkedIn again" / "Open the Mac and run the Sync's login" | `/career` | `career:sync-problem:<sync id>` |
-| No Sync has read LinkedIn for 36 hours, sent within the 7 days after that (a Sync that reported a problem doesn't count) | "No LinkedIn Sync since \<weekday\>" / "Check that the Mac is on and its Sync job is loaded" | `/career` | `career:no-sync:<last sync id>` |
+| A LinkedIn Sync reported `session_expired`: once for the first such report since the last LinkedIn Sync that read LinkedIn, as the Mac reports it again every hour, and only within 7 days of it | "Log in to LinkedIn again" / "Open the Mac and run the Sync's login" | `/career` | `career:sync-problem:<sync id>` |
+| No LinkedIn Sync has read LinkedIn for 36 hours, sent within the 7 days after that (a LinkedIn Sync that reported a problem doesn't count) | "No LinkedIn Sync since \<weekday\>" / "Check that the Mac is on and its Sync job is loaded" | `/career` | `career:no-sync:<last sync id>` |
 
-A Recruiter is waiting when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up` to a message at most 30 days old, not marked replied. A Sync whose only answers are marked replied causes none. Late Replies never cause a Notification, nor a reply about to turn late or be dropped: Core sends the tick's Notifications before the rules run. The Sync Notifications stop after 7 days, well within the 30 days Core remembers a sent ID, so none is sent twice. Once a Sync reads LinkedIn, the "no Sync" Notification can fire again only after a later 36-hour gap. Before the first Sync, there is none.
+A Recruiter is waiting when one of their Conversations has a Suggested Reply of kind `answer` or `follow_up` to a message at most 30 days old, not marked replied. A LinkedIn Sync whose only answers are marked replied causes none. Late Replies never cause a Notification, nor a reply about to turn late or be dropped: Core sends the tick's Notifications before the rules run. The LinkedIn Sync Notifications stop after 7 days, well within the 30 days Core remembers a sent ID, so none is sent twice. Once a LinkedIn Sync reads LinkedIn, the "no LinkedIn Sync" Notification can fire again only after a later 36-hour gap. Before the first LinkedIn Sync, there is none.
 
 ## Tools
 
@@ -269,7 +269,7 @@ Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)
 | Tool | Arguments | What it does |
 | --- | --- | --- |
 | `career_get_settings` | none | Answers `{"looking": bool}` |
-| `career_sync_status` | none | For the Mac's script, before it reads LinkedIn. Answers `{"due": bool, "since": "2025-01-01", "threads": [{"threadId", "newest", "ignored"}], "readThrough": bool}`. `due` follows the rules under Syncs. `since` is the oldest Day whose messages a Sync reads. `threads` lists every thread Nando holds, with when its newest message was sent, so that the script opens only threads with newer ones and never sends an ignored thread's messages. `readThrough` is `false` when the newest Sync that read LinkedIn stopped early, and `true` otherwise, or before any Sync (see Syncs) |
+| `career_sync_status` | none | For the Mac's script, before it reads LinkedIn. Answers `{"due": bool, "since": "2025-01-01", "threads": [{"threadId", "newest", "ignored"}], "readThrough": bool}`. `due` follows the rules under LinkedIn Syncs. `since` is the oldest Day whose messages a LinkedIn Sync reads. `threads` lists every thread Nando holds, with when its newest message was sent, so that the script opens only threads with newer ones and never sends an ignored thread's messages. `readThrough` is `false` when the newest LinkedIn Sync that read LinkedIn stopped early, and `true` otherwise, or before any LinkedIn Sync (see LinkedIn Syncs) |
 | `career_search` | `query` | Recruiters by name or organisation, Companies by name, and Opportunities by role or Company name, open or closed, ignoring case; and Recruiters by their `profileUrl`, which must match exactly, case included. Each Recruiter comes with their `conversations`, `[{"id", "hasSuggestedReply"}]`, so that a chat can read one with `career_get_conversation`, and the `opportunities` they brought, in short (`[]` for a Lead). Answers `{"recruiters", "companies": [{"id", "name"}], "opportunities": [Opportunity in short]}` |
 | `career_get_conversation` | `id` | Answers the Conversation |
 | `career_get_opportunity` | `id` | Answers the Opportunity, open or closed |
@@ -280,8 +280,8 @@ Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)
 
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `career_record_sync` | `threads`; `sync` on every batch after a Sync's first; `problem` only when the script couldn't read LinkedIn; `stoppedEarly` on a Sync's first batch when it stopped before reading every thread it had to | Records a Sync. Each thread is `{"threadId", "url", "person": {"name", "profileUrl"}, "messages": [{"id", "from", "sentAt", "text"}]}`, where `from` is `"owner"` or `"other"` and `id` is LinkedIn's message id, if the reader gave one. Each thread's new messages are added to its Conversation, which is made if new, and queue the run's work. A thread's `person` replaces the Conversation's, and a filed Conversation's Recruiter with no `profileUrl` takes the thread's: the first Syncs sent none. An ignored thread's messages are dropped. A message Nando already holds is skipped: the same `id`, or when either has none, the same `from`, `sentAt` and `text`. `problem` is `{"kind": "session_expired"}` when LinkedIn wants the Owner to log in again on the Mac, or `{"kind": "other", "text"}`. When it stores new messages, it wakes the run. A Sync sent in batches is one Sync: the first batch is sent without `sync`, and every later one with `sync` set to the id the first was answered with, which adds its threads to that Sync and answers the same id. `sync` is refused when Nando holds no such Sync, when that Sync reported a problem, when it started more than 10 minutes ago (a new run starts a Sync of its own), or together with `problem`, which is always a Sync of its own. `stoppedEarly: true` marks the Sync as stopped early, so that `career_sync_status` answers `readThrough: false`. It is refused together with `sync` and together with `problem`: the script sends it with the threads it read, or with none. Answers `{"sync": id, "stored": how many new messages were stored}` |
-| `career_list_work` | none | For the run: claims up to 5 Items for 15 minutes, of the kinds under The run's work. Answers `{"items": [{"id", "kind", "conversation", "recruiter"}], "looking", "profile", "liveSince"}`. `recruiter` is `null` for an unfiled Conversation, or the Recruiter with their other `conversations` and their `opportunities` (in short). `profile` is the Career Profile. `liveSince` is the time of the first Sync that read LinkedIn: nothing before it becomes an Opportunity |
+| `career_record_sync` | `threads`; `sync` on every batch after a LinkedIn Sync's first; `problem` only when the script couldn't read LinkedIn; `stoppedEarly` on a LinkedIn Sync's first batch when it stopped before reading every thread it had to | Records a LinkedIn Sync. Each thread is `{"threadId", "url", "person": {"name", "profileUrl"}, "messages": [{"id", "from", "sentAt", "text"}]}`, where `from` is `"owner"` or `"other"` and `id` is LinkedIn's message id, if the reader gave one. Each thread's new messages are added to its Conversation, which is made if new, and queue the run's work. A thread's `person` replaces the Conversation's, and a filed Conversation's Recruiter with no `profileUrl` takes the thread's: the first LinkedIn Syncs sent none. An ignored thread's messages are dropped. A message Nando already holds is skipped: the same `id`, or when either has none, the same `from`, `sentAt` and `text`. `problem` is `{"kind": "session_expired"}` when LinkedIn wants the Owner to log in again on the Mac, or `{"kind": "other", "text"}`. When it stores new messages, it wakes the run. A LinkedIn Sync sent in batches is one LinkedIn Sync: the first batch is sent without `sync`, and every later one with `sync` set to the id the first was answered with, which adds its threads to that LinkedIn Sync and answers the same id. `sync` is refused when Nando holds no such LinkedIn Sync, when that LinkedIn Sync reported a problem, when it started more than 10 minutes ago (a new run starts a LinkedIn Sync of its own), or together with `problem`, which is always a LinkedIn Sync of its own. `stoppedEarly: true` marks the LinkedIn Sync as stopped early, so that `career_sync_status` answers `readThrough: false`. It is refused together with `sync` and together with `problem`: the script sends it with the threads it read, or with none. Answers `{"sync": id, "stored": how many new messages were stored}` |
+| `career_list_work` | none | For the run: claims up to 5 Items for 15 minutes, of the kinds under The run's work. Answers `{"items": [{"id", "kind", "conversation", "recruiter"}], "looking", "profile", "liveSince"}`. `recruiter` is `null` for an unfiled Conversation, or the Recruiter with their other `conversations` and their `opportunities` (in short). `profile` is the Career Profile. `liveSince` is the time of the first LinkedIn Sync that read LinkedIn: nothing before it becomes an Opportunity |
 | `career_ignore_thread` | `conversationId` | The thread isn't about a role: its messages, person, URL, Recruiter and Suggested Reply are deleted, and only its thread ID stays, marked ignored. Does all its open Items. Answers the Conversation |
 | `career_file_conversation` | `conversationId`, and `recruiterId` or `recruiter`: `{"name", "profileUrl", "kind", "organisation"}` | Files the Conversation under an existing Recruiter, or a new one. A Recruiter with no `profileUrl`, new or existing, takes the Conversation's `person.profileUrl`, if it has one; a `profileUrl` the Recruiter has is never replaced. An ignored Conversation can't be filed. Does its `sort` Item. Answers `{"conversation", "recruiter"}` |
 | `career_set_suggested_reply` | `conversationId`, `text`, `language` (`ja` / `en`), `kind` (`answer` / `follow_up` / `late`), `answers`, `notes` (up to 3 `{"wrote", "natural", "why"}`) | Replaces the Conversation's Suggested Reply. `answers` is the `sentAt` of one of its messages: for an `answer` or a `late` one, the Recruiter's newest. A `follow_up` may instead answer the current Suggested Reply's `markedRepliedAt`. The new one isn't marked replied. Does its `reply`, `late_reply` or `follow_up` Item. Answers the Conversation |

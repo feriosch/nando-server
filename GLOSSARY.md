@@ -177,7 +177,7 @@ Claude's summary of a Company from public information, written when the Company'
 _Avoid_: Research, report, profile, dossier
 
 **Recruiter**:
-A person who contacts the Owner about roles, either from an agency or from the hiring Company itself. One Recruiter can bring many Opportunities.
+A person who contacts the Owner about roles, either from an agency or from the hiring Company itself, on LinkedIn or by email. One Recruiter can bring many Opportunities. Nando knows them by their LinkedIn profile and by the email addresses their filed Gmail threads came from.
 _Avoid_: Headhunter, agent, contact, HR
 
 **Lead**:
@@ -185,20 +185,24 @@ A Recruiter who has never brought the Owner an Opportunity. It is worked out fro
 _Avoid_: Prospect, cold contact, inactive recruiter
 
 **Conversation**:
-One message thread between the Owner and exactly one Recruiter, such as a LinkedIn conversation, of which Nando keeps a copy.
+One message thread between the Owner and exactly one Recruiter, of which Nando keeps a copy: a LinkedIn conversation, which a LinkedIn Sync brings, or a Gmail thread, which a Gmail Career Sync brings. A Recruiter can have both.
 _Avoid_: Thread, chat, inbox, message (for the whole thread)
 
 **Suggested Reply**:
-Claude's draft of the Owner's next message in a Conversation, written to sound like the Owner: an answer when the last message is the Recruiter's, or a follow-up when an open Opportunity has had no message for 14 days after the Owner's. It follows whether the Owner is Looking. Only the Owner ever sends it; Claude never sends anything. It is gone from the Owner's lists once they mark it replied in the app, and for good once a Sync sees the Owner's reply.
+Claude's draft of the Owner's next message in a Conversation, written to sound like the Owner: an answer when the last message is the Recruiter's, or a follow-up when an open Opportunity has had no message for 14 days after the Owner's. It follows whether the Owner is Looking. Only the Owner ever sends it, or the Core Assistant on their yes for a Gmail Conversation; the Career Assistant never sends anything. It is gone from the Owner's lists once they mark it replied in the app, and for good once a LinkedIn Sync or a Gmail Career Sync sees the Owner's reply.
 _Avoid_: Draft, auto-reply, response, answer
 
 **Late Reply**:
 A Suggested Reply to a Recruiter's message more than 30 days old, apologising for the delay. Late Replies are kept apart from the others so that they never bury new ones.
 _Avoid_: Revival, catch-up, old reply
 
-**Sync**:
-One pass in which Nando picks up the Owner's new LinkedIn messages from the Owner's MacBook, at most twice a Day. A Day on which the MacBook is never on has no Sync.
-_Avoid_: Pull, fetch, scrape, import, read
+**LinkedIn Sync**:
+One pass in which Nando picks up the Owner's new LinkedIn messages from the Owner's MacBook, at most twice a Day. A Day on which the MacBook is never on has no LinkedIn Sync.
+_Avoid_: Sync (alone), pull, fetch, scrape, import, read
+
+**Gmail Career Sync**:
+One pass in which the Career Assistant files into Nando the new mail the Owner's Gmail holds under the label `Career`, once a Day at the time in Career's settings, or whenever the Owner asks. It reads only labeled threads, and never LinkedIn.
+_Avoid_: Mail Sync, Gmail Sync, Sync (alone), import, scan
 
 **Career Profile**:
 What Claude knows about the Owner's working life, to judge Opportunities and write Suggested Replies: their resumes, current situation, what they are looking for and their deal-breakers.
@@ -257,7 +261,7 @@ The Assistant for Core, and for anything the Owner asks that belongs to no Modul
 _Avoid_: Nando Assistant, general bot, main bot
 
 **Outside Service**:
-An app outside Nando that serves the Owner's whole life rather than one Module: Google Calendar and Gmail so far, and perhaps documents later. Every Assistant reads the Outside Services, and only the Core Assistant changes the Owner's Gmail.
+An app outside Nando that serves the Owner's whole life rather than one Module: Google Calendar and Gmail so far, and perhaps documents later. Every Assistant reads the Outside Services, and only the Core Assistant changes the Owner's Gmail, but for the drafts the Career Assistant creates in `Career` threads (ADR 0010).
 _Avoid_: Integration, external app, Connector (that is the reverse: an outside app using Nando)
 
 **Note**:

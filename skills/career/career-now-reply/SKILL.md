@@ -1,12 +1,12 @@
 ---
 name: career-now-reply
 description: >-
-  Answer a Recruiter's latest message right now, one the Owner pastes or screenshots from LinkedIn and no Sync has brought to Nando yet: read it with the whole past Conversation, the Opportunity, the Career Profile and Looking, find free slots in Google Calendar when they ask to meet, and write the reply in the Owner's voice for them to copy. Use whenever the Owner shares a new message from a Recruiter and wants to answer it (e.g. "Tanaka just wrote back, help me answer", a LinkedIn screenshot with "what do I say?"), even if they don't mention Nando. To steer the Suggested Reply Nando already holds, follow `career-draft-reply` instead.
+  Answer a Recruiter's latest message right now, one the Owner pastes or screenshots from LinkedIn and no LinkedIn Sync has brought to Nando yet: read it with the whole past Conversation, the Opportunity, the Career Profile and Looking, find free slots in Google Calendar when they ask to meet, and write the reply in the Owner's voice for them to copy. Use whenever the Owner shares a new message from a Recruiter and wants to answer it (e.g. "Tanaka just wrote back, help me answer", a LinkedIn screenshot with "what do I say?"), even if they don't mention Nando. To steer the Suggested Reply Nando already holds, follow `career-draft-reply` instead.
 ---
 
 # Answer the latest message now
 
-The Owner sends every reply on LinkedIn themselves. A Recruiter has written again before the next Sync, and the Owner wants to answer straight away. You bring what a plain chat lacks, through the Career Tools of the Nando Connector: the whole past Conversation, the Opportunity, the Career Profile and whether the Owner is Looking. The reply you write lives only in this chat: the next Sync brings the Recruiter's message, with its exact time, and the Owner's answer.
+The Owner sends every reply on LinkedIn themselves. A Recruiter has written again before the next LinkedIn Sync, and the Owner wants to answer straight away. You bring what a plain chat lacks, through the Career Tools of the Nando Connector: the whole past Conversation, the Opportunity, the Career Profile and whether the Owner is Looking. The reply you write lives only in this chat: the next LinkedIn Sync brings the Recruiter's message, with its exact time, and the Owner's answer.
 
 ## 1. Read the latest message
 
