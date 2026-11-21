@@ -81,6 +81,16 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 			due = append(due, waitingNotification(coremodel.NotificationID(notificationArea, "replies", day), waiting))
 		}
 	}
+	if sync := settings.GmailCareerSync; sync.Enabled && coreutils.IsAt(slot, sync.Time) {
+		// An ask for work: it waits in the Career Talk and wakes a run
+		// (ADR 0010).
+		due = append(due, coremodel.Notification{
+			ID:    coremodel.NotificationID(notificationArea, "gmail-career-sync", coremodel.DayOf(slot, slot.Location())),
+			Title: "📨 Gmail Career Sync",
+			Body:  "Filing your Career mail…",
+			Asks:  true,
+		})
+	}
 	problems, err := s.syncProblems(ctx, slot.Location())
 	if err != nil {
 		return nil, err

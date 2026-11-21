@@ -5,10 +5,11 @@ The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Oppor
 ## Settings
 
 ```json
-{ "looking": false }
+{ "looking": false, "gmailCareerSync": { "enabled": false, "time": "08:00" } }
 ```
 
 - `looking`: whether the Owner is Looking for a new role right now. It sets the tone of every Suggested Reply. `false` until the Owner first changes it.
+- `gmailCareerSync`: the daily ask for a Gmail Career Sync ([ADR 0010](../../docs/adr/0010-recruiters-gmail-through-a-label.md)), off at 08:00 until the Owner turns it on. `time` is `"HH:MM"` on the hour or half hour, in the Owner Time Zone.
 
 ### `GET /api/career/settings`
 
@@ -16,7 +17,7 @@ The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Oppor
 
 ### `PUT /api/career/settings`
 
-Replaces the settings. `204`. `400` when `looking` is missing or isn't `true` or `false`.
+Replaces the settings. `gmailCareerSync` may be left out, which keeps the saved one, so a web app that doesn't know it yet can't turn it off. `204`. `400` when `looking` is missing or isn't `true` or `false`, or `gmailCareerSync.time` isn't on the hour or half hour.
 
 ## What the app reads
 
@@ -251,6 +252,7 @@ Core asks the Module at every tick (see [Core's API](../core/API.md)), and sends
 | **Looking**, every Item a LinkedIn Sync queued is done or set aside, and an `answer` Suggested Reply now answers a message it brought, within 48 hours of the LinkedIn Sync | "Recruiters waiting" / "N Recruiters are waiting for your reply" | `/career` | `career:replies:<sync id>` |
 | **Not Looking**, Monday and Thursday in the 19:00 slot, when any Recruiter is waiting | the same | `/career` | `career:replies:<YYYY-MM-DD>` |
 | The 20:00 slot, for each Step on the next Day in an open Opportunity | "Tomorrow: \<Step kind\>" / "\<Company\>, \<HH:MM\>", or only the Company with no time | `/career/opportunities/{id}` | `career:step:<opportunity id>:<step id>:<YYYY-MM-DD>` |
+| The Gmail Career Sync's time, while it is `enabled`. It **asks** the Career Assistant for work (Core's asking Notification): it waits in the Career Talk and wakes a run, which files the mail labeled `Career` | "📨 Gmail Career Sync" / "Filing your Career mail…" | none | `career:gmail-career-sync:<YYYY-MM-DD>` |
 | A LinkedIn Sync reported `session_expired`: once for the first such report since the last LinkedIn Sync that read LinkedIn, as the Mac reports it again every hour, and only within 7 days of it | "Log in to LinkedIn again" / "Open the Mac and run the Sync's login" | `/career` | `career:sync-problem:<sync id>` |
 | No LinkedIn Sync has read LinkedIn for 36 hours, sent within the 7 days after that (a LinkedIn Sync that reported a problem doesn't count) | "No LinkedIn Sync since \<weekday\>" / "Check that the Mac is on and its Sync job is loaded" | `/career` | `career:no-sync:<last sync id>` |
 
@@ -288,6 +290,8 @@ Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)
 | `career_list_work` | none | For the run: claims up to 5 Items for 15 minutes, of the kinds under The run's work. Answers `{"items": [{"id", "kind", "conversation", "recruiter"}], "looking", "profile", "liveSince"}`. `recruiter` is `null` for an unfiled Conversation, or the Recruiter with their other `conversations` and their `opportunities` (in short). `profile` is the Career Profile. `liveSince` is the time of the first LinkedIn Sync that read LinkedIn: nothing before it becomes an Opportunity |
 | `career_ignore_thread` | `conversationId` | The thread isn't about a role: its messages, person, URL, subject, Recruiter and Suggested Reply are deleted, and only its thread ID stays, marked ignored. Does all its open Items. Answers the Conversation |
 | `career_file_conversation` | `conversationId`, and `recruiterId` or `recruiter`: `{"name", "profileUrl", "kind", "organisation"}` | Files the Conversation under an existing Recruiter, or a new one. A Recruiter with no `profileUrl`, new or existing, takes the Conversation's `person.profileUrl`, if it has one; a `profileUrl` the Recruiter has is never replaced. A Gmail Conversation's `person.email` is added to the Recruiter's `emails`, so later threads from it are filed to them. An ignored Conversation can't be filed. Does its `sort` Item. Answers `{"conversation", "recruiter"}` |
+| `career_start_gmail_career_sync` | none | Starts a Gmail Career Sync's pass, recorded in `gmail_passes`, apart from the LinkedIn Syncs, so it never changes `career_sync_status`. Answers `{"passId", "since"}`: read every labeled thread Nando doesn't hold, whatever its date, and the held ones with mail since `since`, which is when the last finished pass started, or 2025-01-01 before any has finished |
+| `career_finish_gmail_career_sync` | `passId` | Finishes the pass once every thread it had to read is read. A pass never finished doesn't move `since`. Answers `{}` |
 | `career_add_gmail_thread` | `threadId`, `url`, `subject`, `person`: `{"name", "email"}`, `messages`: `[{"gmailId", "from", "sentAt", "text", "attachments"}]` | For a Gmail Career Sync ([ADR 0010](../../docs/adr/0010-recruiters-gmail-through-a-label.md)): makes the thread a Gmail Conversation the first time, and later stores only the messages it doesn't hold, by `gmailId`. A thread from an address a Recruiter is known by is filed to them. An ignored thread stores nothing. The Owner's message newer than the one the Suggested Reply answers removes it, as on LinkedIn. It queues no Items: the Career Assistant files and answers in its own pass. Gmail threads never appear in `career_sync_status`. Answers `{"conversation", "stored", "recruiter"}`, `recruiter` being the one it is filed under, or `null` |
 | `career_remove_recruiter_email` | `recruiterId`, `email` | Forgets an address the Recruiter was known by, such as an agency's shared inbox; later threads from it aren't filed to them. Conversations already filed stay filed. Answers the Recruiter |
 | `career_set_suggested_reply` | `conversationId`, `text`, `language` (`ja` / `en`), `kind` (`answer` / `follow_up` / `late`), `answers`, `notes` (up to 3 `{"wrote", "natural", "why"}`) | Replaces the Conversation's Suggested Reply. `answers` is the `sentAt` of one of its messages: for an `answer` or a `late` one, the Recruiter's newest. A `follow_up` may instead answer the current Suggested Reply's `markedRepliedAt`. The new one isn't marked replied. Does its `reply`, `late_reply` or `follow_up` Item. Answers the Conversation |

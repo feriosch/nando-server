@@ -35,6 +35,10 @@ func (s *SettingsService) Settings(ctx context.Context) (model.Settings, error) 
 	if errors.Is(err, coreutils.ErrNotFound) {
 		return model.DefaultSettings, nil
 	}
+	if err == nil && settings.GmailCareerSync.Time == "" {
+		// Saved before the Gmail Career Sync existed: off, at its default time.
+		settings.GmailCareerSync = model.DefaultSettings.GmailCareerSync
+	}
 	return settings, err
 }
 
@@ -44,10 +48,14 @@ func (s *SettingsService) getSettings(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	coreutils.WriteJSON(w, http.StatusOK, model.SettingsJSON{Looking: &settings.Looking})
+	coreutils.WriteJSON(w, http.StatusOK, model.SettingsJSON{
+		Looking:         &settings.Looking,
+		GmailCareerSync: &model.GmailCareerSyncJSON{Enabled: settings.GmailCareerSync.Enabled, Time: settings.GmailCareerSync.Time},
+	})
 }
 
-// putSettings replaces all of the settings.
+// putSettings replaces all of the settings, keeping the saved Gmail Career
+// Sync when the body leaves it out.
 func (s *SettingsService) putSettings(w http.ResponseWriter, r *http.Request) {
 	var j model.SettingsJSON
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
@@ -58,7 +66,20 @@ func (s *SettingsService) putSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "looking must be true or false", http.StatusBadRequest)
 		return
 	}
-	if err := s.settings.Save(r.Context(), model.Settings{Looking: *j.Looking}); err != nil {
+	saved, err := s.Settings(r.Context())
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	sync := saved.GmailCareerSync
+	if g := j.GmailCareerSync; g != nil {
+		if !coreutils.IsHalfHour(g.Time) {
+			http.Error(w, "gmailCareerSync.time must be HH:MM on the hour or half hour", http.StatusBadRequest)
+			return
+		}
+		sync = model.GmailCareerSync{Enabled: g.Enabled, Time: g.Time}
+	}
+	if err := s.settings.Save(r.Context(), model.Settings{Looking: *j.Looking, GmailCareerSync: sync}); err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
