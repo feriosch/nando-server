@@ -71,6 +71,10 @@ type TalkMessage struct {
 	// Files are the message's files, such as a PDF. Nando keeps only
 	// Telegram's IDs for them, never the files.
 	Files []File `bson:"files,omitempty"`
+	// Note is what the run that wrote this reply left for later runs, such as
+	// the ID of a draft the Owner was shown (ADR 0009). It is never sent to
+	// the Owner. Set only on the first message of an Assistant's reply.
+	Note string `bson:"note,omitempty"`
 	// TelegramMessageID is the message's id in the Owner's chat with the bot.
 	TelegramMessageID int64 `bson:"telegramMessageId"`
 	// State is set only for the Owner's messages.

@@ -409,11 +409,12 @@ Served to every Connector while any bot has a token (ADR 0004). Each one shows t
 - **`messenger_claim_talk`** (`assistant` optional): claims the Talk for 15 minutes and returns:
   - `assistant`, and `skill` (`skills/assistants/<assistant>/SKILL.md`);
   - `summary`;
-  - `messages` (`from`, `at`, `text`; `waiting` on those waiting, `failed` on those no run answered, `photos`, each photo's `id`, and `files`, each PDF's `id` and `name`, on those with them);
+  - `messages` (`from`, `at`, `text`; `note` on a reply whose run left one; `waiting` on those waiting, `failed` on those no run answered, `photos`, each photo's `id`, and `files`, each PDF's `id` and `name`, on those with them);
   - `otherAssistants`, those with a bot.
 
   Without `assistant`, it takes the Talk whose oldest waiting message is oldest; with it, only that Assistant's. `{}` means nothing waits, and with `assistant` it records that the run stopped. A claim that lapses leaves the Talk claimable again, until its third.
-- **`messenger_reply`** (`assistant`, `text`): sends `text` as plain text, split at the last line break that fits Telegram's 4096 characters. It answers the messages waiting when the Talk was claimed, removes their 👀, and releases the claim. Messages that came since keep waiting. It answers `{"answered": n}`.
+- **`messenger_reply`** (`assistant`, `text`, `note` optional): sends `text` as plain text, split at the last line break that fits Telegram's 4096 characters. It answers the messages waiting when the Talk was claimed, removes their 👀, and releases the claim. Messages that came since keep waiting. It answers `{"answered": n}`.
+  - `note` is a **Note** ([ADR 0009](../../docs/adr/0009-gmail-for-the-core-assistant.md)): what a later run needs and the Owner shouldn't read, such as a draft's ID. Nando keeps it in the Talk, on the reply's first message, and never sends it to Telegram. Later claims show it. It may be at most 1000 characters; a longer one is a Tool error, and nothing is sent.
 - **`messenger_get_photo`** (`assistant`, `id`): downloads the photo with `id`, from the claim's `photos`, from Telegram as that Assistant's bot, and answers it as an image (`image/jpeg`). It is read-only. A photo Telegram doesn't have, or no longer keeps, is a Tool error saying to ask the Owner for it again; any other failure, such as a timeout, says to try once more. Neither includes the bot token. Nando downloads up to 5 MB.
 - **`messenger_get_file`** (`assistant`, `id`, `pages` optional, such as `3` or `11-20`): downloads the PDF with `id`, from the claim's `files`, from Telegram as that Assistant's bot, and reads it with poppler's `pdfinfo`, `pdftotext` and `pdftoppm`. Each runs as its own process, for at most 30 seconds. It is read-only.
   - It answers `pageCount` and `pages`, the pages read (the first 10 when `pages` isn't given, and never more than 10), each with its `page` number and `text`.

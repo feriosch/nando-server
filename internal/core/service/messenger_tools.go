@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/feriosch/nando-server/internal/core/model"
 )
@@ -49,19 +50,23 @@ func (s *MessengerService) Tools() []model.Tool {
 		{
 			Name: "messenger_reply",
 			Description: "Sends text to the Owner as the Assistant, in its chat, and marks the messages waiting when its Talk " +
-				"was claimed as answered. Messages that came since stay waiting: claim the Talk again with assistant to get them.",
+				"was claimed as answered. Messages that came since stay waiting: claim the Talk again with assistant to get them. " +
+				"A note is kept with the reply for later runs, which see it in messenger_claim_talk, and is never sent to the Owner.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"assistant":{"type":"string","description":"The Assistant the run is, as messenger_claim_talk said."},` +
-				`"text":{"type":"string","description":"The reply, as plain text."}},"required":["assistant","text"]}`),
+				`"text":{"type":"string","description":"The reply, as plain text."},` +
+				`"note":{"type":"string","description":"What a later run needs and the Owner shouldn't read, such as the ID of a draft shown in text; at most 1000 characters."}},` +
+				`"required":["assistant","text"]}`),
 			Handle: func(ctx context.Context, arguments json.RawMessage) (any, error) {
 				var args struct {
 					Assistant string `json:"assistant"`
 					Text      string `json:"text"`
+					Note      string `json:"note"`
 				}
 				if err := json.Unmarshal(arguments, &args); err != nil {
 					return nil, err
 				}
-				return s.reply(ctx, args.Assistant, args.Text)
+				return s.reply(ctx, args.Assistant, args.Text, strings.TrimSpace(args.Note))
 			},
 		},
 		{
@@ -112,7 +117,7 @@ func (s *MessengerService) Tools() []model.Tool {
 				"blank, as when the Owner asks for a new chat; with it, it opens with the summary, as when the Talk grew too long.",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"assistant":{"type":"string","description":"The Assistant the run is."},` +
-				`"summary":{"type":"string","description":"What the new Talk opens with: open threads, decisions, anything half done."}},` +
+				`"summary":{"type":"string","description":"What the new Talk opens with: open threads, decisions, anything half done, and any note a later run still needs, such as a draft awaiting the Owner's yes."}},` +
 				`"required":["assistant"]}`),
 			Handle: func(ctx context.Context, arguments json.RawMessage) (any, error) {
 				var args struct {
@@ -368,15 +373,22 @@ type replyJSON struct {
 	Answered int `json:"answered"`
 }
 
-// reply sends text to the Owner as assistant, keeps it in assistant's Talk,
-// and answers the messages waiting when the Talk was claimed.
-func (s *MessengerService) reply(ctx context.Context, assistant, text string) (replyJSON, error) {
+// maxNote is the longest Note a run may leave with a reply, in characters.
+const maxNote = 1000
+
+// reply sends text to the Owner as assistant, keeps it in assistant's Talk
+// with note, which is never sent, and answers the messages waiting when the
+// Talk was claimed.
+func (s *MessengerService) reply(ctx context.Context, assistant, text, note string) (replyJSON, error) {
 	token, ok := s.bot(assistant)
 	if !ok {
 		return replyJSON{}, fmt.Errorf("there is no Assistant %q with a bot", assistant)
 	}
 	if strings.TrimSpace(text) == "" {
 		return replyJSON{}, errors.New("text is empty")
+	}
+	if n := utf8.RuneCountInString(note); n > maxNote {
+		return replyJSON{}, fmt.Errorf("note is %d characters; it may be at most %d", n, maxNote)
 	}
 	var replies []model.TalkMessage
 	for _, part := range splitMessage(text) {
@@ -394,9 +406,14 @@ func (s *MessengerService) reply(ctx context.Context, assistant, text string) (r
 			log.Printf("messenger: send the rest of a reply: %v", err)
 			break
 		}
-		replies = append(replies, model.TalkMessage{
+		reply := model.TalkMessage{
 			From: model.FromAssistant, At: s.now(), Text: part, TelegramMessageID: sent.MessageID,
-		})
+		}
+		if len(replies) == 0 {
+			// On the first part only: the reply is one answer, however it was split.
+			reply.Note = note
+		}
+		replies = append(replies, reply)
 	}
 	// Recorded before the claim is released, so that a message coming in
 	// between doesn't wake a second run while this one looks again.
@@ -450,6 +467,8 @@ type messageJSON struct {
 	At      time.Time         `json:"at"`
 	Text    string            `json:"text"`
 	Waiting bool              `json:"waiting,omitempty"`
+	// Note is what an earlier run left with its reply, for later runs.
+	Note string `json:"note,omitempty"`
 	// Failed marks a message no run answered, which the Owner was asked to
 	// send again.
 	Failed bool `json:"failed,omitempty"`
@@ -551,7 +570,7 @@ func (s *MessengerService) claimAnswer(talk model.Talk) claimJSON {
 	}
 	for _, m := range talk.Messages {
 		message := messageJSON{
-			From: m.From, At: m.At, Text: m.Text,
+			From: m.From, At: m.At, Text: m.Text, Note: m.Note,
 			Waiting: m.State == model.MessageWaiting, Failed: m.State == model.MessageFailed,
 		}
 		for _, p := range m.Photos {
