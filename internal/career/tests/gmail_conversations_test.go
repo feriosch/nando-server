@@ -300,3 +300,15 @@ func TestARecruitersPageIdentifiesEachGmailMessage(t *testing.T) {
 		t.Errorf("page messages = %+v; want g1 (with its attachment) and g2, each with its id", m)
 	}
 }
+
+func TestSearchFindsARecruiterByTheirEmailAddress(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	run := phone.connect()
+	_, recruiter := fileHays(t, run, mail("g1", "other", at(-3, 10, 15), "Hello!"))
+
+	got := callTool[searchJSON](t, run, "career_search", map[string]any{"query": "Yui.Tanaka@hays.example"})
+
+	if len(got.Recruiters) != 1 || got.Recruiters[0].ID != recruiter.ID {
+		t.Errorf("career_search by address = %+v; want %s", got.Recruiters, recruiter.ID)
+	}
+}
