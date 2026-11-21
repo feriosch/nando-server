@@ -51,7 +51,8 @@ func (s *NotificationsService) SetMessenger(m notifier) {
 
 // NewNotifications returns the NotificationsService, accepting only ticks
 // whose bearer token verifySchedulerToken accepts, and with now as its clock.
-// Core's own provider, the Weigh-in reminder, is already added.
+// Core's own providers, the Weigh-in reminder and the Mail Digest, are
+// already added.
 func NewNotifications(
 	sentNotifications model.SentNotificationsRepository,
 	settings *SettingsService,
@@ -64,7 +65,7 @@ func NewNotifications(
 	return &NotificationsService{
 		sentNotifications: sentNotifications,
 		settings:          settings,
-		providers:         []model.NotificationProvider{weighInReminder{settings: settings.Settings}},
+		providers:         []model.NotificationProvider{weighInReminder{settings: settings.Settings}, mailDigest{settings: settings.Settings}},
 
 		verifySchedulerToken: verifySchedulerToken,
 		now:                  now,

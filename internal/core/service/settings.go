@@ -39,6 +39,10 @@ func (s *SettingsService) Settings(ctx context.Context) (model.Settings, error) 
 	if errors.Is(err, utils.ErrNotFound) {
 		return model.DefaultSettings, nil
 	}
+	if err == nil && settings.MailDigest.Time == "" {
+		// Saved before the Mail Digest existed: it is off, at its default time.
+		settings.MailDigest = model.DefaultSettings.MailDigest
+	}
 	return settings, err
 }
 
@@ -54,6 +58,10 @@ func toSettingsJSON(settings model.Settings) model.SettingsJSON {
 			Enabled: settings.WeighInReminder.Enabled,
 			Weekday: strings.ToLower(settings.WeighInReminder.Weekday.String()),
 			Time:    settings.WeighInReminder.Time,
+		},
+		MailDigest: &model.MailDigestJSON{
+			Enabled: settings.MailDigest.Enabled,
+			Time:    settings.MailDigest.Time,
 		},
 	}
 }
@@ -77,8 +85,9 @@ var weekdays = func() map[string]time.Weekday {
 }()
 
 // fromSettingsJSON turns the settings the API was sent into Settings, or
-// explains what's wrong with them.
-func fromSettingsJSON(j model.SettingsJSON) (model.Settings, error) {
+// explains what's wrong with them. saved gives what j leaves out: the Mail
+// Digest, which a web app that doesn't know it yet doesn't send.
+func fromSettingsJSON(j model.SettingsJSON, saved model.Settings) (model.Settings, error) {
 	// "" and "Local" load too, as UTC and the server's own zone.
 	if _, err := time.LoadLocation(j.TimeZone); err != nil || j.TimeZone == "" || j.TimeZone == "Local" {
 		return model.Settings{}, errors.New("timeZone must be an IANA time zone such as Asia/Tokyo")
@@ -93,8 +102,16 @@ func fromSettingsJSON(j model.SettingsJSON) (model.Settings, error) {
 	if !utils.IsHalfHour(j.WeighInReminder.Time) {
 		return model.Settings{}, errors.New("weighInReminder.time must be HH:MM on the hour or half hour")
 	}
+	digest := saved.MailDigest
+	if j.MailDigest != nil {
+		if !utils.IsHalfHour(j.MailDigest.Time) {
+			return model.Settings{}, errors.New("mailDigest.time must be HH:MM on the hour or half hour")
+		}
+		digest = model.MailDigest{Enabled: j.MailDigest.Enabled, Time: j.MailDigest.Time}
+	}
 	settings := model.Settings{
-		TimeZone: j.TimeZone,
+		TimeZone:   j.TimeZone,
+		MailDigest: digest,
 		WeighInReminder: model.WeighInReminder{
 			Enabled: j.WeighInReminder.Enabled,
 			Weekday: weekday,
@@ -107,14 +124,20 @@ func fromSettingsJSON(j model.SettingsJSON) (model.Settings, error) {
 	return settings, nil
 }
 
-// putSettings replaces all of the settings.
+// putSettings replaces all of the settings, keeping the saved Mail Digest
+// when the body leaves it out.
 func (s *SettingsService) putSettings(w http.ResponseWriter, r *http.Request) {
 	var j model.SettingsJSON
 	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
 		http.Error(w, "the body isn't settings", http.StatusBadRequest)
 		return
 	}
-	settings, err := fromSettingsJSON(j)
+	saved, err := s.Settings(r.Context())
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	settings, err := fromSettingsJSON(j, saved)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
