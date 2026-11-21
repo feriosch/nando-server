@@ -125,8 +125,13 @@ func TestOnlyTheCoreAssistantChangesMail(t *testing.T) {
 	for _, folder := range folders {
 		t.Run(folder, func(t *testing.T) {
 			text := readSkill(t, folder, "assistant-"+folder)
-			if found := gmailChanges.FindAllString(text, -1); len(found) > 0 {
-				t.Errorf("the %s skill names %v, but only the Core Assistant changes mail", folder, found)
+			for _, found := range gmailChanges.FindAllString(text, -1) {
+				// The Career Assistant drafts in Career threads, and never sends
+				// (ADR 0010).
+				if folder == "career" && (found == "`create_draft`" || found == "`update_draft`") {
+					continue
+				}
+				t.Errorf("the %s skill names %s, but only the Core Assistant changes Gmail beyond the Career Assistant's drafts", folder, found)
 			}
 			if !strings.Contains(text, "the Owner's Gmail") {
 				t.Errorf("the %s skill never says it reads the Owner's Gmail, or that the Core Assistant changes it", folder)
@@ -147,5 +152,23 @@ func TestTheCoreSkillAnswersTheGmailDigestChangingNothingAndTheTalkSkillKnowsNan
 	}
 	if talk := readSkill(t, "talk", "assistant-talk"); !strings.Contains(talk, "`nando`") {
 		t.Error("the Talk skill never says what a message `from` `nando` is")
+	}
+}
+
+func TestTheCareerAssistantDraftsInGmailAndNeverSends(t *testing.T) {
+	text := readSkill(t, "career", "assistant-career")
+	for _, want := range []string{"`create_draft`", "`replyToMessageId`", "`note`", "never send"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the Career skill never says %s: it drafts a Gmail Conversation's reply in its thread, notes the draft, and never sends", want)
+		}
+	}
+}
+
+func TestTheCoreAssistantSendsTheCareerAssistantsDraftOnlyOnTheOwnersYes(t *testing.T) {
+	text := readSkill(t, "core", "assistant-core")
+	for _, want := range []string{"Career Assistant's draft", "`list_drafts`"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the Core skill never says %s: it finds the Career Assistant's draft, shows it, and sends it on the Owner's yes", want)
+		}
 	}
 }
