@@ -128,17 +128,17 @@ func TestOnlyTheCoreAssistantChangesMail(t *testing.T) {
 			if found := gmailChanges.FindAllString(text, -1); len(found) > 0 {
 				t.Errorf("the %s skill names %v, but only the Core Assistant changes mail", folder, found)
 			}
-			if !strings.Contains(text, "the Owner's mail") {
-				t.Errorf("the %s skill never says it reads the Owner's mail, or that the Core Assistant changes it", folder)
+			if !strings.Contains(text, "the Owner's Gmail") {
+				t.Errorf("the %s skill never says it reads the Owner's Gmail, or that the Core Assistant changes it", folder)
 			}
 		})
 	}
 }
 
-func TestTheCoreSkillAnswersTheMailDigestChangingNothingAndTheTalkSkillKnowsNandosAsks(t *testing.T) {
+func TestTheCoreSkillAnswersTheGmailDigestChangingNothingAndTheTalkSkillKnowsNandosAsks(t *testing.T) {
 	core := readSkill(t, "core", "assistant-core")
 	for _, want := range []string{
-		"📬 Mail Digest", // the ask, as Nando sends it
+		"📬 Gmail Digest", // the ask, as Nando sends it
 		"The digest run changes nothing",
 	} {
 		if !strings.Contains(core, want) {

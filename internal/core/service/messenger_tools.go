@@ -682,7 +682,7 @@ func (s *MessengerService) RunAtTick(ctx context.Context) error {
 const stuck = "Sorry, something went wrong and I couldn't answer that. Please send it again."
 
 // stuckAsk is what a bot tells the Owner when only Nando's ask for work, such
-// as the Mail Digest, failed.
+// as the Gmail Digest, failed.
 const stuckAsk = "Sorry, something went wrong and I couldn't do that. Ask me if you still want it."
 
 // failStuck fails assistant's waiting messages if MaxClaims runs claimed them

@@ -24,10 +24,24 @@ type settings struct {
 	collection *mongo.Collection
 }
 
+// stored is the settings document as it may be stored: the Gmail Digest was
+// first saved as mailDigest (#150), before it was renamed (#157).
+type stored struct {
+	model.Settings `bson:",inline"`
+	MailDigest     *model.GmailDigest `bson:"mailDigest,omitempty"`
+}
+
 func (r settings) Find(ctx context.Context) (model.Settings, error) {
-	var s model.Settings
-	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: settingsID}}).Decode(&s)
-	return s, utils.NotFound(err)
+	var s stored
+	if err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: settingsID}}).Decode(&s); err != nil {
+		return model.Settings{}, utils.NotFound(err)
+	}
+	if s.GmailDigest.Time == "" && s.MailDigest != nil {
+		// Saved under its old name; Save replaces the document, so the next
+		// save stores it under the new one.
+		s.GmailDigest = *s.MailDigest
+	}
+	return s.Settings, nil
 }
 
 func (r settings) Save(ctx context.Context, s model.Settings) error {

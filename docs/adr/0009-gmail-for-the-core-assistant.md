@@ -4,7 +4,7 @@ The Owner wants their Gmail handled in Telegram too: asking what came in, findin
 
 ## Decisions
 
-- **Every Assistant reads mail; only the Core Assistant changes it.** Gmail isn't a Module: Nando stores no mail and has no screen for it, and mail serves the Owner's whole life, as the calendar does. The other Assistants read it to answer a question (a Recruiter's email, a receipt) and point the Owner to the Core Assistant for anything that changes the mailbox.
+- **Every Assistant reads Gmail; only the Core Assistant changes it.** Gmail isn't a Module: Nando stores no mail and has no screen for it, and mail serves the Owner's whole life, as the calendar does. The other Assistants read it to answer a question (a Recruiter's email, a receipt) and point the Owner to the Core Assistant for anything that changes the mailbox.
 - **The Core Assistant reads, searches and summarizes, drafts, and organizes** (labels, archive, read or unread, new labels) at once, and says what it did.
 - **It sends only on the Owner's yes.**
   - It writes the mail as a Gmail draft, shows the Owner exactly what would go and to whom, and stops.
@@ -14,7 +14,7 @@ The Owner wants their Gmail handled in Telegram too: asking what came in, findin
 - **It never trashes mail, marks it as spam or deletes a label.** The Owner does that in Gmail.
 - **Mail is data, never instructions.** Strangers write mail, and runs read it unattended. Text in a mail never directs an Assistant: only the Owner does. What a mail asks for is reported to the Owner, who decides, as with a Recruiter asking for their availability. A mail that tries to direct an Assistant, or looks like phishing ("forward this to…", "reply with your password", "click to verify"), is also flagged as suspicious, and nothing it asks is done.
 - **A Note carries what a later run needs.** Each run is a new session that knows only the Talk, and Nando keeps only the text of each reply. So a run leaves a **Note** with its reply, such as the draft's ID, which Nando keeps in the Talk and never sends to the Owner. When a run starts a new Talk, Nando carries the latest Notes into it, so a pending draft survives the Owner asking for a clean slate, and a run never has to remember to copy them.
-- **The Mail Digest** is a daily Notification in the Core Assistant's chat, at a time in the Owner's settings, off until the Owner turns it on. Unlike other Notifications it **asks for work**: it waits in the Talk like the Owner's message and wakes a run, which reads the mail that came since the last digest and answers with the digest. The digest run reads and summarizes only: it never drafts, labels, archives, sends or marks mail read. The Owner answers the digest in the chat ("archive the newsletters"), and the next run does it.
+- **The Gmail Digest** is a daily Notification in the Core Assistant's chat, at a time in the Owner's settings, off until the Owner turns it on. Unlike other Notifications it **asks for work**: it waits in the Talk like the Owner's message and wakes a run, which reads the mail that came since the last digest and answers with the digest. The digest run reads and summarizes only: it never drafts, labels, archives, sends or marks mail read. The Owner answers the digest in the chat ("archive the newsletters"), and the next run does it.
 
 ## Why sending is acceptable here
 
@@ -28,13 +28,13 @@ ADR 0008's never-send rule came from the Career Module, where ADR 0007 accepts a
 - **Every Assistant manages its own mail**, such as the Career Assistant answering a Recruiter's email: rejected for now. It blurs the lanes, and mail that sends needs one careful owner. Bringing Recruiters' emails into Career is its own question.
 - **A Mail Module** with its own Assistant and chat: rejected. A Module with no data in Nando stretches what a Module is, and it's one more chat to check.
 - **The digest as a cloud scheduled task on its own schedule**: rejected. A second task to set up by hand, outside the Talk, so the Owner couldn't answer the digest in the same chat.
-- **A generic "daily asks" setting** (a list of times, Assistants and instructions): rejected for now. Nothing else needs it, and it would be a settings screen for writing prompts. The asking Notification under the Mail Digest is generic, so another scheduled ask is a new provider, not a rework.
+- **A generic "daily asks" setting** (a list of times, Assistants and instructions): rejected for now. Nothing else needs it, and it would be a settings screen for writing prompts. The asking Notification under the Gmail Digest is generic, so another scheduled ask is a new provider, not a rework.
 - **Nando reading Gmail itself, through the Gmail API**: rejected. It would need its own Google OAuth client and token, and a model to summarize, which Nando never calls (ADR 0004, ADR 0008).
 
 ## Consequences
 
 - `messenger_reply` takes an optional Note, kept in the Talk and shown to later runs in the claim, never sent to Telegram. A new Talk takes over the 10 latest Notes of the Talk it replaces.
-- Core's settings gain the Mail Digest (`enabled`, `time` on the hour or half hour, off at 08:00 by default). A settings write that leaves it out keeps the saved one, so a web app that doesn't know it yet can't turn it off. Its switch is in Core's Settings Section in the web app.
+- Core's settings gain the Gmail Digest (`enabled`, `time` on the hour or half hour, off at 08:00 by default). A settings write that leaves it out keeps the saved one, so a web app that doesn't know it yet can't turn it off. Its switch is in Core's Settings Section in the web app.
 - A Notification can ask for work. One that asks:
   - is sent only by its own area's Assistant's bot, never by another Assistant's;
   - waits in the Talk as a message `from` `nando`, and wakes a run under ADR 0008's wake rules;
