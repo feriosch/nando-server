@@ -26,6 +26,7 @@ import (
 	"github.com/feriosch/nando-server/internal/core"
 	"github.com/feriosch/nando-server/internal/japanese"
 	"github.com/feriosch/nando-server/internal/server"
+	"github.com/feriosch/nando-server/internal/travel"
 )
 
 // config is read from the environment.
@@ -104,7 +105,7 @@ func loadConfig() (config, error) {
 
 // assistants is every Assistant's name: the Core Assistant's and each
 // Module's.
-var assistants = []string{"core", "japanese", "career", "calories"}
+var assistants = []string{"core", "japanese", "career", "calories", "travel"}
 
 // loadMessenger reads the Messenger's settings into m.
 func loadMessenger(m *core.MessengerConfig) error {
@@ -256,6 +257,12 @@ func run() error {
 	nandoCore.AddNotificationProvider(careerModule.NotificationProvider())
 	nandoCore.AddAssistant(careerModule.Assistant())
 	nandoCore.AddTickJob(careerModule.TickJob())
+	travelModule, err := travel.NewTravelModule(connectCtx, dbs.Travel, nandoCore.Service(), travel.Config{})
+	if err != nil {
+		return err
+	}
+	nandoCore.AddToolProvider(travelModule.ToolProvider())
+	nandoCore.AddAssistant(travelModule.Assistant())
 
 	switch args := os.Args[1:]; {
 	case len(args) == 1 && args[0] == "enroll":
@@ -285,7 +292,7 @@ func run() error {
 		Handler: server.New(server.Config{
 			AllowedOrigins: cfg.allowedOrigins,
 			Core:           nandoCore,
-			Modules:        []server.Module{caloriesModule, japaneseModule, careerModule},
+			Modules:        []server.Module{caloriesModule, japaneseModule, careerModule, travelModule},
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

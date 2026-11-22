@@ -50,6 +50,7 @@ func TestCoreAndEachModuleGetTheirOwnDatabase(t *testing.T) {
 		{"Calories", dbs.Calories.Name(), "calories"},
 		{"Japanese", dbs.Japanese.Name(), "japanese"},
 		{"Career", dbs.Career.Name(), "career"},
+		{"Travel", dbs.Travel.Name(), "travel"},
 	} {
 		if tc.got != tc.want {
 			t.Errorf("%s database = %q, want %q", tc.area, tc.got, tc.want)
