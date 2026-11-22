@@ -117,6 +117,34 @@ A **Fare** is one priced round trip found for a Watching Trip and one of its Par
 - `bookingUrl`: an `https://` link, or empty.
 - `leaveNeeded`: needed on a `with_companion` Fare, and only there: the Companion's days off, and with the remote days the settings allow (`0 ≤ withRemoteDays ≤ days`). The Travel Assistant works it out from their calendars; Nando never reads them.
 
+## Price Verdicts
+
+A **Price Verdict** is Google's judgement of a Trip's Party's price on some dates, from Google Flights. Nando fetches it itself, through SerpApi, with a key that never leaves the server ([ADR 0013](../../docs/adr/0013-travel-watches-fares-through-the-travel-assistant.md)). Prices are JPY, for the whole Party.
+
+```json
+{
+  "tripId": "6af05d493ea403a78bf5997b",
+  "party": "owner",
+  "departDate": "2027-05-12",
+  "returnDate": "2027-05-19",
+  "level": "low",
+  "lowestPrice": 221000,
+  "typicalRange": [240000, 300000],
+  "history": [[1795000000, 250000], [1795172800, 221000]],
+  "cheapestPrice": 221000,
+  "cheapestAirlines": ["Air Z"],
+  "fetchedAt": "2026-11-22T12:00:00Z"
+}
+```
+
+- `level`: `low`, `typical` or `high`, as Google says. `history` is Google's price history, `[Unix seconds, price]`, its last 60 points.
+- `cheapestPrice`, `cheapestAirlines`: the cheapest offer Google showed with it.
+- Only a Watching Trip's verdicts are fetched, and only for dates leaving today or later.
+- Asking again the same Day, in the Owner Time Zone, for the same Trip, Party and dates answers the verdict already fetched, without calling SerpApi, unless the Trip's airports, cabin or adults changed since.
+- Each call to SerpApi counts toward the settings' `serpApiMonthlyLimit` for the calendar month, in the Owner Time Zone, answered or not, as SerpApi bills it. Past it, a new verdict is refused, saying when the month turns.
+- Without `SERPAPI_KEY`, every new verdict is refused. Fares are still recorded.
+- A call SerpApi refuses, fails, or answers without a verdict is refused, and nothing is kept.
+
 ## Tools
 
 Each Tool answers JSON. A Tool refuses what it can't do with a message saying why, and changes nothing.
@@ -128,6 +156,7 @@ Each Tool answers JSON. A Tool refuses what it can't do with a message saying wh
 | `travel_get_settings` | none | Answers the settings |
 | `travel_list_trips` | `status`: `watching` (when left out), `booked`, `dropped` or `all` | Answers `{trips}`, by name, ignoring case |
 | `travel_get_trip` | `id` | Answers the Trip |
+| `travel_list_price_verdicts` | `tripId`, `party` | Answers `{verdicts}`, the latest 20 fetched, newest first |
 | `travel_fare_stats` | `tripId`, `party` | Answers what that Party's Fares say: `lowestEver`; `bestThisWeek` and `bestLastWeek`, by when they were found, weeks running Monday to Sunday in the Owner Time Zone (each `null` when there is none); `byWeek`, `[{week, fare}]`, the cheapest Fare departing in each week, by its Monday; and `top`, the 3 cheapest itineraries found in the last 7 days, each once however many checks found it |
 
 ### Write
@@ -139,6 +168,7 @@ Each Tool answers JSON. A Tool refuses what it can't do with a message saying wh
 | `travel_start_fare_check` | `kind`: `daily`, `weekly` or `asked` | Starts a Fare Check. Answers `{id, lastFinished}`: when the last finished check of each kind finished, or `null` |
 | `travel_record_fares` | `checkId`, `fares` | Records each Fare sent (without the fields Nando sets) in that unfinished Fare Check, or refuses it with why. Answers `{recorded: [{index, id}], refused: [{index, reason}]}`, by place in the list sent |
 | `travel_finish_fare_check` | `id`; `sources`, `summary`, `errors` | Finishes the Fare Check, once. Answers it |
+| `travel_get_price_verdict` | `tripId`, `party`, `departDate`, `returnDate` | Answers today's Price Verdict on those dates, fetching it from SerpApi when there is none yet |
 | `travel_set_trip_status` | `id`, `status` | Sets the Trip to `watching`, `booked` or `dropped`, from today, changing nothing else. A Trip is watched again only while one of its windows isn't over. The Travel Assistant asks the Owner before dropping one. Answers the Trip |
 
 ### Delete (`destructiveHint`)
@@ -147,4 +177,4 @@ The Travel Assistant asks the Owner before this, and prefers `booked` or `droppe
 
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `travel_delete_trip` | `id` | Deletes the Trip for good, with its Fares. Answers `{deleted: id}` |
+| `travel_delete_trip` | `id` | Deletes the Trip for good, with its Fares and Price Verdicts. Answers `{deleted: id}` |

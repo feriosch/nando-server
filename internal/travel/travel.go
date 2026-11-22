@@ -25,24 +25,43 @@ type Module struct {
 	settings *service.SettingsService
 	trips    *service.TripsService
 	fares    *service.FaresService
+	verdicts *service.PriceVerdictsService
 }
 
 // Config is what the Module needs besides its database and Core.
-type Config struct{}
+type Config struct {
+	// SerpAPIURL is SerpApi, whose Google Flights search is at /search.json;
+	// empty means https://serpapi.com.
+	SerpAPIURL string
+	// SerpAPIKey is SerpApi's key; empty turns Price Verdicts off.
+	SerpAPIKey string
+}
 
 // NewTravelModule returns the Travel Module reading and writing its own data
 // through db and asking Core for Core's data through core.
-func NewTravelModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService, _ Config) (*Module, error) {
+func NewTravelModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService, cfg Config) (*Module, error) {
+	if cfg.SerpAPIURL == "" {
+		cfg.SerpAPIURL = "https://serpapi.com"
+	}
 	fares, err := repository.NewFares(ctx, db)
 	if err != nil {
 		return nil, err
 	}
 	settings := service.NewSettings(repository.NewSettings(db))
 	trips := repository.NewTrips(db)
+	verdicts, err := repository.NewPriceVerdicts(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	calls, err := repository.NewSerpAPICalls(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	return &Module{
 		settings: settings,
-		trips:    service.NewTrips(trips, fares, settings, core),
+		trips:    service.NewTrips(trips, fares, verdicts, settings, core),
 		fares:    service.NewFares(repository.NewFareChecks(db), fares, trips, core),
+		verdicts: service.NewPriceVerdicts(verdicts, calls, trips, settings, core, cfg.SerpAPIURL, cfg.SerpAPIKey),
 	}, nil
 }
 
@@ -68,9 +87,9 @@ type toolProvider struct{ m *Module }
 // ToolsDescription says what the Module's Tools let a Connector do, for the
 // consent page.
 func (p toolProvider) ToolsDescription() string {
-	return "read and change your Travel settings, set up, change, close and delete your Trips, and record and read the Fares found for them"
+	return "read and change your Travel settings, set up, change, close and delete your Trips, record and read the Fares found for them, and fetch Google's Price Verdicts on them"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.settings.Tools(), p.m.trips.Tools(), p.m.fares.Tools())
+	return slices.Concat(p.m.settings.Tools(), p.m.trips.Tools(), p.m.fares.Tools(), p.m.verdicts.Tools())
 }
