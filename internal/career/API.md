@@ -5,11 +5,11 @@ The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Oppor
 ## Settings
 
 ```json
-{ "looking": false, "gmailCareerSync": { "enabled": false, "time": "08:00" } }
+{ "looking": false, "gmailCareerSync": { "enabled": false, "time": "08:30" } }
 ```
 
 - `looking`: whether the Owner is Looking for a new role right now. It sets the tone of every Suggested Reply. `false` until the Owner first changes it.
-- `gmailCareerSync`: the daily ask for a Gmail Career Sync ([ADR 0010](../../docs/adr/0010-recruiters-gmail-through-a-label.md)), off at 08:00 until the Owner turns it on. `time` is `"HH:MM"` on the hour or half hour, in the Owner Time Zone. Set it after Core's Gmail Digest, whose run files Recruiters' mail under `Career/Recruiters` ([ADR 0011](../../docs/adr/0011-the-core-assistant-files-gmail-daily.md)), so the night's mail is filed before Career reads it.
+- `gmailCareerSync`: the daily ask for a Gmail Career Sync ([ADR 0010](../../docs/adr/0010-recruiters-gmail-through-a-label.md)), off at 08:30 until the Owner turns it on, half an hour after the Gmail Digest's default. `time` is `"HH:MM"` on the hour or half hour, in the Owner Time Zone. Set it after Core's Gmail Digest, whose run files Recruiters' mail under `Career/Recruiters` ([ADR 0011](../../docs/adr/0011-the-core-assistant-files-gmail-daily.md)), so the night's mail is filed before Career reads it.
 
 ### `GET /api/career/settings`
 

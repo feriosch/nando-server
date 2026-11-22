@@ -21,8 +21,9 @@ type GmailCareerSync struct {
 }
 
 // DefaultSettings are the settings until the Owner first saves theirs: Not
-// Looking, and the Gmail Career Sync off, at 08:00.
-var DefaultSettings = Settings{Looking: false, GmailCareerSync: GmailCareerSync{Enabled: false, Time: "08:00"}}
+// Looking, and the Gmail Career Sync off, at 08:30: after the Gmail Digest's
+// default 08:00, whose run files the Recruiters' mail (ADR 0011).
+var DefaultSettings = Settings{Looking: false, GmailCareerSync: GmailCareerSync{Enabled: false, Time: "08:30"}}
 
 // SettingsRepository reads and writes the settings collection.
 type SettingsRepository interface {

@@ -22,8 +22,9 @@ func TestTheGmailCareerSyncIsOffUntilTurnedOnAndKeptBySavesWithoutIt(t *testing.
 	_, phone := signedInBrowser(t)
 
 	got := get[careerSettingsJSON](phone, "/api/career/settings")
-	if got.GmailCareerSync == nil || *got.GmailCareerSync != (gmailCareerSyncJSON{Enabled: false, Time: "08:00"}) {
-		t.Fatalf("settings = %+v; want the Gmail Career Sync off at 08:00", got)
+	// 08:30, after the Gmail Digest's 08:00, whose run files the Recruiters' mail (ADR 0011).
+	if got.GmailCareerSync == nil || *got.GmailCareerSync != (gmailCareerSyncJSON{Enabled: false, Time: "08:30"}) {
+		t.Fatalf("settings = %+v; want the Gmail Career Sync off at 08:30", got)
 	}
 
 	on := gmailCareerSyncJSON{Enabled: true, Time: "07:30"}
