@@ -8,6 +8,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
+	"github.com/feriosch/nando-server/internal/core/utils"
 	"github.com/feriosch/nando-server/internal/travel/model"
 )
 
@@ -44,6 +45,12 @@ func (r fares) List(ctx context.Context, tripID string, party model.PartyKey, si
 	}
 	list := []model.Fare{}
 	return list, cursor.All(ctx, &list)
+}
+
+func (r fares) Find(ctx context.Context, id string) (model.Fare, error) {
+	var fare model.Fare
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: id}}).Decode(&fare)
+	return fare, utils.NotFound(err)
 }
 
 func (r fares) DeleteTrip(ctx context.Context, tripID string) error {

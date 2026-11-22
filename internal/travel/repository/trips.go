@@ -61,9 +61,24 @@ func (r trips) Update(ctx context.Context, trip model.Trip) error {
 	// The Status is SetStatus's alone, so a save racing a status change
 	// never puts the old Status back.
 	fields = slices.DeleteFunc(fields, func(e bson.E) bool {
-		return e.Key == "_id" || e.Key == "status" || e.Key == "statusChangedOn"
+		return e.Key == "_id" || e.Key == "status" || e.Key == "statusChangedOn" || e.Key == "targetFares"
 	})
 	return utils.Matched(r.collection.UpdateOne(ctx, bson.D{{Key: "_id", Value: trip.ID}}, bson.D{{Key: "$set", Value: fields}}))
+}
+
+func (r trips) SetTargetFare(ctx context.Context, id string, party model.PartyKey, target *model.TargetFare) error {
+	// One pipeline update, so two Parties' Target Fares set at once both stay.
+	added := bson.A{}
+	if target != nil {
+		added = append(added, *target)
+	}
+	others := bson.D{{Key: "$filter", Value: bson.D{
+		{Key: "input", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$targetFares", bson.A{}}}}},
+		{Key: "cond", Value: bson.D{{Key: "$ne", Value: bson.A{"$$this.party", party}}}},
+	}}}
+	return utils.Matched(r.collection.UpdateOne(ctx, bson.D{{Key: "_id", Value: id}}, mongo.Pipeline{
+		{{Key: "$set", Value: bson.D{{Key: "targetFares", Value: bson.D{{Key: "$concatArrays", Value: bson.A{others, added}}}}}}},
+	}))
 }
 
 func (r trips) SetStatus(ctx context.Context, id string, status model.Status, on coremodel.Day) error {

@@ -124,6 +124,8 @@ type FaresRepository interface {
 	// List returns the Fares of a Trip's Party found at or after since,
 	// cheapest per person first.
 	List(ctx context.Context, tripID string, party PartyKey, since time.Time) ([]Fare, error)
+	// Find returns the Fare with id, or Core's utils.ErrNotFound.
+	Find(ctx context.Context, id string) (Fare, error)
 	// DeleteTrip deletes every Fare of the Trip with id.
 	DeleteTrip(ctx context.Context, tripID string) error
 }
@@ -223,6 +225,8 @@ type FareStatsJSON struct {
 	BestLastWeek *FareJSON      `json:"bestLastWeek"`
 	ByWeek       []WeekFareJSON `json:"byWeek"`
 	Top          []FareJSON     `json:"top"`
+	// TargetFare is the Party's Target Fare per person, or null.
+	TargetFare *int `json:"targetFare"`
 }
 
 // WeekFareJSON is the cheapest Fare departing in a week, by its Monday.

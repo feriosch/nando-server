@@ -26,6 +26,8 @@ type Module struct {
 	trips    *service.TripsService
 	fares    *service.FaresService
 	verdicts *service.PriceVerdictsService
+	// notifications is the Module's Notification provider.
+	notifications *service.NotificationsService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -49,6 +51,7 @@ func NewTravelModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 	}
 	settings := service.NewSettings(repository.NewSettings(db))
 	trips := repository.NewTrips(db)
+	alerts := repository.NewFareAlerts(db)
 	verdicts, err := repository.NewPriceVerdicts(ctx, db)
 	if err != nil {
 		return nil, err
@@ -58,16 +61,23 @@ func NewTravelModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 		return nil, err
 	}
 	return &Module{
-		settings: settings,
-		trips:    service.NewTrips(trips, fares, verdicts, settings, core),
-		fares:    service.NewFares(repository.NewFareChecks(db), fares, trips, core),
-		verdicts: service.NewPriceVerdicts(verdicts, calls, trips, settings, core, cfg.SerpAPIURL, cfg.SerpAPIKey),
+		settings:      settings,
+		trips:         service.NewTrips(trips, fares, verdicts, alerts, settings, core),
+		fares:         service.NewFares(repository.NewFareChecks(db), fares, alerts, trips, core),
+		notifications: service.NewNotifications(settings, trips),
+		verdicts:      service.NewPriceVerdicts(verdicts, calls, trips, settings, core, cfg.SerpAPIURL, cfg.SerpAPIKey),
 	}, nil
 }
 
 // Routes adds the Module's routes to mux, all under /api/travel/. It has none
 // yet: the Travel Assistant works through its Tools.
 func (m *Module) Routes(*http.ServeMux) {}
+
+// NotificationProvider is the Module's Notification provider, for Core to ask
+// at every tick: it asks the Travel Assistant for Fare Checks.
+func (m *Module) NotificationProvider() coremodel.NotificationProvider {
+	return m.notifications
+}
 
 // Assistant is the Module's Assistant, for Core to receive the Owner's
 // messages to it in the Messenger (ADR 0008, ADR 0013).
@@ -87,7 +97,7 @@ type toolProvider struct{ m *Module }
 // ToolsDescription says what the Module's Tools let a Connector do, for the
 // consent page.
 func (p toolProvider) ToolsDescription() string {
-	return "read and change your Travel settings, set up, change, close and delete your Trips, record and read the Fares found for them, and fetch Google's Price Verdicts on them"
+	return "read and change your Travel settings, set up, change, close and delete your Trips, record and read the Fares found for them and the Fare Alerts sent, set Target Fares, and fetch Google's Price Verdicts on them"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {

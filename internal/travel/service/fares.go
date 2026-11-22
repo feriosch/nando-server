@@ -19,14 +19,16 @@ import (
 type FaresService struct {
 	checks model.FareChecksRepository
 	fares  model.FaresRepository
+	alerts model.FareAlertsRepository
 	trips  model.TripsRepository
 	core   coremodel.CoreService
 }
 
 // NewFares returns the FaresService. It reads Trips, to check each Fare
 // against its Trip.
-func NewFares(checks model.FareChecksRepository, fares model.FaresRepository, trips model.TripsRepository, core coremodel.CoreService) *FaresService {
-	return &FaresService{checks: checks, fares: fares, trips: trips, core: core}
+func NewFares(checks model.FareChecksRepository, fares model.FaresRepository, alerts model.FareAlertsRepository,
+	trips model.TripsRepository, core coremodel.CoreService) *FaresService {
+	return &FaresService{checks: checks, fares: fares, alerts: alerts, trips: trips, core: core}
 }
 
 // Tools are what the FaresService offers Connectors: running a Fare Check,
@@ -55,8 +57,24 @@ func (s *FaresService) Tools() []coremodel.Tool {
 			`"errors":{"type":"array","items":{"type":"string"}}},"required":["id"]}`),
 		Handle: s.finishCheck,
 	}, {
+		Name: "travel_record_fare_alert",
+		Description: "Records that the Owner was just told about fareId, why (reasons: lowest_seen, low_verdict, " +
+			"big_drop, below_target, ending_soon) and whether it was urgent, sent at once. Call it after telling them, " +
+			"so a later run doesn't repeat it. Answers the alert.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"fareId":{"type":"string"},` +
+			`"reasons":{"type":"array","items":{"type":"string","enum":["lowest_seen","low_verdict","big_drop","below_target","ending_soon"]}},` +
+			`"urgent":{"type":"boolean"}},"required":["fareId","reasons"]}`),
+		Handle: s.recordAlert,
+	}, {
+		Name:        "travel_list_fare_alerts",
+		Description: "The Fare Alerts sent about tripId's Party since since (RFC 3339; 30 days ago when left out), newest first, as {alerts: [...]}.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"tripId":{"type":"string"},` +
+			`"party":{"type":"string","enum":["owner","with_companion"]},"since":{"type":"string"}},"required":["tripId","party"]}`),
+		ReadOnly: true,
+		Handle:   s.listAlerts,
+	}, {
 		Name:        "travel_fare_stats",
-		Description: "What the Fares of tripId's Party say: lowestEver; the bestThisWeek and bestLastWeek found (weeks Monday to Sunday); byWeek, the cheapest per departure week; and top, the 3 cheapest found in the last 7 days.",
+		Description: "What the Fares of tripId's Party say: lowestEver; the bestThisWeek and bestLastWeek found (weeks Monday to Sunday); byWeek, the cheapest per departure week; top, the 3 cheapest found in the last 7 days; and targetFare, the Party's Target Fare per person, or null.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"tripId":{"type":"string"},"party":{"type":"string","enum":["owner","with_companion"]}},"required":["tripId","party"]}`),
 		ReadOnly:    true,
 		Handle:      s.fareStats,
@@ -310,7 +328,101 @@ func (s *FaresService) fareStats(ctx context.Context, arguments json.RawMessage)
 	if !slices.ContainsFunc(trip.Parties, func(p model.Party) bool { return p.Key == party }) {
 		return nil, fmt.Errorf("the Trip has no Party %q", args.Party)
 	}
-	return s.stats(ctx, trip.ID, party)
+	stats, err := s.stats(ctx, trip.ID, party)
+	if i := slices.IndexFunc(trip.TargetFares, func(t model.TargetFare) bool { return t.Party == party }); i >= 0 {
+		stats.TargetFare = &trip.TargetFares[i].PerPerson
+	}
+	return stats, err
+}
+
+// recordAlert records a Fare Alert the Travel Assistant sent.
+func (s *FaresService) recordAlert(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		FareID  string   `json:"fareId"`
+		Reasons []string `json:"reasons"`
+		Urgent  bool     `json:"urgent"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, errors.New("give fareId, reasons and urgent")
+	}
+	if len(args.Reasons) == 0 {
+		return nil, errors.New("reasons must name why: lowest_seen, low_verdict, big_drop, below_target or ending_soon")
+	}
+	for i, r := range args.Reasons {
+		if !slices.Contains(model.FareAlertReasons, r) {
+			return nil, fmt.Errorf("reasons: %q must be lowest_seen, low_verdict, big_drop, below_target or ending_soon", r)
+		}
+		if slices.Contains(args.Reasons[:i], r) {
+			return nil, fmt.Errorf("reasons has %s twice", r)
+		}
+	}
+	fare, err := s.fares.Find(ctx, args.FareID)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return nil, errors.New("there is no Fare " + args.FareID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	alert := model.FareAlert{
+		FareID: fare.ID, TripID: fare.TripID, Party: fare.Party,
+		Reasons: args.Reasons, Urgent: args.Urgent, SentAt: s.core.Now().UTC(),
+	}
+	if alert.ID, err = s.alerts.Insert(ctx, alert); err != nil {
+		return nil, err
+	}
+	return toFareAlertJSON(alert), nil
+}
+
+// alertsSince is how far back travel_list_fare_alerts looks by default.
+const alertsSince = 30 * 24 * time.Hour
+
+// listAlerts answers a Trip's Party's Fare Alerts since a time.
+func (s *FaresService) listAlerts(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		TripID string `json:"tripId"`
+		Party  string `json:"party"`
+		Since  string `json:"since"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, errors.New("give tripId, party and since")
+	}
+	since := s.core.Now().Add(-alertsSince)
+	if args.Since != "" {
+		t, err := time.Parse(time.RFC3339, args.Since)
+		if err != nil {
+			return nil, errors.New("since must be a time written as RFC 3339, such as 2026-11-22T00:00:00Z")
+		}
+		since = t
+	}
+	// A Trip or Party that isn't there is refused, not answered with no
+	// alerts, which would read as none sent and get them sent again.
+	trip, err := s.trips.Find(ctx, args.TripID)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return nil, errors.New("there is no Trip " + args.TripID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	party := model.PartyKey(args.Party)
+	if !slices.ContainsFunc(trip.Parties, func(p model.Party) bool { return p.Key == party }) {
+		return nil, fmt.Errorf("the Trip has no Party %q", args.Party)
+	}
+	alerts, err := s.alerts.List(ctx, trip.ID, party, since)
+	if err != nil {
+		return nil, err
+	}
+	list := make([]model.FareAlertJSON, len(alerts))
+	for i, a := range alerts {
+		list[i] = toFareAlertJSON(a)
+	}
+	return map[string][]model.FareAlertJSON{"alerts": list}, nil
+}
+
+func toFareAlertJSON(a model.FareAlert) model.FareAlertJSON {
+	return model.FareAlertJSON{
+		ID: a.ID, FareID: a.FareID, TripID: a.TripID, Party: string(a.Party),
+		Reasons: a.Reasons, Urgent: a.Urgent, SentAt: a.SentAt.UTC().Format(time.RFC3339),
+	}
 }
 
 // topFares is how many current Fares travel_fare_stats answers, and current

@@ -31,6 +31,12 @@ func (s *SettingsService) savedOrDefault(ctx context.Context) (model.Settings, e
 	if errors.Is(err, coreutils.ErrNotFound) {
 		return model.DefaultSettings(), nil
 	}
+	if err == nil && settings.DailyFareCheck.Time == "" {
+		// Saved before Fare Checks were asked for: both are off, at their
+		// default times.
+		settings.DailyFareCheck = model.DefaultSettings().DailyFareCheck
+		settings.WeeklyFareCheck = model.DefaultSettings().WeeklyFareCheck
+	}
 	return settings, err
 }
 
@@ -51,8 +57,17 @@ func toSettingsJSON(settings model.Settings) model.SettingsJSON {
 			RemoteDaysAbroad: &c.RemoteDaysAbroad,
 		},
 		SerpAPIMonthlyLimit: &settings.SerpAPIMonthlyLimit,
+		DailyFareCheck:      &model.FareCheckTimeJSON{Enabled: &settings.DailyFareCheck.Enabled, Time: &settings.DailyFareCheck.Time},
+		WeeklyFareCheck: &model.WeeklyFareCheckTimeJSON{
+			Enabled: &settings.WeeklyFareCheck.Enabled,
+			Weekday: ptr(strings.ToLower(settings.WeeklyFareCheck.Weekday.String())),
+			Time:    &settings.WeeklyFareCheck.Time,
+		},
 	}
 }
+
+// ptr is a pointer to v.
+func ptr[T any](v T) *T { return &v }
 
 // Tools are what the SettingsService offers Connectors: reading and changing
 // Travel's settings.
@@ -62,7 +77,7 @@ func (s *SettingsService) Tools() []coremodel.Tool {
 		Description: "Travel's settings: home, the airport or city codes Trips leave from by default; companion, who " +
 			"travels with the Owner (name, their Google Calendar IDs, workWeekdays, the holidayCalendar of public " +
 			"holidays they have off, usualLeaveDays for one trip, and remoteDaysAbroad, at most 2); and " +
-			"serpApiMonthlyLimit, the most Price Verdicts a month.",
+			"serpApiMonthlyLimit, the most Price Verdicts a month; and when Nando asks for the dailyFareCheck {enabled, time} and the weeklyFareCheck {enabled, weekday, time}.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		ReadOnly:    true,
 		Handle: func(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -82,7 +97,11 @@ func (s *SettingsService) Tools() []coremodel.Tool {
 			`"holidayCalendar":{"type":"string","description":"The Google Calendar ID of the public holidays they have off."},` +
 			`"usualLeaveDays":{"type":"integer","description":"Days off one trip may usually take, 0 to 30."},` +
 			`"remoteDaysAbroad":{"type":"integer","description":"Workdays they may work from the destination, 0 to 2."}}},` +
-			`"serpApiMonthlyLimit":{"type":"integer","description":"The most Price Verdicts a month, 0 to 10000."}}}`),
+			`"serpApiMonthlyLimit":{"type":"integer","description":"The most Price Verdicts a month, 0 to 10000."},` +
+			`"dailyFareCheck":{"type":"object","properties":{"enabled":{"type":"boolean"},"time":{"type":"string","description":"HH:MM on the hour or half hour, in the Owner Time Zone: after the Gmail Digest's."}}},` +
+			`"weeklyFareCheck":{"type":"object","properties":{"enabled":{"type":"boolean"},` +
+			`"weekday":{"type":"string","enum":["monday","tuesday","wednesday","thursday","friday","saturday","sunday"]},` +
+			`"time":{"type":"string","description":"HH:MM on the hour or half hour, in the Owner Time Zone."}}}}}`),
 		Handle: s.saveSettingsTool,
 	}}
 }
@@ -91,10 +110,11 @@ func (s *SettingsService) Tools() []coremodel.Tool {
 func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.RawMessage) (any, error) {
 	var args model.SettingsJSON
 	if err := json.Unmarshal(arguments, &args); err != nil {
-		return nil, errors.New("send home as a list of codes, companion as an object and serpApiMonthlyLimit as a number")
+		return nil, errors.New("send home as a list of codes, companion as an object, serpApiMonthlyLimit as a number, " +
+			"and dailyFareCheck and weeklyFareCheck as objects")
 	}
-	if args.Home == nil && args.Companion == nil && args.SerpAPIMonthlyLimit == nil {
-		return nil, errors.New("give home, companion, serpApiMonthlyLimit or several")
+	if args.Home == nil && args.Companion == nil && args.SerpAPIMonthlyLimit == nil && args.DailyFareCheck == nil && args.WeeklyFareCheck == nil {
+		return nil, errors.New("give home, companion, serpApiMonthlyLimit, dailyFareCheck, weeklyFareCheck or several")
 	}
 	settings, err := s.savedOrDefault(ctx)
 	if err != nil {
@@ -116,6 +136,41 @@ func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.R
 			return nil, fmt.Errorf("serpApiMonthlyLimit must be 0 to %d", maxSerpAPIMonthlyLimit)
 		}
 		settings.SerpAPIMonthlyLimit = *l
+	}
+	if d := args.DailyFareCheck; d != nil {
+		if d.Enabled == nil && d.Time == nil {
+			return nil, errors.New("dailyFareCheck must give enabled, time or both")
+		}
+		if d.Enabled != nil {
+			settings.DailyFareCheck.Enabled = *d.Enabled
+		}
+		if d.Time != nil {
+			if !coreutils.IsHalfHour(*d.Time) {
+				return nil, errors.New("dailyFareCheck.time must be HH:MM on the hour or half hour")
+			}
+			settings.DailyFareCheck.Time = *d.Time
+		}
+	}
+	if w := args.WeeklyFareCheck; w != nil {
+		if w.Enabled == nil && w.Weekday == nil && w.Time == nil {
+			return nil, errors.New("weeklyFareCheck must give enabled, weekday, time or several")
+		}
+		if w.Enabled != nil {
+			settings.WeeklyFareCheck.Enabled = *w.Enabled
+		}
+		if w.Weekday != nil {
+			day, ok := weekdays[*w.Weekday]
+			if !ok {
+				return nil, errors.New("weeklyFareCheck.weekday must be a weekday such as sunday")
+			}
+			settings.WeeklyFareCheck.Weekday = day
+		}
+		if w.Time != nil {
+			if !coreutils.IsHalfHour(*w.Time) {
+				return nil, errors.New("weeklyFareCheck.time must be HH:MM on the hour or half hour")
+			}
+			settings.WeeklyFareCheck.Time = *w.Time
+		}
 	}
 	if err := s.settings.Save(ctx, settings); err != nil {
 		return nil, err

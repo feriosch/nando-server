@@ -14,6 +14,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
 	"github.com/feriosch/nando-server/internal/core"
+	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/server"
 	"github.com/feriosch/nando-server/internal/testconnector"
 	"github.com/feriosch/nando-server/internal/testmongo"
@@ -92,6 +93,7 @@ func newNandoWith(t *testing.T, change func(*travel.Config)) *nando {
 		t.Fatalf("NewTravelModule: %v", err)
 	}
 	c.AddAssistant(tr.Assistant())
+	c.AddNotificationProvider(tr.NotificationProvider())
 	c.AddToolProvider(tr.ToolProvider())
 	return &nando{
 		t:     t,
@@ -228,4 +230,38 @@ func (n *nando) ownerSays(assistant string, updateID, messageID int64, text stri
 	if rec.Code != http.StatusOK {
 		n.t.Fatalf("POST /messenger/telegram/%s: status = %d, body %q", assistant, rec.Code, rec.Body)
 	}
+}
+
+// tickAt runs Core's tick, as Cloud Scheduler does, with the clock at now.
+func (n *nando) tickAt(now time.Time) {
+	n.t.Helper()
+	n.clock.Set(now)
+	req := httptest.NewRequest(http.MethodPost, "/internal/tick", nil)
+	req.Header.Set("Authorization", "Bearer scheduler-token")
+	rec := httptest.NewRecorder()
+	n.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		n.t.Fatalf("tick at %s: status = %d, body %q", now, rec.Code, rec.Body)
+	}
+}
+
+// travelMessages are the texts the Travel bot sent the Owner so far.
+func (n *nando) travelMessages() []string {
+	var got []string
+	for _, c := range n.telegram.CallsTo("sendMessage") {
+		if c.Token == travelBotToken {
+			got = append(got, c.Params["text"].(string))
+		}
+	}
+	return got
+}
+
+// travelTalk is the messages of the Travel Assistant's open Talk.
+func (n *nando) travelTalk() []coremodel.TalkMessage {
+	n.t.Helper()
+	talk, err := n.core.Talk(context.Background(), "travel")
+	if err != nil {
+		n.t.Fatalf("Talk(travel): %v", err)
+	}
+	return talk.Messages
 }
