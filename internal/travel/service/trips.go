@@ -133,12 +133,19 @@ func (s *TripsService) setTripStatus(ctx context.Context, arguments json.RawMess
 	if err != nil {
 		return nil, err
 	}
-	if trip.Status != status {
-		trip.Status, trip.StatusChangedOn = status, today
-		if err := s.trips.Replace(ctx, trip); err != nil {
-			return nil, err
-		}
+	if trip.Status == status {
+		return toTripJSON(trip), nil
 	}
+	if status == model.Watching && !slices.ContainsFunc(trip.Windows, func(w model.Window) bool { return w.To >= today }) {
+		return nil, errors.New("every window of the Trip is over before today: give it a window ahead with travel_save_trip first")
+	}
+	if err := s.trips.SetStatus(ctx, trip.ID, status, today); err != nil {
+		if errors.Is(err, coreutils.ErrNotFound) {
+			return nil, errors.New("there is no Trip " + trip.ID)
+		}
+		return nil, err
+	}
+	trip.Status, trip.StatusChangedOn = status, today
 	return toTripJSON(trip), nil
 }
 
@@ -202,7 +209,10 @@ func (s *TripsService) saveTrip(ctx context.Context, arguments json.RawMessage) 
 		if err := checkTrip(trip, args, settings, today); err != nil {
 			return nil, err
 		}
-		if err := s.trips.Replace(ctx, trip); err != nil {
+		if err := s.trips.Update(ctx, trip); err != nil {
+			if errors.Is(err, coreutils.ErrNotFound) {
+				return nil, errors.New("there is no Trip " + args.ID)
+			}
 			return nil, err
 		}
 		return toTripJSON(trip), nil
@@ -320,13 +330,17 @@ const (
 )
 
 // checkTrip explains what's wrong with trip, as args changed it, if anything.
-// A window over before today is refused only when args sends the windows, so
-// an old Trip can still be changed otherwise.
+// A window over before today is refused only when args sends the windows, and
+// a Party with the Companion while there is none only when args sends the
+// Parties, so an old Trip can still be changed otherwise.
 func checkTrip(trip model.Trip, args model.SaveTripJSON, settings model.Settings, today coremodel.Day) error {
 	if trip.Name == "" || len([]rune(trip.Name)) > maxTripName {
 		return fmt.Errorf("name must be 1 to %d characters", maxTripName)
 	}
 	if len(trip.Origins) == 0 {
+		if args.Origins != nil {
+			return errors.New("origins must name at least one code")
+		}
 		return errors.New("origins must name at least one code: there is no home in the settings to leave from")
 	}
 	if err := checkCodes("origins", trip.Origins); err != nil {
@@ -351,15 +365,15 @@ func checkTrip(trip model.Trip, args model.SaveTripJSON, settings model.Settings
 		if args.Windows != nil && w.To < today {
 			return fmt.Errorf("windows: %s to %s is over before today, %s", w.From, w.To, today)
 		}
-		for _, a := range trip.Avoid {
-			if a.From <= w.From && w.To <= a.To {
-				return fmt.Errorf("avoid: %s to %s covers the whole window %s to %s", a.From, a.To, w.From, w.To)
-			}
-		}
 	}
 	for _, a := range trip.Avoid {
 		if err := checkRange("avoid", a.From, a.To); err != nil {
 			return err
+		}
+	}
+	for _, w := range trip.Windows {
+		if coveredByAvoid(w, trip.Avoid) {
+			return fmt.Errorf("avoid covers the whole window %s to %s, alone or together", w.From, w.To)
 		}
 	}
 	if !slices.Contains([]model.Cabin{model.Economy, model.PremiumEconomy, model.Business, model.First}, trip.Cabin) {
@@ -371,7 +385,25 @@ func checkTrip(trip model.Trip, args model.SaveTripJSON, settings model.Settings
 	if trip.MaxStops < 0 || trip.MaxStops > maxStops {
 		return fmt.Errorf("maxStops must be 0 to %d", maxStops)
 	}
-	return checkParties(trip.Parties, settings.Companion)
+	return checkParties(trip.Parties, settings.Companion, args.Parties != nil)
+}
+
+// coveredByAvoid reports whether the avoid ranges, alone or together, cover
+// every Day of w, leaving no Day to depart on.
+func coveredByAvoid(w model.Window, avoid []model.Avoid) bool {
+	// Walk the Days that begin a stretch not yet known covered: w.From, and
+	// the Day after each avoid range, so the walk is as long as avoid.
+	d := w.From
+	for {
+		i := slices.IndexFunc(avoid, func(a model.Avoid) bool { return a.From <= d && d <= a.To })
+		if i < 0 {
+			return false
+		}
+		if avoid[i].To >= w.To {
+			return true
+		}
+		d = avoid[i].To.AddDays(1)
+	}
 }
 
 // checkRange explains what's wrong with field's range of Days, if anything.
@@ -389,8 +421,8 @@ func checkRange(field string, from, to coremodel.Day) error {
 
 // checkParties explains what's wrong with a Trip's Parties, if anything: one
 // or two, each once, the Owner alone as 1 adult, and with the Companion as 2
-// or more, only once there is a Companion.
-func checkParties(parties []model.Party, companion model.Companion) error {
+// or more, only once there is a Companion when sent is true.
+func checkParties(parties []model.Party, companion model.Companion, sent bool) error {
 	if len(parties) == 0 || len(parties) > 2 {
 		return errors.New("parties must be one or two: owner, with_companion or both")
 	}
@@ -407,7 +439,7 @@ func checkParties(parties []model.Party, companion model.Companion) error {
 			if p.Adults < 2 || p.Adults > maxAdults {
 				return fmt.Errorf("the with_companion Party is 2 to %d adults", maxAdults)
 			}
-			if companion.Name == "" {
+			if sent && companion.Name == "" {
 				return errors.New("there is no Companion in the settings yet: set companion.name with travel_save_settings first")
 			}
 		default:

@@ -302,6 +302,9 @@ func TestATripThatCantBeWatchedIsRefusedAndChangesNothing(t *testing.T) {
 		with(map[string]any{"windows": window("2027-02-30", "2027-03-10")}),
 		with(map[string]any{"avoid": []map[string]any{{"from": "2027-06-06", "to": "2027-05-29"}}}),
 		with(map[string]any{"avoid": []map[string]any{{"from": "2027-05-01", "to": "2027-07-01"}}}), // covers the whole window
+		with(map[string]any{"avoid": []map[string]any{ // together cover the whole window
+			{"from": "2027-06-01", "to": "2027-07-01"}, {"from": "2027-05-01", "to": "2027-05-31"},
+		}}),
 		with(map[string]any{"cabin": "steerage"}),
 		with(map[string]any{"checkedBags": 3}),
 		with(map[string]any{"checkedBags": -1}),
@@ -354,5 +357,51 @@ func TestANewTripNeedsAnOriginWhenThereIsNoHome(t *testing.T) {
 	got := callTool[tripJSON](t, session, "travel_save_trip", with(map[string]any{"origins": []string{"AAC"}}))
 	if want := []string{"AAC"}; !reflect.DeepEqual(got.Origins, want) {
 		t.Errorf("origins = %v, want %v", got.Origins, want)
+	}
+}
+
+func TestALowercaseTripNameSortsAmongTheOthers(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	newTrip(t, phone, map[string]any{"name": "City break"})
+	newTrip(t, phone, map[string]any{"name": "beach week"})
+	newTrip(t, phone, map[string]any{"name": "Alps"})
+
+	got := callTool[struct {
+		Trips []tripJSON `json:"trips"`
+	}](t, phone.tools(), "travel_list_trips", nil)
+	if want := []string{"Alps", "beach week", "City break"}; !reflect.DeepEqual(names(got.Trips), want) {
+		t.Errorf("travel_list_trips = %v, want %v", names(got.Trips), want)
+	}
+}
+
+func TestATripWithTheCompanionCanStillBeChangedOnceThereIsNoCompanion(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	callTool[settingsJSON](t, session, "travel_save_settings", map[string]any{"companion": map[string]any{"name": "Sam"}})
+	trip := newTrip(t, phone, map[string]any{"parties": []map[string]any{{"key": "with_companion", "adults": 2}}})
+	callTool[settingsJSON](t, session, "travel_save_settings", map[string]any{"companion": map[string]any{"name": ""}})
+
+	got := callTool[tripJSON](t, session, "travel_save_trip", map[string]any{"id": trip.ID, "notes": "check again in May"})
+	if got.Notes != "check again in May" {
+		t.Errorf("notes = %q, want the new ones", got.Notes)
+	}
+	toolError(t, session, "travel_save_trip", map[string]any{
+		"id": trip.ID, "parties": []map[string]any{{"key": "with_companion", "adults": 3}},
+	})
+}
+
+func TestATripWhoseWindowsAreOverCantBeWatchedAgain(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	trip := newTrip(t, phone, map[string]any{"windows": []map[string]any{{"from": "2026-12-01", "to": "2026-12-10"}}})
+	callTool[tripJSON](t, phone.tools(), "travel_set_trip_status", map[string]any{"id": trip.ID, "status": "dropped"})
+
+	n.clock.Set(today.AddDate(0, 1, 0))
+	session := phone.tools()
+	toolError(t, session, "travel_set_trip_status", map[string]any{"id": trip.ID, "status": "watching"})
+	callTool[tripJSON](t, session, "travel_save_trip", map[string]any{
+		"id": trip.ID, "windows": []map[string]any{{"from": "2027-02-01", "to": "2027-02-10"}},
+	})
+	if got := callTool[tripJSON](t, session, "travel_set_trip_status", map[string]any{"id": trip.ID, "status": "watching"}); got.Status != "watching" {
+		t.Errorf("after giving it a window ahead: status %q, want watching", got.Status)
 	}
 }

@@ -95,9 +95,13 @@ type TripsRepository interface {
 	Find(ctx context.Context, id string) (Trip, error)
 	// List returns the Trips with one of statuses, by name.
 	List(ctx context.Context, statuses []Status) ([]Trip, error)
-	// Replace stores trip over the Trip with its ID, or returns Core's
-	// utils.ErrNotFound.
-	Replace(ctx context.Context, trip Trip) error
+	// Update stores trip's fields over those of the Trip with its ID, all
+	// but its Status and StatusChangedOn, which only SetStatus changes, or
+	// returns Core's utils.ErrNotFound.
+	Update(ctx context.Context, trip Trip) error
+	// SetStatus sets the Status of the Trip with id, since on, changing
+	// nothing else, or returns Core's utils.ErrNotFound.
+	SetStatus(ctx context.Context, id string, status Status, on coremodel.Day) error
 	// Delete deletes the Trip with id, or returns Core's utils.ErrNotFound.
 	Delete(ctx context.Context, id string) error
 }
