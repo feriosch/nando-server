@@ -69,7 +69,6 @@ type Core struct {
 	passkeys      *service.PasskeysService
 	settings      *service.SettingsService
 	weighIns      *service.WeighInsService
-	body          *service.BodyService
 	notifications *service.NotificationsService
 	mcp           *service.MCPService
 	connectors    *service.ConnectorsService
@@ -155,7 +154,6 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns, now: now}
-	c.body = service.NewBody(weighIns, c.settings)
 	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, c.oauth, cfg.Domain, cfg.Origins, now)
 	if err != nil {
 		return nil, err
@@ -185,8 +183,6 @@ func (c *Core) Routes(mux *http.ServeMux) {
 	c.sessions.Routes(mux)
 	c.passkeys.Routes(mux)
 	c.settings.Routes(mux)
-	c.weighIns.Routes(mux)
-	c.body.Routes(mux)
 	c.notifications.Routes(mux)
 	c.mcp.Routes(mux)
 	c.connectors.Routes(mux)
@@ -219,8 +215,13 @@ func (s coreService) Today(ctx context.Context) (model.Day, error) {
 	return s.settings.Today(ctx)
 }
 
-func (s coreService) LatestWeighIn(ctx context.Context) (model.WeighIn, error) {
-	return s.weighIns.LatestWeighIn(ctx)
+func (s coreService) HeightCm(ctx context.Context) (int, error) {
+	settings, err := s.settings.Settings(ctx)
+	return settings.HeightCm, err
+}
+
+func (s coreService) WeighInsLeft(ctx context.Context) (model.WeighInsLeft, error) {
+	return s.weighIns.WeighInsLeft(ctx)
 }
 
 // AddNotificationProvider has Core ask p for its due Notifications at every

@@ -33,7 +33,9 @@ func (c *clock) Set(t time.Time) { c.now = t }
 // nando is the whole HTTP API, Core and Calories, over a fresh MongoDB, as
 // main wires it.
 type nando struct {
-	t       *testing.T
+	t *testing.T
+	// client reaches Core's and Calories' databases, to start Nando again.
+	client  *mongo.Client
 	core    *core.Core
 	handler http.Handler
 	clock   *clock
@@ -43,15 +45,34 @@ type nando struct {
 
 func newNando(t *testing.T) *nando {
 	t.Helper()
+	// Real time to start with: go-webauthn checks its ceremony timeouts against it.
+	return startNando(t, newMongo(t), &clock{now: time.Now()})
+}
+
+// newMongo connects to a fresh, empty MongoDB.
+func newMongo(t *testing.T) *mongo.Client {
+	t.Helper()
 	client, err := mongo.Connect(options.Client().ApplyURI(testmongo.URI(t)))
 	if err != nil {
 		t.Fatalf("connect MongoDB: %v", err)
 	}
 	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
+	return client
+}
 
+// restart starts Nando again over the same databases and clock, as a new
+// deploy does, and moves d over to it.
+func (d *browser) restart() *nando {
+	d.nando.t.Helper()
+	d.nando = startNando(d.nando.t, d.nando.client, d.nando.clock)
+	return d.nando
+}
+
+// startNando starts Nando over client's databases, as main wires it, with clk
+// as its clock.
+func startNando(t *testing.T, client *mongo.Client, clk *clock) *nando {
+	t.Helper()
 	telegram := testtelegram.New(t)
-	// Real time to start with: go-webauthn checks its ceremony timeouts against it.
-	clk := &clock{now: time.Now()}
 	c, err := core.New(context.Background(), client.Database("core"), core.Config{
 		Domain:               "example.com",
 		Origins:              []string{webOrigin},
@@ -73,8 +94,9 @@ func newNando(t *testing.T) *nando {
 	c.AddAssistant(cal.Assistant())
 	c.AddToolProvider(cal.ToolProvider())
 	return &nando{
-		t:    t,
-		core: c,
+		t:      t,
+		client: client,
+		core:   c,
 		handler: server.New(server.Config{
 			AllowedOrigins: []string{webOrigin},
 			Core:           c,

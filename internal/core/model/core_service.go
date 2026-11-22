@@ -14,7 +14,9 @@ type CoreService interface {
 	Today(ctx context.Context) (Day, error)
 	// Now is the current time on Core's clock, which tests set by hand.
 	Now() time.Time
-	// LatestWeighIn is the Weigh-in for the newest week that has one, or
-	// utils.ErrNotFound if there are none.
-	LatestWeighIn(ctx context.Context) (WeighIn, error)
+	// HeightCm is the Owner's height in cm, or 0 until it is set.
+	HeightCm(ctx context.Context) (int, error)
+	// WeighInsLeft is what Core kept of Weigh-ins until they moved to
+	// Calories (ADR 0012), for Calories to take once at startup.
+	WeighInsLeft(ctx context.Context) (WeighInsLeft, error)
 }

@@ -1,5 +1,7 @@
 # Body measurements live in Core, not in a Module
 
+Superseded by [ADR 0012](0012-weigh-ins-belong-to-calories.md): Weigh-ins now belong to Calories, and only the height stays in Core.
+
 The Owner's height and weekly Weigh-ins are kept in Core rather than in their own "Weight" Module or inside Calories. They describe the Owner, not one activity, and more than one Module needs them: Calories now (BMI, and possibly calculating the Daily Limit later), and the planned Gym Routine Tracker. Because Modules may depend only on Core and never on each other, data that several Modules read has to sit in Core.
 
 ## Considered Options

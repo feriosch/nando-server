@@ -51,8 +51,7 @@ func (s *NotificationsService) SetMessenger(m notifier) {
 
 // NewNotifications returns the NotificationsService, accepting only ticks
 // whose bearer token verifySchedulerToken accepts, and with now as its clock.
-// Core's own providers, the Weigh-in reminder and the Gmail Digest, are
-// already added.
+// Core's own provider, the Gmail Digest, is already added.
 func NewNotifications(
 	sentNotifications model.SentNotificationsRepository,
 	settings *SettingsService,
@@ -65,7 +64,7 @@ func NewNotifications(
 	return &NotificationsService{
 		sentNotifications: sentNotifications,
 		settings:          settings,
-		providers:         []model.NotificationProvider{weighInReminder{settings: settings.Settings}, gmailDigest{settings: settings.Settings}},
+		providers:         []model.NotificationProvider{gmailDigest{settings: settings.Settings}},
 
 		verifySchedulerToken: verifySchedulerToken,
 		now:                  now,
@@ -203,7 +202,7 @@ type sentNotification struct {
 }
 
 // String is how the tick's log line reports it, such as
-// "core:weigh-in:2026-11-16 (sent)" or "(refused)".
+// "calories:weigh-in-reminder:2026-11-16 (sent)" or "(refused)".
 func (n sentNotification) String() string {
 	if n.refused {
 		return n.id + " (refused)"

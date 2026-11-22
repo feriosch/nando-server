@@ -2,13 +2,9 @@ package tests
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"testing"
 	"time"
-
-	"github.com/feriosch/nando-server/internal/core/model"
-	"github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // signedInBrowser returns Nando with a browser on the Owner's iPhone that has
@@ -52,20 +48,21 @@ func TestTodayIsTheDayInTheOwnerTimeZone(t *testing.T) {
 	}
 }
 
-func TestLatestWeighInIsTheNewestWeeks(t *testing.T) {
+func TestHeightCmIsTheOwnersHeightOnceSet(t *testing.T) {
 	ctx := context.Background()
 	n, phone := signedInBrowser(t, wednesday)
 	core := n.core.Service()
 
-	if _, err := core.LatestWeighIn(ctx); !errors.Is(err, utils.ErrNotFound) {
-		t.Errorf("LatestWeighIn before any = %v, want ErrNotFound", err)
+	if got, err := core.HeightCm(ctx); err != nil || got != 0 {
+		t.Errorf("HeightCm before it is set = %d, %v; want 0", got, err)
 	}
 
-	phone.mustPutWeighIn("2026-10-19", 72.4)
-	phone.mustPutWeighIn("2026-10-12", 72.8)
+	height := 175
+	if rec := phone.do(http.MethodPut, "/api/settings", mustJSON(t, settingsJSON{TimeZone: "UTC", HeightCm: &height})); rec.Code != http.StatusNoContent {
+		t.Fatalf("PUT /api/settings: status = %d, body %q", rec.Code, rec.Body)
+	}
 
-	got, err := core.LatestWeighIn(ctx)
-	if want := (model.WeighIn{Week: "2026-10-19", Kg: 72.4}); err != nil || got != want {
-		t.Errorf("LatestWeighIn = %+v, %v; want %+v", got, err, want)
+	if got, err := core.HeightCm(ctx); err != nil || got != 175 {
+		t.Errorf("HeightCm = %d, %v; want 175", got, err)
 	}
 }
