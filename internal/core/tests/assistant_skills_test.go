@@ -190,12 +190,13 @@ func TestTheCoreSkillFilesTheDaysMailAndKeepsTheFilingRecord(t *testing.T) {
 		"`in:inbox`",                    // it files only what is still in the inbox
 		"Never archive without a label", // and `Unknown` when unsure
 		"`Unknown`",
-		"`UNREAD`",                       // archiving never changes read or unread
-		"`Career/Recruiters`",            // the Gmail Career Sync's label (ADR 0010)
-		"reserved",                       // label names avoid Gmail's reserved words
-		`label:"Payments/McDonald's"`,    // a name with punctuation is quoted in a search
-		"`get_thread`",                   // search lags right after labeling
-		"What needs the Owner (star it)", // starred, and kept in the inbox
+		"`UNREAD`",                               // archiving never changes read or unread
+		"`Career/Recruiters`",                    // the Gmail Career Sync's label (ADR 0010)
+		"`label:<word>` then finds Gmail's view", // label names avoid Gmail's reserved words
+		"`in:inbox -is:starred`",                 // mail the Owner unstarred is done, and archived
+		`label:"Payments/McDonald's"`,            // a name with punctuation is quoted in a search
+		"`get_thread`",                           // search lags right after labeling
+		"What needs the Owner (star it)",         // starred, and kept in the inbox
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the Core skill never says %s", want)
