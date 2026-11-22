@@ -182,7 +182,7 @@ Every route is a `GET`. Prices are JPY per person unless named `total`; a Fare i
 
 ### `GET /api/travel/trips`
 
-`200`: every Trip, Watching ones first, each group by name. For each Party: `best`, its best Fare now (this week's best, else the best current one); `sinceLastWeek`, this week's best per person less last week's; `targetFare`; and `verdictLevel`, its latest Price Verdict's level. Each is `null` when there is none.
+`200`: every Trip, Watching ones first, each group by name. For each Party: `best`, its best Fare now, the cheapest found in the last 7 days; `sinceLastWeek`, this week's best per person less last week's; `targetFare`; and `verdictLevel`, its latest Price Verdict's level. Each is `null` when there is none.
 
 ```json
 {
@@ -216,7 +216,7 @@ Every route is a `GET`. Prices are JPY per person unless named `total`; a Fare i
 
 ### `GET /api/travel/cards`
 
-`200`: one Home Card per Watching Trip, by name: the cheaper Party's best per person now, which Party, and its `trend` since last week (`down`, `flat` or `up`). `party`, `perPerson` and `trend` are `null` without a Fare, `trend` also without a best last week.
+`200`: one Home Card per Watching Trip, by name: the cheaper Party's best per person now (found in the last 7 days), which Party, and its `trend`, this week's best against last week's, (`down`, `flat` or `up`). `party`, `perPerson` and `trend` are `null` without a Fare, `trend` also without a best last week.
 
 ```json
 {"cards": [{"tripId": "6af05d493ea403a78bf5997b", "name": "Beach week", "party": "owner", "perPerson": 120000, "trend": "down"}]}

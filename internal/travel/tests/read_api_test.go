@@ -144,8 +144,10 @@ func TestEachWatchingTripHasAHomeCardWithItsBestFareAndTrend(t *testing.T) {
 		t.Fatalf("cards = %+v; want one per Watching Trip", got.Cards)
 	}
 	c := got.Cards[0]
-	if c.TripID != beach.ID || c.Party == nil || *c.Party != "owner" || c.PerPerson == nil || *c.PerPerson != 130000 || c.Trend == nil || *c.Trend != "up" {
-		t.Errorf("Beach week's card = %+v; want owner at 130000 now, trend up from last week's 120000", c)
+	// Last week's 120000 Fare is still current, so it is the best now, while
+	// this week's best went up.
+	if c.TripID != beach.ID || c.Party == nil || *c.Party != "owner" || c.PerPerson == nil || *c.PerPerson != 120000 || c.Trend == nil || *c.Trend != "up" {
+		t.Errorf("Beach week's card = %+v; want owner at 120000 now, trend up since this week's best is 130000", c)
 	}
 	if q := got.Cards[1]; q.TripID != quiet.ID || q.PerPerson != nil || q.Trend != nil {
 		t.Errorf("Quiet one's card = %+v; want no Fare yet", q)

@@ -19,7 +19,7 @@ type TripSummaryJSON struct {
 }
 
 // PartySummaryJSON is a Party's line in the list of Trips: its best Fare now
-// (this week's, or the best current one), the change in the best per person
+// (the cheapest found in the last 7 days), the change in the best per person
 // since last week, its Target Fare and its latest Price Verdict's level. Each
 // is null when there is none.
 type PartySummaryJSON struct {

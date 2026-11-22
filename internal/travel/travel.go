@@ -66,7 +66,7 @@ func NewTravelModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 		settings:      settings,
 		trips:         service.NewTrips(trips, fares, verdicts, alerts, settings, core),
 		fares:         faresService,
-		overview:      service.NewOverview(trips, fares, verdicts, faresService, settings, core),
+		overview:      service.NewOverview(trips, verdicts, faresService, settings),
 		notifications: service.NewNotifications(settings, trips),
 		verdicts:      service.NewPriceVerdicts(verdicts, calls, trips, settings, core, cfg.SerpAPIURL, cfg.SerpAPIKey),
 	}, nil

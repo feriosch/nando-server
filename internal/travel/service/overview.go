@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
@@ -18,18 +17,16 @@ import (
 // Travel (ADR 0013): the Travel Assistant writes, through the Tools.
 type OverviewService struct {
 	trips    model.TripsRepository
-	fares    model.FaresRepository
 	verdicts model.PriceVerdictsRepository
 	stats    *FaresService
 	settings *SettingsService
-	core     coremodel.CoreService
 }
 
-// NewOverview returns the OverviewService. It asks the FaresService for what
-// a Party's Fares say.
-func NewOverview(trips model.TripsRepository, fares model.FaresRepository, verdicts model.PriceVerdictsRepository,
-	stats *FaresService, settings *SettingsService, core coremodel.CoreService) *OverviewService {
-	return &OverviewService{trips: trips, fares: fares, verdicts: verdicts, stats: stats, settings: settings, core: core}
+// NewOverview returns the OverviewService. It asks the FaresService for a
+// Party's Fares and what they say.
+func NewOverview(trips model.TripsRepository, verdicts model.PriceVerdictsRepository,
+	stats *FaresService, settings *SettingsService) *OverviewService {
+	return &OverviewService{trips: trips, verdicts: verdicts, stats: stats, settings: settings}
 }
 
 // Routes adds the web app's routes to mux, all under /api/travel/.
@@ -106,12 +103,9 @@ func (s *OverviewService) partySummary(ctx context.Context, trip model.Trip, par
 	return summary, nil
 }
 
-// bestNow is a Party's best Fare now: this week's best, or else the best
-// current one, or nil.
+// bestNow is a Party's best Fare now: the cheapest found in the last 7
+// days, or nil.
 func bestNow(stats model.FareStatsJSON) *model.FareJSON {
-	if stats.BestThisWeek != nil {
-		return stats.BestThisWeek
-	}
 	if len(stats.Top) > 0 {
 		return &stats.Top[0]
 	}
@@ -149,23 +143,16 @@ func (s *OverviewService) tripPage(w http.ResponseWriter, r *http.Request) {
 
 // partyPage is a Party on a Trip's page.
 func (s *OverviewService) partyPage(ctx context.Context, trip model.Trip, party model.Party) (model.PartyPageJSON, error) {
-	stats, err := s.stats.stats(ctx, trip.ID, party.Key)
+	// One read of the Fares for the stats and the history, so both agree.
+	fares, loc, now, err := s.stats.faresNow(ctx, trip.ID, party.Key)
 	if err != nil {
 		return model.PartyPageJSON{}, err
 	}
+	stats := statsOf(fares, loc, now)
 	page := model.PartyPageJSON{
 		Key: string(party.Key), Adults: party.Adults, History: []model.DayFareJSON{},
 		ByWeek: stats.ByWeek, Top: stats.Top, TargetFare: targetFare(trip, party.Key),
 	}
-	fares, err := s.fares.List(ctx, trip.ID, party.Key, time.Time{})
-	if err != nil {
-		return page, err
-	}
-	loc, err := s.core.OwnerTimeZone(ctx)
-	if err != nil {
-		return page, err
-	}
-	now := s.core.Now()
 	best := map[coremodel.Day]int{}
 	// fares are cheapest first, so the first of each Day is its best.
 	for _, f := range fares {
