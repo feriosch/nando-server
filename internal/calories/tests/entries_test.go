@@ -1,12 +1,13 @@
 package tests
 
 import (
-	"encoding/json"
+	"context"
 	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // entryJSON is an Entry as the API lists it.
@@ -19,23 +20,23 @@ type entryJSON struct {
 	Kcal           int     `json:"kcal"`
 }
 
-// logEntry logs entry on day and returns the response.
-func (d *browser) logEntry(day string, entry any) *httptest.ResponseRecorder {
+// mustLogEntry logs entry on day, as the Calories Assistant does, and
+// returns the new Entry's ID. entry is calories_log_entry's arguments but
+// the day: a Meal and its Servings, or a one-off's name, kcal per serving and
+// Servings.
+func (d *browser) mustLogEntry(day string, entry map[string]any) string {
 	d.nando.t.Helper()
-	return d.do(http.MethodPost, "/api/calories/days/"+day+"/entries", entry)
-}
-
-// mustLogEntry logs entry on day and returns the new Entry's ID.
-func (d *browser) mustLogEntry(day string, entry any) string {
-	d.nando.t.Helper()
-	rec := d.must(http.MethodPost, "/api/calories/days/"+day+"/entries", entry, http.StatusCreated)
-	var created struct {
-		ID string `json:"id"`
+	args := map[string]any{"day": day}
+	for k, v := range entry {
+		args[k] = v
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.ID == "" {
-		d.nando.t.Fatalf("POST entries: body %q has no id", rec.Body)
+	logged := callTool[struct {
+		Entry entryJSON `json:"entry"`
+	}](d.nando.t, d.tools(), "calories_log_entry", args)
+	if logged.Entry.ID == "" {
+		d.nando.t.Fatalf("calories_log_entry on %s: no Entry in the answer", day)
 	}
-	return created.ID
+	return logged.Entry.ID
 }
 
 func (d *browser) entries(day string) []entryJSON {
@@ -50,7 +51,7 @@ func TestEditingAMealNeverChangesItsEntries(t *testing.T) {
 
 	bigger := onigiri
 	bigger.Name, bigger.Kcal = "Tuna mayo onigiri (large)", 310
-	phone.must(http.MethodPut, "/api/calories/meals/"+mealID, bigger, http.StatusNoContent)
+	callTool[mealJSON](t, phone.tools(), "calories_save_meal", map[string]any{"id": mealID, "name": bigger.Name, "kcal": bigger.Kcal})
 
 	want := []entryJSON{{ID: entryID, MealID: &mealID, Name: "Tuna mayo onigiri", KcalPerServing: 230, Servings: 2, Kcal: 460}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
@@ -89,21 +90,40 @@ func (d *browser) saveTimeZone(name string) {
 	}, http.StatusNoContent)
 }
 
+// logEntry logs entry on day through calories_log_entry, and returns what
+// the Tool said if it refused, or "" if it logged it.
+func (d *browser) logEntry(session *mcp.ClientSession, day string, entry map[string]any) string {
+	d.nando.t.Helper()
+	args := map[string]any{"day": day}
+	for k, v := range entry {
+		args[k] = v
+	}
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: "calories_log_entry", Arguments: args})
+	if err != nil {
+		d.nando.t.Fatalf("calories_log_entry: %v", err)
+	}
+	if !result.IsError {
+		return ""
+	}
+	return result.Content[0].(*mcp.TextContent).Text
+}
+
 func TestEntriesCanBeLoggedOnlyInTheEditableWindow(t *testing.T) {
 	// 16:00 UTC on Wednesday is already 01:00 on Thursday 2026-10-22 in Tokyo,
 	// so the Editable Window is 2026-10-15 to 2026-10-22.
 	_, phone := signedInBrowser(t, wednesday.Add(4*time.Hour))
 	phone.saveTimeZone("Asia/Tokyo")
 	meal := map[string]any{"mealId": phone.createMeal(onigiri), "servings": 1}
+	session := phone.tools()
 
-	for day, want := range map[string]int{
-		"2026-10-23": http.StatusConflict, // tomorrow
-		"2026-10-22": http.StatusCreated,  // today
-		"2026-10-15": http.StatusCreated,  // 7 Days ago
-		"2026-10-14": http.StatusConflict, // 8 Days ago
+	for day, logged := range map[string]bool{
+		"2026-10-23": false, // tomorrow
+		"2026-10-22": true,  // today
+		"2026-10-15": true,  // 7 Days ago
+		"2026-10-14": false, // 8 Days ago
 	} {
-		if rec := phone.logEntry(day, meal); rec.Code != want {
-			t.Errorf("log an Entry on %s: status = %d, body %q; want %d", day, rec.Code, rec.Body, want)
+		if refused := phone.logEntry(session, day, meal); (refused == "") != logged {
+			t.Errorf("log an Entry on %s: refused %q; want logged %v", day, refused, logged)
 		}
 	}
 }
@@ -139,16 +159,16 @@ func TestAOneOffEntryCanBeSavedAsAMeal(t *testing.T) {
 	}
 }
 
-func TestInvalidEntriesAreRejected(t *testing.T) {
+func TestInvalidEntriesAreRefused(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 	mealID := phone.createMeal(onigiri)
+	session := phone.tools()
 
 	for name, tc := range map[string]struct {
 		day   string
-		entry any
+		entry map[string]any
 	}{
 		"day not a date":        {"2026-10-32", map[string]any{"mealId": mealID, "servings": 1}},
-		"not JSON":              {"2026-10-21", "{"},
 		"zero servings":         {"2026-10-21", map[string]any{"mealId": mealID, "servings": 0}},
 		"no servings":           {"2026-10-21", map[string]any{"mealId": mealID}},
 		"fractional servings":   {"2026-10-21", map[string]any{"mealId": mealID, "servings": 1.5}},
@@ -161,8 +181,8 @@ func TestInvalidEntriesAreRejected(t *testing.T) {
 		"one-off without kcal":  {"2026-10-21", map[string]any{"name": "Sushi", "servings": 1}},
 		"Meal saved as Meal":    {"2026-10-21", map[string]any{"mealId": mealID, "servings": 1, "saveAsMeal": true}},
 	} {
-		if rec := phone.logEntry(tc.day, tc.entry); rec.Code != http.StatusBadRequest {
-			t.Errorf("%s: status = %d, body %q; want %d", name, rec.Code, rec.Body, http.StatusBadRequest)
+		if refused := phone.logEntry(session, tc.day, tc.entry); refused == "" {
+			t.Errorf("%s: logged; want it refused", name)
 		}
 	}
 	if got := phone.entries("2026-10-21"); len(got) != 0 {
@@ -174,8 +194,8 @@ func TestOwnerEditsAnEntryOnlyInTheEditableWindow(t *testing.T) {
 	n, phone := signedInBrowser(t, wednesday)
 	id := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
 
-	phone.must(http.MethodPut, "/api/calories/entries/"+id,
-		map[string]any{"name": "Sushi (salmon)", "kcalPerServing": 50, "servings": 10}, http.StatusNoContent)
+	callTool[map[string]any](t, phone.tools(), "calories_update_entry",
+		map[string]any{"id": id, "name": "Sushi (salmon)", "kcalPerServing": 50, "servings": 10})
 
 	want := []entryJSON{{ID: id, Name: "Sushi (salmon)", KcalPerServing: 50, Servings: 10, Kcal: 500}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
@@ -183,10 +203,7 @@ func TestOwnerEditsAnEntryOnlyInTheEditableWindow(t *testing.T) {
 	}
 
 	n.clock.Set(wednesday.AddDate(0, 0, 8)) // 2026-10-21 has left the Editable Window
-	rec := phone.do(http.MethodPut, "/api/calories/entries/"+id, map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 1})
-	if rec.Code != http.StatusConflict {
-		t.Errorf("edit an Entry 8 Days ago: status = %d, want %d", rec.Code, http.StatusConflict)
-	}
+	toolError(t, phone.tools(), "calories_update_entry", map[string]any{"id": id, "name": "Sushi", "kcalPerServing": 45, "servings": 1})
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
 		t.Errorf("entries after the rejected edit = %+v, want %+v", got, want)
 	}
@@ -197,7 +214,7 @@ func TestOwnerDeletesAnEntryOnlyInTheEditableWindow(t *testing.T) {
 	mistake := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Ramen", "kcalPerServing": 600, "servings": 1})
 	kept := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
 
-	phone.must(http.MethodDelete, "/api/calories/entries/"+mistake, nil, http.StatusNoContent)
+	callTool[map[string]any](t, phone.tools(), "calories_delete_entry", map[string]any{"id": mistake})
 
 	want := []entryJSON{{ID: kept, Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
@@ -205,33 +222,31 @@ func TestOwnerDeletesAnEntryOnlyInTheEditableWindow(t *testing.T) {
 	}
 
 	n.clock.Set(wednesday.AddDate(0, 0, 8))
-	if rec := phone.do(http.MethodDelete, "/api/calories/entries/"+kept, nil); rec.Code != http.StatusConflict {
-		t.Errorf("delete an Entry 8 Days ago: status = %d, want %d", rec.Code, http.StatusConflict)
-	}
+	toolError(t, phone.tools(), "calories_delete_entry", map[string]any{"id": kept})
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
 		t.Errorf("entries after the rejected delete = %+v, want %+v", got, want)
 	}
 }
 
-func TestInvalidEntryEditsAreRejected(t *testing.T) {
+func TestInvalidEntryEditsAreRefused(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 	id := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 12})
+	session := phone.tools()
 
-	for name, body := range map[string]any{
-		"not JSON":          "{",
-		"no name":           map[string]any{"name": " ", "kcalPerServing": 45, "servings": 12},
-		"no kcal":           map[string]any{"name": "Sushi", "servings": 12},
-		"negative kcal":     map[string]any{"name": "Sushi", "kcalPerServing": -1, "servings": 12},
-		"zero servings":     map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 0},
-		"too many servings": map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 101},
+	for name, change := range map[string]map[string]any{
+		"no name":           {"name": " "},
+		"negative kcal":     {"kcalPerServing": -1},
+		"zero servings":     {"servings": 0},
+		"too many servings": {"servings": 101},
 	} {
-		if rec := phone.do(http.MethodPut, "/api/calories/entries/"+id, body); rec.Code != http.StatusBadRequest {
-			t.Errorf("%s: status = %d, body %q; want %d", name, rec.Code, rec.Body, http.StatusBadRequest)
+		change["id"] = id
+		if refused := toolError(t, session, "calories_update_entry", change); refused == "" {
+			t.Errorf("%s: no reason given", name)
 		}
 	}
 	want := []entryJSON{{ID: id, Name: "Sushi", KcalPerServing: 45, Servings: 12, Kcal: 540}}
 	if got := phone.entries("2026-10-21"); !equalEntries(got, want) {
-		t.Errorf("entries after rejected edits = %+v, want %+v", got, want)
+		t.Errorf("entries after refused edits = %+v, want %+v", got, want)
 	}
 }
 

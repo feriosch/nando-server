@@ -3,7 +3,6 @@ package tests
 import (
 	"context"
 	"encoding/json"
-	"net/http"
 	"reflect"
 	"slices"
 	"strings"
@@ -61,7 +60,7 @@ type loggedJSON struct {
 
 func TestAConnectorLogsWhatTheOwnerAteTodayAndSeesTheDayAgainstTheDailyLimit(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
-	phone.must(http.MethodPut, "/api/calories/daily-limit", map[string]int{"kcal": 2000}, http.StatusNoContent)
+	phone.setDailyLimit(2000)
 	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 1})
 	session := phone.connect()
 
@@ -83,7 +82,7 @@ func TestAConnectorLogsWhatTheOwnerAteTodayAndSeesTheDayAgainstTheDailyLimit(t *
 
 func TestAConnectorReadsADayAsTheWebAppShowsIt(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
-	phone.must(http.MethodPut, "/api/calories/daily-limit", map[string]int{"kcal": 2000}, http.StatusNoContent)
+	phone.setDailyLimit(2000)
 	phone.mustLogEntry("2026-10-20", map[string]any{"name": "Ramen", "kcalPerServing": 900, "servings": 1})
 	phone.mustLogEntry("2026-10-21", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 2})
 	session := phone.connect()
@@ -102,7 +101,7 @@ func TestAConnectorReadsADayAsTheWebAppShowsIt(t *testing.T) {
 
 func TestAConnectorCorrectsOnlyWhatItSendsOfAnEntry(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
-	phone.must(http.MethodPut, "/api/calories/daily-limit", map[string]int{"kcal": 2000}, http.StatusNoContent)
+	phone.setDailyLimit(2000)
 	mealID := phone.createMeal(onigiri)
 	id := phone.mustLogEntry("2026-10-20", map[string]any{"mealId": mealID, "servings": 1})
 	session := phone.connect()
@@ -124,7 +123,7 @@ func TestAConnectorCorrectsOnlyWhatItSendsOfAnEntry(t *testing.T) {
 
 func TestAConnectorDeletesAnEntryAndSeesWhatIsLeftOfTheDay(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
-	phone.must(http.MethodPut, "/api/calories/daily-limit", map[string]int{"kcal": 2000}, http.StatusNoContent)
+	phone.setDailyLimit(2000)
 	keep := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 1})
 	twice := phone.mustLogEntry("2026-10-21", map[string]any{"name": "Onigiri", "kcalPerServing": 230, "servings": 1})
 	session := phone.connect()
@@ -185,7 +184,7 @@ func TestAConnectorReadsTheDailyLimitInForce(t *testing.T) {
 		t.Errorf("before one is set, dailyLimit = %+v, want null", got.DailyLimit)
 	}
 
-	phone.must(http.MethodPut, "/api/calories/daily-limit", map[string]int{"kcal": 1800}, http.StatusNoContent)
+	phone.setDailyLimit(1800)
 	got := callTool[inForceJSON](t, session, "calories_get_daily_limit", nil)
 	if got.DailyLimit == nil || got.DailyLimit.Kcal != 1800 || got.DailyLimit.EffectiveFrom != "2026-10-21" {
 		t.Errorf("dailyLimit = %+v, want 1800 kcal from 2026-10-21", got.DailyLimit)
@@ -202,14 +201,14 @@ func TestAConnectorListsTheMealsAsTheQuickListDoes(t *testing.T) {
 	curry := phone.createMeal(mealJSON{Name: "Chicken curry", Kcal: 750, Tags: []string{}})
 	phone.createMeal(onigiri)
 	gone := phone.createMeal(mealJSON{Name: "Melon pan", Kcal: 400, Tags: []string{}})
-	phone.must(http.MethodDelete, "/api/calories/meals/"+gone, nil, http.StatusNoContent)
+	phone.archiveMeal(gone)
 	// The most logged lead, though "Tuna" comes after "Chicken".
 	phone.mustLogEntry("2026-10-21", map[string]any{"mealId": curry, "servings": 1})
 	session := phone.connect()
 
 	got := callTool[mealsJSON](t, session, "calories_list_meals", nil)
-	if want := get[[]mealJSON](phone, "/api/calories/meals/quick"); !reflect.DeepEqual(got.Meals, want) || len(want) != 2 || want[0].ID != curry {
-		t.Errorf("calories_list_meals = %+v,\nwant the quick list's %+v", got.Meals, want)
+	if len(got.Meals) != 2 || got.Meals[0].ID != curry || got.Meals[1].Name != onigiri.Name {
+		t.Errorf("calories_list_meals = %+v, want the Chicken curry, most logged, then the onigiri", got.Meals)
 	}
 	archived := callTool[mealsJSON](t, session, "calories_list_meals", map[string]any{"archived": true})
 	if len(archived.Meals) != 1 || archived.Meals[0].ID != gone || !archived.Meals[0].Archived {
@@ -289,7 +288,8 @@ func TestTheConsentPageSaysWhatCaloriessToolsLetAConnectorDo(t *testing.T) {
 	})
 
 	// Deleting and archiving are said, as the Owner is asked first.
-	if want := []string{"read your Days and Daily Limit, log, correct and delete what you eat, and save, change and archive your Meals"}; !slices.Equal(got, want) {
+	if want := []string{"read your Days and Daily Limit, log, correct and delete what you eat, save, change and archive your Meals, " +
+		"and set your Daily Limit and when Calories Notifications come"}; !slices.Equal(got, want) {
 		t.Errorf("toolsDescriptions = %q, want %q", got, want)
 	}
 }
@@ -318,6 +318,10 @@ func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
 	want := map[string]hints{
 		"calories_get_day":         lookUp,
 		"calories_get_daily_limit": lookUp,
+		// Past Days keep the limit they had.
+		"calories_set_daily_limit": write,
+		"calories_get_settings":    lookUp,
+		"calories_save_settings":   write,
 		"calories_list_meals":      lookUp,
 		"calories_log_entry":       write,
 		"calories_update_entry":    write,
@@ -334,7 +338,7 @@ func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
 
 func TestAConnectorLogsServingsOfASavedMealOnAnEarlierDay(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
-	phone.must(http.MethodPut, "/api/calories/daily-limit", map[string]int{"kcal": 2000}, http.StatusNoContent)
+	phone.setDailyLimit(2000)
 	mealID := phone.createMeal(onigiri)
 	session := phone.connect()
 

@@ -16,7 +16,8 @@ Everything in Nando's Calories Module, through the Calories Tools of the Nando C
 - **Corrections** ("it was three, not two", "that was yesterday's"): `calories_update_entry`, or log it again on the right Day.
 - **How a Day went** ("how am I doing today?", "what did I eat on Monday?"): `calories_get_day`.
 - **Meals**, the things the Owner eats again and again, saved to log in one go: `calories_list_meals`, `calories_save_meal`, `calories_restore_meal`.
-- **The Daily Limit**, the most kcal the Owner means to eat in a Day: `calories_get_daily_limit`. It is changed only in the Nando app. If the Owner asks you to change it, say so.
+- **The Daily Limit**, the most kcal the Owner means to eat in a Day: `calories_get_daily_limit`, and `calories_set_daily_limit` with `kcal` (1 to 10,000) when they ask to change it. It applies from today: earlier Days keep the limit they had. Say so, with the new limit: "Daily Limit is 1,800 kcal from today."
+- **When the Calories Notifications come**: the reminder that nothing is logged yet, and the evening summary. Read them with `calories_get_settings`, and change them with `calories_save_settings` when the Owner asks ("move the evening summary to 22:00", "stop the reminder"). Send only the Notification and the fields that change, such as `eveningSummary: {time: "22:00"}`. Times are on the hour or half hour, in the Owner's time zone: for "21:45", ask whether 21:30 or 22:00. Then say what changed: "Evening summary moved to 22:00."
 
 ## Logging
 

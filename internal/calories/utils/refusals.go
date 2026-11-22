@@ -1,10 +1,7 @@
 package utils
 
 import (
-	"errors"
 	"net/http"
-
-	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
 // Refusal is a request the Module turns down, saying why. The API answers it
@@ -20,15 +17,4 @@ func (r Refusal) Error() string { return r.Message }
 // 400.
 func Invalid(message string) error {
 	return Refusal{Status: http.StatusBadRequest, Message: message}
-}
-
-// WriteError answers err: a Refusal with its status and message, anything
-// else as a server error.
-func WriteError(w http.ResponseWriter, err error) {
-	var refusal Refusal
-	if errors.As(err, &refusal) {
-		http.Error(w, refusal.Message, refusal.Status)
-		return
-	}
-	coreutils.ServerError(w, err)
 }

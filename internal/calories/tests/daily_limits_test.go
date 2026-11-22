@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"net/http"
 	"testing"
 )
 
@@ -17,40 +16,48 @@ type dailyLimitJSON struct {
 	EffectiveFrom string `json:"effectiveFrom"`
 }
 
-// setDailyLimit sets the Daily Limit to kcal from today.
+// setDailyLimit sets the Daily Limit to kcal from today, as the Calories
+// Assistant does.
 func (d *browser) setDailyLimit(kcal int) {
 	d.nando.t.Helper()
-	d.must(http.MethodPut, "/api/calories/daily-limit", map[string]any{"kcal": kcal}, http.StatusNoContent)
+	callTool[map[string]any](d.nando.t, d.tools(), "calories_set_daily_limit", map[string]any{"kcal": kcal})
 }
 
-func TestOwnerSetsTheDailyLimitFromToday(t *testing.T) {
+// dailyLimitAnswer is what calories_set_daily_limit and
+// calories_get_daily_limit answer.
+type dailyLimitAnswer struct {
+	DailyLimit *dailyLimitJSON `json:"dailyLimit"`
+}
+
+func TestTheAssistantSetsTheDailyLimitFromToday(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 
-	phone.setDailyLimit(2000)
+	got := callTool[dailyLimitAnswer](t, phone.tools(), "calories_set_daily_limit", map[string]any{"kcal": 2000})
 
 	want := dailyLimitJSON{Kcal: 2000, EffectiveFrom: "2026-10-21"}
+	if got.DailyLimit == nil || *got.DailyLimit != want {
+		t.Errorf("calories_set_daily_limit = %+v, want the Daily Limit in force, %+v", got.DailyLimit, want)
+	}
 	if got := get[*dailyLimitJSON](phone, "/api/calories/daily-limit"); got == nil || *got != want {
-		t.Errorf("daily limit = %+v, want %+v", got, want)
+		t.Errorf("the web app's Daily Limit = %+v, want %+v", got, want)
 	}
 }
 
-func TestInvalidDailyLimitsAreRejected(t *testing.T) {
+func TestInvalidDailyLimitsAreRefused(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 	phone.setDailyLimit(2000)
 
-	for _, body := range []any{
-		map[string]any{},
-		map[string]any{"kcal": 0},
-		map[string]any{"kcal": 10001},
-		map[string]any{"kcal": 1800.5},
-		"1800",
+	for _, args := range []map[string]any{
+		{},
+		{"kcal": 0},
+		{"kcal": 10001},
+		{"kcal": 1800.5},
+		{"kcal": "1800"},
 	} {
-		if rec := phone.do(http.MethodPut, "/api/calories/daily-limit", body); rec.Code != http.StatusBadRequest {
-			t.Errorf("PUT daily-limit %v: status = %d, want 400", body, rec.Code)
-		}
+		toolError(t, phone.tools(), "calories_set_daily_limit", args)
 	}
 	if got := get[*dailyLimitJSON](phone, "/api/calories/daily-limit"); got == nil || got.Kcal != 2000 {
-		t.Errorf("daily limit after rejected changes = %+v, want still 2000", got)
+		t.Errorf("daily limit after refused changes = %+v, want still 2000", got)
 	}
 }
 

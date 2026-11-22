@@ -37,13 +37,6 @@ func (n *nando) tickAt(now time.Time) {
 	}
 }
 
-// saveCaloriesSettings saves when the Calories Notifications are sent.
-func (d *browser) saveCaloriesSettings(noEntriesReminder, eveningSummary notificationSettingJSON) {
-	d.nando.t.Helper()
-	d.must(http.MethodPut, "/api/calories/settings",
-		settingsJSON{NoEntriesReminder: noEntriesReminder, EveningSummary: eveningSummary}, http.StatusNoContent)
-}
-
 // on is the Notification setting switched on at clock time hhmm.
 func on(hhmm string) notificationSettingJSON {
 	return notificationSettingJSON{Enabled: true, Time: hhmm}

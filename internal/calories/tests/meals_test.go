@@ -1,8 +1,6 @@
 package tests
 
 import (
-	"encoding/json"
-	"net/http"
 	"reflect"
 	"slices"
 	"strings"
@@ -28,17 +26,37 @@ type mealJSON struct {
 
 func ptr[T any](v T) *T { return &v }
 
-// createMeal saves meal and returns its ID.
+// createMeal saves meal as a new Meal, as the Calories Assistant does, and
+// returns its ID.
 func (d *browser) createMeal(meal mealJSON) string {
 	d.nando.t.Helper()
-	rec := d.must(http.MethodPost, "/api/calories/meals", meal, http.StatusCreated)
-	var created struct {
-		ID string `json:"id"`
+	args := map[string]any{"name": meal.Name, "kcal": meal.Kcal, "store": meal.Store, "emoji": meal.Emoji, "pinned": meal.Pinned}
+	if meal.Tags != nil {
+		args["tags"] = meal.Tags
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil || created.ID == "" {
-		d.nando.t.Fatalf("POST /api/calories/meals: body %q has no id", rec.Body)
+	saved := callTool[mealJSON](d.nando.t, d.tools(), "calories_save_meal", args)
+	if saved.ID == "" {
+		d.nando.t.Fatalf("calories_save_meal: no Meal in the answer")
 	}
-	return created.ID
+	return saved.ID
+}
+
+// archiveMeal archives the Meal with id, as the Calories Assistant does once
+// the Owner said yes.
+func (d *browser) archiveMeal(id string) {
+	d.nando.t.Helper()
+	callTool[mealJSON](d.nando.t, d.tools(), "calories_archive_meal", map[string]any{"id": id})
+}
+
+// mealsInQuickListOrder is the names of the Meals in use, in the quick
+// list's order, as calories_list_meals answers them.
+func (d *browser) mealsInQuickListOrder() []string {
+	d.nando.t.Helper()
+	var names []string
+	for _, m := range callTool[mealsJSON](d.nando.t, d.tools(), "calories_list_meals", nil).Meals {
+		names = append(names, m.Name)
+	}
+	return names
 }
 
 var onigiri = mealJSON{
@@ -62,15 +80,15 @@ func TestOwnerSavesAMeal(t *testing.T) {
 	}
 }
 
-func TestDeletingAMealArchivesItUntilRestored(t *testing.T) {
+func TestArchivingAMealKeepsItOutOfUseUntilRestored(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 	id := phone.createMeal(onigiri)
 	phone.mustLogEntry("2026-10-21", map[string]any{"mealId": id, "servings": 1})
 
-	phone.must(http.MethodDelete, "/api/calories/meals/"+id, nil, http.StatusNoContent)
+	phone.archiveMeal(id)
 
 	if got := get[[]mealJSON](phone, "/api/calories/meals"); len(got) != 0 {
-		t.Errorf("meals after deleting = %+v, want none", got)
+		t.Errorf("meals after archiving = %+v, want none", got)
 	}
 	if got := get[[]mealJSON](phone, "/api/calories/meals?archived=true"); len(got) != 1 || got[0].ID != id || !got[0].Archived {
 		t.Errorf("archived meals = %+v, want the onigiri, archived", got)
@@ -78,11 +96,11 @@ func TestDeletingAMealArchivesItUntilRestored(t *testing.T) {
 	if got := phone.entries("2026-10-21"); len(got) != 1 || got[0].Name != onigiri.Name {
 		t.Errorf("entries after archiving their Meal = %+v, want the onigiri Entry kept", got)
 	}
-	if rec := phone.logEntry("2026-10-21", map[string]any{"mealId": id, "servings": 1}); rec.Code != http.StatusBadRequest {
-		t.Errorf("log an archived Meal: status = %d, want %d", rec.Code, http.StatusBadRequest)
+	if refused := phone.logEntry(phone.tools(), "2026-10-21", map[string]any{"mealId": id, "servings": 1}); refused == "" {
+		t.Errorf("logged an archived Meal; want it refused")
 	}
 
-	phone.must(http.MethodPost, "/api/calories/meals/"+id+"/restore", nil, http.StatusNoContent)
+	callTool[mealJSON](t, phone.tools(), "calories_restore_meal", map[string]any{"id": id})
 
 	if got := get[[]mealJSON](phone, "/api/calories/meals"); len(got) != 1 || got[0].ID != id || got[0].Archived {
 		t.Errorf("meals after restoring = %+v, want the onigiri back", got)
@@ -112,81 +130,59 @@ func TestQuickListIsPinnedThenMostLoggedInTheLast30Days(t *testing.T) {
 	logTimes(onigiri, 3)
 	logTimes(natto, 1)
 	logTimes(salad, 4)
-	phone.must(http.MethodDelete, "/api/calories/meals/"+salad, nil, http.StatusNoContent)
+	phone.archiveMeal(salad)
 
-	var got []string
-	for _, m := range get[[]mealJSON](phone, "/api/calories/meals/quick") {
-		got = append(got, m.Name)
-	}
-	if want := []string{"Coffee", "Onigiri", "Natto", "Banana", "Yogurt"}; !slices.Equal(got, want) {
-		t.Errorf("quick list = %q, want %q", got, want)
+	if got, want := phone.mealsInQuickListOrder(), []string{"Coffee", "Onigiri", "Natto", "Banana", "Yogurt"}; !slices.Equal(got, want) {
+		t.Errorf("calories_list_meals = %q, want %q", got, want)
 	}
 }
 
-func TestInvalidMealsAreRejected(t *testing.T) {
+func TestInvalidMealsAreRefused(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 	id := phone.createMeal(onigiri)
-	with := func(change func(m *mealJSON)) mealJSON {
-		m := onigiri
-		change(&m)
-		return m
-	}
+	session := phone.tools()
 
-	for name, body := range map[string]any{
-		"not JSON":         "{",
-		"no name":          with(func(m *mealJSON) { m.Name = " " }),
-		"name too long":    with(func(m *mealJSON) { m.Name = strings.Repeat("x", 101) }),
-		"no kcal":          map[string]any{"name": "Onigiri"},
-		"negative kcal":    with(func(m *mealJSON) { m.Kcal = -1 }),
-		"too many kcal":    with(func(m *mealJSON) { m.Kcal = 10001 }),
-		"store too long":   with(func(m *mealJSON) { m.Store = ptr(strings.Repeat("x", 101)) }),
-		"emoji too long":   with(func(m *mealJSON) { m.Emoji = ptr("🍙🍙🍙🍙🍙🍙🍙🍙🍙") }),
-		"imageUrl not URL": with(func(m *mealJSON) { m.ImageURL = ptr("photo.jpg") }),
-		"imageUrl http":    with(func(m *mealJSON) { m.ImageURL = ptr("http://example.com/a.jpg") }),
-		"empty tag":        with(func(m *mealJSON) { m.Tags = []string{" "} }),
-		"tag too long":     with(func(m *mealJSON) { m.Tags = []string{strings.Repeat("x", 31)} }),
+	for _, meal := range map[string]map[string]any{
+		"no name":        {"name": " ", "kcal": 230},
+		"name too long":  {"name": strings.Repeat("x", 101), "kcal": 230},
+		"negative kcal":  {"name": "Onigiri", "kcal": -1},
+		"too many kcal":  {"name": "Onigiri", "kcal": 10001},
+		"store too long": {"name": "Onigiri", "kcal": 230, "store": strings.Repeat("x", 101)},
+		"emoji too long": {"name": "Onigiri", "kcal": 230, "emoji": "🍙🍙🍙🍙🍙🍙🍙🍙🍙"},
+		"empty tag":      {"name": "Onigiri", "kcal": 230, "tags": []string{" "}},
+		"tag too long":   {"name": "Onigiri", "kcal": 230, "tags": []string{strings.Repeat("x", 31)}},
 	} {
-		if rec := phone.do(http.MethodPost, "/api/calories/meals", body); rec.Code != http.StatusBadRequest {
-			t.Errorf("create, %s: status = %d, body %q; want %d", name, rec.Code, rec.Body, http.StatusBadRequest)
+		toolError(t, session, "calories_save_meal", meal)
+		edit := map[string]any{"id": id}
+		for k, v := range meal {
+			edit[k] = v
 		}
-		if rec := phone.do(http.MethodPut, "/api/calories/meals/"+id, body); rec.Code != http.StatusBadRequest {
-			t.Errorf("edit, %s: status = %d, body %q; want %d", name, rec.Code, rec.Body, http.StatusBadRequest)
-		}
+		toolError(t, session, "calories_save_meal", edit)
 	}
+	// A new Meal needs its kcal; an edit keeps the saved one.
+	toolError(t, session, "calories_save_meal", map[string]any{"name": "Onigiri"})
 	if got := get[[]mealJSON](phone, "/api/calories/meals"); len(got) != 1 || got[0].Name != onigiri.Name {
 		t.Errorf("meals = %+v, want only the unchanged onigiri", got)
 	}
 }
 
-func TestChangingAMealOrEntryThatDoesNotExistIsNotFound(t *testing.T) {
+func TestChangingAMealOrEntryThatDoesNotExistIsRefused(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
+	session := phone.tools()
 	const missing = "6af05d493ea403a78bf5997b"
 
-	for _, req := range []struct {
-		method, path string
-		body         any
-	}{
-		{http.MethodPut, "/api/calories/meals/" + missing, onigiri},
-		{http.MethodDelete, "/api/calories/meals/" + missing, nil},
-		{http.MethodPost, "/api/calories/meals/" + missing + "/restore", nil},
-		{http.MethodPut, "/api/calories/entries/" + missing, map[string]any{"name": "Sushi", "kcalPerServing": 45, "servings": 1}},
-	} {
-		if rec := phone.do(req.method, req.path, req.body); rec.Code != http.StatusNotFound {
-			t.Errorf("%s %s: status = %d, body %q; want %d", req.method, req.path, rec.Code, rec.Body, http.StatusNotFound)
-		}
-	}
-	// Deleting an Entry that doesn't exist succeeds, like Core's deletes.
-	phone.must(http.MethodDelete, "/api/calories/entries/"+missing, nil, http.StatusNoContent)
+	toolError(t, session, "calories_save_meal", map[string]any{"id": missing, "name": "Onigiri", "kcal": 230})
+	toolError(t, session, "calories_archive_meal", map[string]any{"id": missing})
+	toolError(t, session, "calories_restore_meal", map[string]any{"id": missing})
+	toolError(t, session, "calories_update_entry", map[string]any{"id": missing, "name": "Sushi"})
 }
 
 func TestEditingAnArchivedMealKeepsItArchived(t *testing.T) {
 	_, phone := signedInBrowser(t, wednesday)
 	id := phone.createMeal(onigiri)
-	phone.must(http.MethodDelete, "/api/calories/meals/"+id, nil, http.StatusNoContent)
+	phone.archiveMeal(id)
 
-	renamed := onigiri
-	renamed.Name = "Salmon onigiri"
-	phone.must(http.MethodPut, "/api/calories/meals/"+id, renamed, http.StatusNoContent)
+	callTool[mealJSON](t, phone.tools(), "calories_save_meal", map[string]any{"id": id, "name": "Salmon onigiri"})
 
 	if got := get[[]mealJSON](phone, "/api/calories/meals"); len(got) != 0 {
 		t.Errorf("meals in use after editing an archived one = %+v, want none", got)

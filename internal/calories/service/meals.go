@@ -32,11 +32,6 @@ func NewMeals(meals model.MealsRepository, entries model.EntriesRepository, core
 // Routes adds the Meal routes to mux, under /api/calories/meals.
 func (s *MealsService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/calories/meals", s.listMeals)
-	mux.HandleFunc("POST /api/calories/meals", s.postMeal)
-	mux.HandleFunc("GET /api/calories/meals/quick", s.quickMeals)
-	mux.HandleFunc("PUT /api/calories/meals/{id}", s.putMeal)
-	mux.HandleFunc("DELETE /api/calories/meals/{id}", s.deleteMeal)
-	mux.HandleFunc("POST /api/calories/meals/{id}/restore", s.restoreMeal)
 }
 
 func toMealJSON(m model.Meal) model.MealJSON {
@@ -81,22 +76,6 @@ func toMealJSONs(meals []model.Meal) []model.MealJSON {
 	return list
 }
 
-// readMeal reads and checks the Meal in r's body. On a bad body it answers
-// 400 and returns false.
-func readMeal(w http.ResponseWriter, r *http.Request) (model.Meal, bool) {
-	var j model.MealBody
-	if err := json.NewDecoder(r.Body).Decode(&j); err != nil {
-		http.Error(w, "the body isn't a Meal", http.StatusBadRequest)
-		return model.Meal{}, false
-	}
-	meal, err := fromMealBody(j)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return model.Meal{}, false
-	}
-	return meal, true
-}
-
 // fromMealBody turns the Meal the API was sent into a Meal, or explains what's
 // wrong with it.
 func fromMealBody(j model.MealBody) (model.Meal, error) {
@@ -135,77 +114,9 @@ func fromMealBody(j model.MealBody) (model.Meal, error) {
 	}, nil
 }
 
-// postMeal saves a new Meal.
-func (s *MealsService) postMeal(w http.ResponseWriter, r *http.Request) {
-	meal, ok := readMeal(w, r)
-	if !ok {
-		return
-	}
-	meal.CreatedAt = s.now()
-	id, err := s.meals.Insert(r.Context(), meal)
-	if err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	coreutils.WriteCreated(w, id)
-}
-
-// putMeal edits a Meal. Entries already logged from it keep their values.
-func (s *MealsService) putMeal(w http.ResponseWriter, r *http.Request) {
-	meal, ok := readMeal(w, r)
-	if !ok {
-		return
-	}
-	meal.ID = r.PathValue("id")
-	err := s.meals.Update(r.Context(), meal)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		http.Error(w, "there's no such Meal", http.StatusNotFound)
-		return
-	} else if err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
-// deleteMeal archives a Meal: it leaves the lists and can't be logged, but its
-// Entries stay and it can be restored.
-func (s *MealsService) deleteMeal(w http.ResponseWriter, r *http.Request) {
-	now := s.now()
-	s.setArchivedAt(w, r, &now)
-}
-
-// restoreMeal brings an archived Meal back.
-func (s *MealsService) restoreMeal(w http.ResponseWriter, r *http.Request) {
-	s.setArchivedAt(w, r, nil)
-}
-
-func (s *MealsService) setArchivedAt(w http.ResponseWriter, r *http.Request, archivedAt *time.Time) {
-	err := s.meals.SetArchivedAt(r.Context(), r.PathValue("id"), archivedAt)
-	if errors.Is(err, coreutils.ErrNotFound) {
-		http.Error(w, "there's no such Meal", http.StatusNotFound)
-		return
-	} else if err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
-}
-
 // quickListDays is how many Days, today included, the quick list counts
 // Entries over.
 const quickListDays = 30
-
-// quickMeals lists the Meals in use for one-tap logging: pinned ones first,
-// then the most-logged in the last 30 Days, then by name.
-func (s *MealsService) quickMeals(w http.ResponseWriter, r *http.Request) {
-	meals, err := s.quick(r.Context())
-	if err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	writeMeals(w, meals)
-}
 
 // quick returns the Meals in use in the quick list's order.
 func (s *MealsService) quick(ctx context.Context) ([]model.Meal, error) {

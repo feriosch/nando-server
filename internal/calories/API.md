@@ -1,6 +1,6 @@
 # Calories API
 
-The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, the Calories Home Card and Settings Section, and the Calories Notifications. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message. Claude reads and changes the same data through the Module's [Tools](#tools).
+The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, the Calories Home Card and Settings Section, and the Calories Notifications. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)). Bodies are JSON. Errors are a status code with a short plain-text message. The web app only reads: every route here is a `GET`. The Calories Assistant writes, through the Module's [Tools](#tools), which also read the same data ([#141](https://github.com/feriosch/nando-server/issues/141)).
 
 A Day is a date in the Owner Time Zone, written `YYYY-MM-DD`.
 
@@ -28,43 +28,12 @@ A Meal is something the Owner eats repeatedly, saved by name with its kcal so it
 - `emoji`: one emoji (at most 8 code points, so flags and family emoji fit), or `null`.
 - `imageUrl`: an `https:` URL of a photo, set by hand (for example, a file in the Meal photos bucket), or `null`.
 - `tags`: free-form labels, each 1 to 30 characters, at most 20. They are trimmed and repeats are dropped. A Meal Tag never changes how a Meal behaves.
-- `pinned`: pinned Meals lead the quick list.
-- `archived`: read-only. `true` once the Meal is deleted.
+- `pinned`: pinned Meals lead `calories_list_meals`.
+- `archived`: `true` once the Meal is archived (`calories_archive_meal`).
 
 ### `GET /api/calories/meals`
 
 `200`: the Meals in use, by name. With `?archived=true`, the archived ones instead.
-
-### `GET /api/calories/meals/quick`
-
-`200`: the Meals in use, for one-tap logging: pinned ones first, then the most-logged in the last 30 Days (today and the 29 before it, counting Entries, not Servings), then by name. Archived Meals aren't listed.
-
-### `POST /api/calories/meals`
-
-Body: a Meal without `id` and `archived`.
-
-- `201`: `{ "id": "…" }`.
-- `400`: the body isn't a Meal, or a field is invalid. The message says which.
-
-### `PUT /api/calories/meals/{id}`
-
-Body: the whole Meal, as for `POST`. An archived Meal can be edited too; it stays archived.
-
-- `204`: saved. Entries already logged from it don't change.
-- `400`: as for `POST`.
-- `404`: there's no such Meal.
-
-### `DELETE /api/calories/meals/{id}`
-
-Archives the Meal: it leaves both lists and can't be logged, but its Entries stay, and it can be restored.
-
-- `204`: archived (also if it already was).
-- `404`: there's no such Meal.
-
-### `POST /api/calories/meals/{id}/restore`
-
-- `204`: the Meal is back in use (also if it wasn't archived).
-- `404`: there's no such Meal.
 
 ## Entries
 
@@ -87,53 +56,13 @@ An Entry records that the Owner ate something on a Day: a name, a kcal per servi
 - `servings`: a whole number from 1 to 100.
 - `loggedAt`: when it was logged, in UTC.
 
-Only Days in the **Editable Window**, today and the 7 Days before it, can be changed. Every Day can be read. Logging, editing or deleting an Entry on any other Day, including a future one, answers `409`.
+Only Days in the **Editable Window**, today and the 7 Days before it, can be changed. Every Day can be read. The Tools refuse to log, edit or delete an Entry on any other Day, including a future one.
 
 ### `GET /api/calories/days/{day}/entries`
 
 `200`: the Day's Entries in the order they were logged. `[]` for an Unlogged Day.
 
 `400`: `day` isn't `YYYY-MM-DD`.
-
-### `POST /api/calories/days/{day}/entries`
-
-Logs an Entry on `day`, either from a Meal:
-
-```json
-{ "mealId": "6af05d493ea403a78bf5997b", "servings": 2 }
-```
-
-which copies the Meal's `name` and `kcal`, or as a one-off:
-
-```json
-{ "name": "Sushi", "kcalPerServing": 45, "servings": 12, "saveAsMeal": false }
-```
-
-`saveAsMeal: true` also saves the one-off as a new Meal (with only its name and kcal) and logs the Entry from it. It can't be sent with `mealId`.
-
-- `201`: `{ "id": "…" }`.
-- `400`: `day` isn't `YYYY-MM-DD`; the body isn't an Entry; `servings` is missing or not a whole number from 1 to 100; the Meal doesn't exist or is archived; `saveAsMeal` was sent with `mealId`; or a one-off's `name` or `kcalPerServing` is missing or invalid (as for a Meal's `name` and `kcal`).
-- `409`: `day` isn't in the Editable Window.
-
-### `PUT /api/calories/entries/{id}`
-
-Edits an Entry. Body: all three of its values:
-
-```json
-{ "name": "Sushi (salmon)", "kcalPerServing": 50, "servings": 10 }
-```
-
-Its `day` and `mealId` can't change.
-
-- `204`: saved.
-- `400`: a value is missing or invalid, as for logging.
-- `404`: there's no such Entry.
-- `409`: its Day isn't in the Editable Window.
-
-### `DELETE /api/calories/entries/{id}`
-
-- `204`: deleted. This is also the answer if there's no such Entry.
-- `409`: its Day isn't in the Editable Window.
 
 ## Daily Limit
 
@@ -149,22 +78,11 @@ The Daily Limit is the most kcal the Owner intends to consume in a Day: a ceilin
 
 - `effectiveFrom`: the Day it was set, from which it applies.
 
-### `PUT /api/calories/daily-limit`
-
-Sets the Daily Limit from today.
-
-```json
-{ "kcal": 1800 }
-```
-
-- `204`: saved.
-- `400`: `kcal` is missing or not a whole number from 1 to 10,000.
-
 ## Days
 
 Consumed Calories are always derived from a Day's Entries. An **Unlogged Day**, one with no Entries, means "not recorded", not "ate nothing": its `consumedCalories`, `remaining` and `overLimit` are `null`, never `0` or `false`, since it is never over or under the Daily Limit. A Day whose Entries add up to 0 kcal is logged, with `consumedCalories: 0`.
 
-The Day view, the preview, the history and the Home Card all describe a Day with the same fields:
+The Day view, the history, the Home Card and the Tools all describe a Day with the same fields:
 
 ```json
 { "day": "2026-10-21", "consumedCalories": 1000, "dailyLimit": 2000, "remaining": 1000, "overLimit": false }
@@ -192,19 +110,6 @@ The Day view, the preview, the history and the Home Card all describe a Day with
 
 `400`: `day` isn't `YYYY-MM-DD`.
 
-### `GET /api/calories/days/{day}/preview?kcal={kcal}&replacing={id}`
-
-What logging an Entry of `kcal` on `day` would make of the Day, so the web app can warn before it goes over the Daily Limit. Nothing is logged. With `replacing`, the ID of one of the Day's Entries, it is what editing that Entry to `kcal` would make of it instead: that Entry's own kcal is left out.
-
-```json
-{ "day": "2026-10-21", "consumedCalories": 2001, "dailyLimit": 2000, "remaining": -1, "overLimit": true }
-```
-
-The fields are those of the Day with the Entry, so `consumedCalories` and `overLimit` are never `null`.
-
-- `400`: `day` isn't `YYYY-MM-DD`; `kcal` is missing or not a whole number from 0 to 1,000,000 (the most one Entry can have: 10,000 kcal per serving × 100 Servings); or `replacing` isn't one of the Day's Entries.
-- `409`: `day` isn't in the Editable Window, so nothing can be logged or edited on it.
-
 ### `GET /api/calories/history?from={day}&to={day}`
 
 `200`: every Day from `from` to `to`, inclusive, newest first, each with the fields above.
@@ -231,7 +136,7 @@ The fields are those of the Day with the Entry, so `consumedCalories` and `overL
 
 ## Settings
 
-The Calories Settings Section: when its Notifications are sent. The Daily Limit is set on its own route, above.
+The Calories Settings Section: when its Notifications are sent. The Calories Assistant changes them with `calories_save_settings`.
 
 ### `GET /api/calories/settings`
 
@@ -248,23 +153,16 @@ The Calories Settings Section: when its Notifications are sent. The Daily Limit 
 - `eveningSummary`: the Notification telling the Owner how today went.
 - `time`: `"HH:MM"` in the Owner Time Zone, on the hour or half hour (`"00:00"` to `"23:30"`).
 
-### `PUT /api/calories/settings`
-
-Body: all of the settings, as `GET` answers them.
-
-- `204`: saved.
-- `400`: the body isn't settings, one of them or its `enabled` or `time` is missing, or a `time` isn't on the hour or half hour. The message says which.
-
 ## Notifications
 
-Core's tick asks the Calories Module for its Notifications every 5 minutes, for the half hour it is in (see [Core's API](../core/API.md)). Each is sent at most once a Day, only while switched on, at its `time` in the settings, titled `Calories`, and opens `/calories` when tapped:
+Core's tick asks the Calories Module for its Notifications every 5 minutes, for the half hour it is in (see [Core's API](../core/API.md)). Each is sent at most once a Day, only while switched on, at its `time` in the settings, titled `Calories`, in the Calories Assistant's chat in Telegram (Core's Messenger):
 
 - **No-Entries reminder** (`noEntriesReminder`): `Nothing logged yet today`, only if today has no Entries at that time, and not if the evening summary is set for the same time (it says the same).
 - **Evening summary** (`eveningSummary`): today's Consumed Calories against the Daily Limit today has: `Today: 1460 / 2000 kcal`, or `Today: 1460 kcal` if no Daily Limit was ever set. On an Unlogged Day it is `Nothing logged today`, never 0 kcal.
 
 ## Tools
 
-Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)), for the Calories Assistant in Telegram ([ADR 0008](../../docs/adr/0008-assistants-on-telegram.md)) and the Claude app. Arguments and answers are JSON. A `day` is `YYYY-MM-DD` in the Owner Time Zone, and leaving it out means today. They follow the same rules as the routes above: only Days in the Editable Window can be changed. A refused call is a Tool error that says what is wrong, and changes nothing.
+Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)), for the Calories Assistant in Telegram ([ADR 0008](../../docs/adr/0008-assistants-on-telegram.md)) and the Claude app. Arguments and answers are JSON. A `day` is `YYYY-MM-DD` in the Owner Time Zone, and leaving it out means today. Only Days in the Editable Window can be changed. A refused call is a Tool error that says what is wrong, and changes nothing.
 
 ### The shapes they answer
 
@@ -277,16 +175,19 @@ Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)
 | --- | --- | --- |
 | `calories_get_day` | `day` | Answers the Day view, as `GET /api/calories/days/{day}` does |
 | `calories_get_daily_limit` | none | Answers `{"dailyLimit": Daily Limit}`, `null` if none was ever set |
-| `calories_list_meals` | `archived` | The Meals in use, in the quick list's order, as `GET /api/calories/meals/quick` lists them. With `archived: true`, the archived ones by name. Answers `{"meals": [Meal]}` |
+| `calories_list_meals` | `archived` | The Meals in use, pinned ones first, then the most logged in the last 30 Days (today and the 29 before it, counting Entries, not Servings), then by name. With `archived: true`, the archived ones by name. Answers `{"meals": [Meal]}` |
+| `calories_get_settings` | none | Answers the settings, as `GET /api/calories/settings` does |
 
 ### Write
 
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `calories_log_entry` | `day`, `servings`, and `mealId` or a one-off's `name` and `kcalPerServing`; `saveAsMeal` | Logs an Entry, as `POST /api/calories/days/{day}/entries` does. Answers `{"entry": Entry, "day": Day}` |
-| `calories_update_entry` | `id`; `name`, `kcalPerServing`, `servings` | Edits an Entry: only the values sent change. Answers `{"entry": Entry, "day": Day}` |
+| `calories_log_entry` | `day`, `servings`, and `mealId` or a one-off's `name` and `kcalPerServing`; `saveAsMeal` | Logs an Entry: from a Meal, copying its `name` and `kcal`, or a one-off. `servings` is a whole number from 1 to 100; a one-off's `name` and `kcalPerServing` follow a Meal's rules. `saveAsMeal: true` also saves the one-off as a new Meal and logs the Entry from it; it can't come with `mealId`. An archived Meal can't be logged. Answers `{"entry": Entry, "day": Day}` |
+| `calories_update_entry` | `id`; `name`, `kcalPerServing`, `servings` | Edits an Entry: only the values sent change, with the rules for logging. Its `day` and `mealId` can't change. Answers `{"entry": Entry, "day": Day}` |
 | `calories_save_meal` | `id` to change one, or none to save a new one; `name`, `kcal`, `store`, `emoji`, `tags`, `pinned` | Saves a new Meal, which needs `name` and `kcal`, or changes one: only the fields sent change, and `tags` replaces all its Meal Tags. Entries already logged from it don't change. Answers the Meal |
 | `calories_restore_meal` | `id` | Brings an archived Meal back into use. Answers the Meal |
+| `calories_set_daily_limit` | `kcal` | Sets the Daily Limit from today, a whole number from 1 to 10,000. A second change on the same Day replaces the first, and earlier Days keep theirs. Answers `{"dailyLimit": Daily Limit}`, the one now in force |
+| `calories_save_settings` | `noEntriesReminder`, `eveningSummary`, each `{enabled, time}` | Changes when the Calories Notifications are sent. Only the Notifications sent change, and within one, only the fields sent; at least one must come. `time` is on the hour or half hour. Answers the settings |
 
 ### Delete (`destructiveHint`)
 
@@ -295,4 +196,4 @@ The Calories Assistant asks the Owner before each of these.
 | Tool | Arguments | What it does |
 | --- | --- | --- |
 | `calories_delete_entry` | `id` | Deletes the Entry, which can't be undone. Answers `{"day": Day}`, the Day without it |
-| `calories_archive_meal` | `id` | Archives the Meal, as `DELETE /api/calories/meals/{id}` does: its Entries stay, and `calories_restore_meal` brings it back. Answers the Meal |
+| `calories_archive_meal` | `id` | Archives the Meal: it leaves the lists and can't be logged, its Entries stay, and `calories_restore_meal` brings it back. Answers the Meal |

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"slices"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
 	"github.com/feriosch/nando-server/internal/calories/utils"
@@ -16,21 +15,19 @@ import (
 // against the Daily Limit it had. It asks the EntriesService which Days can
 // be logged on.
 type DaysService struct {
-	entries        model.EntriesRepository
-	dailyLimits    model.DailyLimitsRepository
-	entriesService *EntriesService
-	core           coremodel.CoreService
+	entries     model.EntriesRepository
+	dailyLimits model.DailyLimitsRepository
+	core        coremodel.CoreService
 }
 
 // NewDays returns the DaysService.
-func NewDays(entries model.EntriesRepository, dailyLimits model.DailyLimitsRepository, entriesService *EntriesService, core coremodel.CoreService) *DaysService {
-	return &DaysService{entries: entries, dailyLimits: dailyLimits, entriesService: entriesService, core: core}
+func NewDays(entries model.EntriesRepository, dailyLimits model.DailyLimitsRepository, core coremodel.CoreService) *DaysService {
+	return &DaysService{entries: entries, dailyLimits: dailyLimits, core: core}
 }
 
 // Routes adds the Day routes to mux, under /api/calories/.
 func (s *DaysService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/calories/days/{day}", s.getDay)
-	mux.HandleFunc("GET /api/calories/days/{day}/preview", s.previewEntry)
 	mux.HandleFunc("GET /api/calories/history", s.history)
 	mux.HandleFunc("GET /api/calories/home-card", s.homeCard)
 }
@@ -109,46 +106,6 @@ func (s *DaysService) homeCard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	coreutils.WriteJSON(w, http.StatusOK, view.CaloriesJSON)
-}
-
-// previewEntry answers what logging an Entry of ?kcal= on the Day would make
-// of it: its Consumed Calories, what would remain of its Daily Limit, and
-// whether that would take it over. With ?replacing= an Entry's ID, it answers
-// for editing that Entry to ?kcal= instead.
-func (s *DaysService) previewEntry(w http.ResponseWriter, r *http.Request) {
-	day, ok := utils.PathDay(w, r)
-	if !ok {
-		return
-	}
-	kcal, err := utils.CheckEntryKcal("kcal", r.URL.Query().Get("kcal"))
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	if !s.entriesService.CheckEditable(w, r, day) {
-		return
-	}
-	entries, err := s.entries.ListOnDay(r.Context(), day)
-	if err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	if replacing := r.URL.Query().Get("replacing"); replacing != "" {
-		i := slices.IndexFunc(entries, func(e model.Entry) bool { return e.ID == replacing })
-		if i < 0 {
-			http.Error(w, "replacing must be an Entry on this Day", http.StatusBadRequest)
-			return
-		}
-		entries = slices.Delete(entries, i, i+1)
-	}
-	limits, err := s.dailyLimits.List(r.Context())
-	if err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	prospective := model.Entry{KcalPerServing: kcal, Servings: 1}
-	consumed := model.ConsumedCalories(append(entries, prospective))
-	coreutils.WriteJSON(w, http.StatusOK, toCaloriesJSON(limits.Calories(day, consumed)))
 }
 
 // maxHistoryDays is the most Days the history answers at once: a leap year.
