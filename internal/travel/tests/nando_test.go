@@ -265,3 +265,17 @@ func (n *nando) travelTalk() []coremodel.TalkMessage {
 	}
 	return talk.Messages
 }
+
+// get GETs path from the web app, which must answer status, and decodes a
+// 200's JSON into a T.
+func get[T any](d *browser, path string, status int) T {
+	d.nando.t.Helper()
+	rec := d.must(http.MethodGet, path, nil, status)
+	var v T
+	if status == http.StatusOK {
+		if err := json.Unmarshal(rec.Body.Bytes(), &v); err != nil {
+			d.nando.t.Fatalf("GET %s: %v in %q", path, err, rec.Body)
+		}
+	}
+	return v
+}
