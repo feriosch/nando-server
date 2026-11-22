@@ -114,7 +114,7 @@ Core's own Settings Section.
 - `timeZone`: the Owner Time Zone, an IANA name such as `"Asia/Tokyo"`. Every Day, and every clock time such as the reminder's, is in this zone. Changing it never moves stored data: a Weigh-in stays in its week. Only which Day is today changes.
 - `heightCm`: a whole number of cm, or `null` until it is set.
 - `weighInReminder`: the weekly Notification reminding the Owner to weigh in. `weekday` is `"monday"` to `"sunday"`, and `time` is `"HH:MM"` on the hour or half hour (`"00:00"` to `"23:30"`).
-- `gmailDigest`: the daily Notification asking the Core Assistant for the Gmail Digest ([ADR 0009](../../docs/adr/0009-gmail-for-the-core-assistant.md)). `time` is `"HH:MM"` on the hour or half hour.
+- `gmailDigest`: the daily Notification asking the Core Assistant for the Gmail Digest ([ADR 0009](../../docs/adr/0009-gmail-for-the-core-assistant.md)), whose run also files the new mail in a Gmail Filing ([ADR 0011](../../docs/adr/0011-the-core-assistant-files-gmail-daily.md)). `time` is `"HH:MM"` on the hour or half hour.
 
 ### `PUT /api/settings`
 
