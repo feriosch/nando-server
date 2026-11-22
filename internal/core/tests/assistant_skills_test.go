@@ -65,6 +65,7 @@ func TestTheTalkSkillUsesTheMessengersTools(t *testing.T) {
 // assistants are the Assistants with a skill, and how the skills call each.
 var assistants = map[string]string{
 	"core": "Core Assistant", "career": "Career Assistant", "japanese": "Japanese Assistant", "calories": "Calories Assistant",
+	"travel": "Travel Assistant",
 }
 
 func TestEachAssistantsSkillPointsToTheOthers(t *testing.T) {
@@ -192,6 +193,7 @@ func TestTheCoreSkillFilesTheDaysMailAndKeepsTheFilingRecord(t *testing.T) {
 		"`Unknown`",
 		"`UNREAD`",                               // archiving never changes read or unread
 		"`Career/Recruiters`",                    // the Gmail Career Sync's label (ADR 0010)
+		"`Travel Log/Alerts`",                    // the Daily Fare Check's label (ADR 0013)
 		"`label:<word>` then finds Gmail's view", // label names avoid Gmail's reserved words
 		"`in:inbox -is:starred`",                 // mail the Owner unstarred is done, and archived
 		`label:"Payments/McDonald's"`,            // a name with punctuation is quoted in a search
@@ -207,7 +209,7 @@ func TestTheCoreSkillFilesTheDaysMailAndKeepsTheFilingRecord(t *testing.T) {
 			t.Errorf("the Core skill names %s, which Nando doesn't serve", name)
 		}
 	}
-	for _, folder := range []string{"talk", "career", "japanese", "calories"} {
+	for _, folder := range []string{"talk", "career", "japanese", "calories", "travel"} {
 		if found := coreToolName.FindString(readSkill(t, folder, "assistant-"+folder)); found != "" {
 			t.Errorf("the %s skill names %s, but only the Core Assistant files Gmail", folder, found)
 		}
