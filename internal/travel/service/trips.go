@@ -77,7 +77,7 @@ func (s *TripsService) Tools() []coremodel.Tool {
 		Handle: s.setTargetFare,
 	}, {
 		Name: "travel_delete_trip",
-		Description: "Deletes the Trip with id for good, with its Fares and Price Verdicts. Only on the Owner's yes in a later message: " +
+		Description: "Deletes the Trip with id for good, with its Fares, Price Verdicts and Fare Alerts. Only on the Owner's yes in a later message: " +
 			"a Trip they booked or no longer want is better set to booked or dropped.",
 		InputSchema: json.RawMessage(id),
 		Destructive: true,
@@ -100,8 +100,12 @@ func (s *TripsService) Tools() []coremodel.Tool {
 			if err := s.trips.Delete(ctx, trip.ID); err != nil {
 				return nil, err
 			}
-			// Again, for any a Fare Check recorded while the Trip was going.
+			// Again, for any a Fare Check recorded, or a Fare Alert a run
+			// recorded about one, while the Trip was going.
 			if err := s.fares.DeleteTrip(ctx, trip.ID); err != nil {
+				return nil, err
+			}
+			if err := s.alerts.DeleteTrip(ctx, trip.ID); err != nil {
 				return nil, err
 			}
 			return map[string]string{"deleted": trip.ID}, nil
@@ -245,6 +249,19 @@ func (s *TripsService) saveTrip(ctx context.Context, arguments json.RawMessage) 
 			}
 			return nil, err
 		}
+		// A removed Party's Target Fare goes with it: added again, it needs
+		// the Owner's agreement again.
+		kept := trip.TargetFares[:0:0]
+		for _, target := range trip.TargetFares {
+			if slices.ContainsFunc(trip.Parties, func(p model.Party) bool { return p.Key == target.Party }) {
+				kept = append(kept, target)
+				continue
+			}
+			if err := s.trips.SetTargetFare(ctx, trip.ID, target.Party, nil); err != nil {
+				return nil, err
+			}
+		}
+		trip.TargetFares = kept
 		return toTripJSON(trip), nil
 	}
 	trip := model.Trip{
@@ -328,6 +345,15 @@ func (s *TripsService) setTargetFare(ctx context.Context, arguments json.RawMess
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, errors.New("give tripId, party and perPerson, a number or null")
 	}
+	// perPerson left out isn't null: a call that forgot it mustn't clear the
+	// Target Fare the Owner agreed.
+	var given map[string]json.RawMessage
+	if err := json.Unmarshal(arguments, &given); err != nil {
+		return nil, errors.New("give tripId, party and perPerson, a number or null")
+	}
+	if _, ok := given["perPerson"]; !ok {
+		return nil, errors.New("give perPerson: the price per person in JPY, or null to clear it")
+	}
 	trip, err := s.find(ctx, json.RawMessage(`{"id":`+strconv.Quote(args.TripID)+`}`))
 	if err != nil {
 		return nil, err
@@ -343,14 +369,23 @@ func (s *TripsService) setTargetFare(ctx context.Context, arguments json.RawMess
 	if err != nil {
 		return nil, err
 	}
-	targets := slices.DeleteFunc(slices.Clone(trip.TargetFares), func(t model.TargetFare) bool { return t.Party == party })
+	var target *model.TargetFare
 	if args.PerPerson != nil {
-		targets = append(targets, model.TargetFare{Party: party, PerPerson: *args.PerPerson, AgreedOn: today})
+		target = &model.TargetFare{Party: party, PerPerson: *args.PerPerson, AgreedOn: today}
 	}
-	if err := s.trips.SetTargetFares(ctx, trip.ID, targets); err != nil {
+	if err := s.trips.SetTargetFare(ctx, trip.ID, party, target); err != nil {
+		if errors.Is(err, coreutils.ErrNotFound) {
+			return nil, errors.New("there is no Trip " + trip.ID)
+		}
 		return nil, err
 	}
-	trip.TargetFares = targets
+	// Read again, for any other Party's Target Fare set meanwhile.
+	if trip, err = s.trips.Find(ctx, trip.ID); err != nil {
+		if errors.Is(err, coreutils.ErrNotFound) {
+			return nil, errors.New("there is no Trip " + args.TripID)
+		}
+		return nil, err
+	}
 	return toTripJSON(trip), nil
 }
 

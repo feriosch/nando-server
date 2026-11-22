@@ -40,7 +40,8 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 	switch day := coremodel.DayOf(slot, slot.Location()); {
 	case weeklyDay && coreutils.IsAt(slot, weekly.Time):
 		ask = coremodel.Notification{
-			ID:    coremodel.NotificationID(notificationArea, "weekly-fare-check", day),
+			// Once a week, by its Monday, even if the weekday changes midweek.
+			ID:    coremodel.NotificationID(notificationArea, "weekly-fare-check", day.Week()),
 			Title: "✈️ Weekly Fare Check",
 			Body:  "Searching every Trip's whole window…",
 			Asks:  true,

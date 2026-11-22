@@ -74,7 +74,7 @@ func (s *FaresService) Tools() []coremodel.Tool {
 		Handle:   s.listAlerts,
 	}, {
 		Name:        "travel_fare_stats",
-		Description: "What the Fares of tripId's Party say: lowestEver; the bestThisWeek and bestLastWeek found (weeks Monday to Sunday); byWeek, the cheapest per departure week; and top, the 3 cheapest found in the last 7 days.",
+		Description: "What the Fares of tripId's Party say: lowestEver; the bestThisWeek and bestLastWeek found (weeks Monday to Sunday); byWeek, the cheapest per departure week; top, the 3 cheapest found in the last 7 days; and targetFare, the Party's Target Fare per person, or null.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"tripId":{"type":"string"},"party":{"type":"string","enum":["owner","with_companion"]}},"required":["tripId","party"]}`),
 		ReadOnly:    true,
 		Handle:      s.fareStats,
@@ -394,7 +394,20 @@ func (s *FaresService) listAlerts(ctx context.Context, arguments json.RawMessage
 		}
 		since = t
 	}
-	alerts, err := s.alerts.List(ctx, args.TripID, model.PartyKey(args.Party), since)
+	// A Trip or Party that isn't there is refused, not answered with no
+	// alerts, which would read as none sent and get them sent again.
+	trip, err := s.trips.Find(ctx, args.TripID)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return nil, errors.New("there is no Trip " + args.TripID)
+	}
+	if err != nil {
+		return nil, err
+	}
+	party := model.PartyKey(args.Party)
+	if !slices.ContainsFunc(trip.Parties, func(p model.Party) bool { return p.Key == party }) {
+		return nil, fmt.Errorf("the Trip has no Party %q", args.Party)
+	}
+	alerts, err := s.alerts.List(ctx, trip.ID, party, since)
 	if err != nil {
 		return nil, err
 	}

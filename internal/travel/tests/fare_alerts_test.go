@@ -95,3 +95,26 @@ func TestATargetFareTheOwnerAgreedShowsOnTheTripAndInTheStats(t *testing.T) {
 		toolError(t, session, "travel_set_target_fare", args)
 	}
 }
+
+func TestRemovingAPartyClearsItsTargetFareForGood(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	trip := newTrip(t, phone, nil)
+	session := phone.tools()
+	callTool[settingsJSON](t, session, "travel_save_settings", map[string]any{"companion": map[string]any{"name": "Sam"}})
+	both := []map[string]any{{"key": "owner", "adults": 1}, {"key": "with_companion", "adults": 2}}
+	callTool[tripJSON](t, session, "travel_save_trip", map[string]any{"id": trip.ID, "parties": both})
+	callTool[map[string]any](t, session, "travel_set_target_fare", map[string]any{"tripId": trip.ID, "party": "owner", "perPerson": 90000})
+	callTool[map[string]any](t, session, "travel_set_target_fare", map[string]any{"tripId": trip.ID, "party": "with_companion", "perPerson": 100000})
+
+	callTool[tripJSON](t, session, "travel_save_trip", map[string]any{"id": trip.ID, "parties": []map[string]any{{"key": "owner", "adults": 1}}})
+	got := callTool[struct {
+		TargetFares []struct {
+			Party     string `json:"party"`
+			PerPerson int    `json:"perPerson"`
+		} `json:"targetFares"`
+	}](t, session, "travel_save_trip", map[string]any{"id": trip.ID, "parties": both})
+
+	if len(got.TargetFares) != 1 || got.TargetFares[0].Party != "owner" || got.TargetFares[0].PerPerson != 90000 {
+		t.Errorf("targetFares after removing and re-adding the Companion's Party = %+v; want only the owner's 90000", got.TargetFares)
+	}
+}

@@ -30,7 +30,7 @@ One document, the Owner's own:
   - `workWeekdays`: the weekdays they work, each once: Monday to Friday until changed.
   - `usualLeaveDays`: how many days off one trip may usually take, 0 to 30: 7 until changed.
   - `remoteDaysAbroad`: how many workdays they may work remotely from the destination, 0 to 2: 2 until changed.
-- `dailyFareCheck`, `weeklyFareCheck`: when Nando asks the Travel Assistant for the Daily and the Weekly Fare Check (see [Notifications](#notifications)). Times are on the hour or half hour, in the Owner Time Zone: the daily one's after the Gmail Digest's, so the night's Price Alerts are filed first. Both are off until turned on: the daily one at 08:30, the weekly one on Sunday at 10:00.
+- `dailyFareCheck`, `weeklyFareCheck`: when Nando asks the Travel Assistant for the Daily and the Weekly Fare Check (see [Notifications](#notifications)). Times are on the hour or half hour, in the Owner Time Zone: set the daily one after the Gmail Digest's, so the night's Price Alerts are filed first; Nando doesn't check it. Both are off until turned on: the daily one at 08:30, the weekly one on Sunday at 10:00.
 - `serpApiMonthlyLimit`: the most Price Verdicts Nando fetches from SerpApi in a calendar month, 0 to 10,000: SerpApi's free 250 until changed.
 
 ## Trips
@@ -68,7 +68,7 @@ A Trip is a journey the Owner may take: a round trip from `origins` to `destinat
 - `parties`: one or two, each once: `owner`, the Owner alone as 1 adult (the only Party until changed), and `with_companion`, 2 to 9 adults, which needs a Companion in the settings when `parties` is sent.
 - `status`: `watching`, `booked` or `dropped`, since `statusChangedOn`, a Day in the Owner Time Zone. Only a Watching Trip is searched.
 - `notes`: free text the Travel Assistant keeps for itself.
-- `targetFares`: `[{party, perPerson, agreedOn}]`, at most one per Party: the price per person, in JPY, below which the Owner wants to hear, and the Day they agreed it. Only `travel_set_target_fare` changes it.
+- `targetFares`: `[{party, perPerson, agreedOn}]`, at most one per Party: the price per person, in JPY, below which the Owner wants to hear, and the Day they agreed it. Only `travel_set_target_fare` sets it, and removing a Party from the Trip clears that Party's, so adding it again needs the Owner's agreement again.
 
 ## Fare Checks and Fares
 

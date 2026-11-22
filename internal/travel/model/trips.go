@@ -113,9 +113,11 @@ type TripsRepository interface {
 	// SetStatus sets the Status of the Trip with id, since on, changing
 	// nothing else, or returns Core's utils.ErrNotFound.
 	SetStatus(ctx context.Context, id string, status Status, on coremodel.Day) error
-	// SetTargetFares sets the TargetFares of the Trip with id, changing
-	// nothing else, or returns Core's utils.ErrNotFound.
-	SetTargetFares(ctx context.Context, id string, targets []TargetFare) error
+	// SetTargetFare replaces party's Target Fare on the Trip with id with
+	// target, or clears it when target is nil, in one atomic update that
+	// keeps the other Parties' Target Fares, changing nothing else, or
+	// returns Core's utils.ErrNotFound.
+	SetTargetFare(ctx context.Context, id string, party PartyKey, target *TargetFare) error
 	// Delete deletes the Trip with id, or returns Core's utils.ErrNotFound.
 	Delete(ctx context.Context, id string) error
 }

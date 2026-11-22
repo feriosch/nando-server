@@ -110,7 +110,8 @@ func (s *SettingsService) Tools() []coremodel.Tool {
 func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.RawMessage) (any, error) {
 	var args model.SettingsJSON
 	if err := json.Unmarshal(arguments, &args); err != nil {
-		return nil, errors.New("send home as a list of codes, companion as an object and serpApiMonthlyLimit as a number")
+		return nil, errors.New("send home as a list of codes, companion as an object, serpApiMonthlyLimit as a number, " +
+			"and dailyFareCheck and weeklyFareCheck as objects")
 	}
 	if args.Home == nil && args.Companion == nil && args.SerpAPIMonthlyLimit == nil && args.DailyFareCheck == nil && args.WeeklyFareCheck == nil {
 		return nil, errors.New("give home, companion, serpApiMonthlyLimit, dailyFareCheck, weeklyFareCheck or several")
