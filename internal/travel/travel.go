@@ -24,6 +24,7 @@ import (
 type Module struct {
 	settings *service.SettingsService
 	trips    *service.TripsService
+	fares    *service.FaresService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -31,11 +32,17 @@ type Config struct{}
 
 // NewTravelModule returns the Travel Module reading and writing its own data
 // through db and asking Core for Core's data through core.
-func NewTravelModule(_ context.Context, db *mongo.Database, core coremodel.CoreService, _ Config) (*Module, error) {
+func NewTravelModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService, _ Config) (*Module, error) {
+	fares, err := repository.NewFares(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	settings := service.NewSettings(repository.NewSettings(db))
+	trips := repository.NewTrips(db)
 	return &Module{
 		settings: settings,
-		trips:    service.NewTrips(repository.NewTrips(db), settings, core),
+		trips:    service.NewTrips(trips, fares, settings, core),
+		fares:    service.NewFares(repository.NewFareChecks(db), fares, trips, core),
 	}, nil
 }
 
@@ -61,9 +68,9 @@ type toolProvider struct{ m *Module }
 // ToolsDescription says what the Module's Tools let a Connector do, for the
 // consent page.
 func (p toolProvider) ToolsDescription() string {
-	return "read and change your Travel settings, and set up, change, close and delete your Trips"
+	return "read and change your Travel settings, set up, change, close and delete your Trips, and record and read the Fares found for them"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.settings.Tools(), p.m.trips.Tools())
+	return slices.Concat(p.m.settings.Tools(), p.m.trips.Tools(), p.m.fares.Tools())
 }

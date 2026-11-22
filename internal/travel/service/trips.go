@@ -17,14 +17,16 @@ import (
 // changes them, through its Tools.
 type TripsService struct {
 	trips    model.TripsRepository
+	fares    model.FaresRepository
 	settings *SettingsService
 	core     coremodel.CoreService
 }
 
-// NewTrips returns the TripsService. It asks the SettingsService for where
+// NewTrips returns the TripsService. It deletes a deleted Trip's Fares too,
+// and asks the SettingsService for where
 // Trips leave from by default.
-func NewTrips(trips model.TripsRepository, settings *SettingsService, core coremodel.CoreService) *TripsService {
-	return &TripsService{trips: trips, settings: settings, core: core}
+func NewTrips(trips model.TripsRepository, fares model.FaresRepository, settings *SettingsService, core coremodel.CoreService) *TripsService {
+	return &TripsService{trips: trips, fares: fares, settings: settings, core: core}
 }
 
 // Tools are what the TripsService offers Connectors: reading and changing the
@@ -62,7 +64,7 @@ func (s *TripsService) Tools() []coremodel.Tool {
 		Handle: s.setTripStatus,
 	}, {
 		Name: "travel_delete_trip",
-		Description: "Deletes the Trip with id for good. Only on the Owner's yes in a later message: " +
+		Description: "Deletes the Trip with id for good, with its Fares. Only on the Owner's yes in a later message: " +
 			"a Trip they booked or no longer want is better set to booked or dropped.",
 		InputSchema: json.RawMessage(id),
 		Destructive: true,
@@ -71,7 +73,15 @@ func (s *TripsService) Tools() []coremodel.Tool {
 			if err != nil {
 				return nil, err
 			}
+			// Its Fares first: a Trip left without them can still be deleted again.
+			if err := s.fares.DeleteTrip(ctx, trip.ID); err != nil {
+				return nil, err
+			}
 			if err := s.trips.Delete(ctx, trip.ID); err != nil {
+				return nil, err
+			}
+			// Again, for any a Fare Check recorded while the Trip was going.
+			if err := s.fares.DeleteTrip(ctx, trip.ID); err != nil {
 				return nil, err
 			}
 			return map[string]string{"deleted": trip.ID}, nil

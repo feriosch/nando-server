@@ -236,7 +236,9 @@ func TestOnlyDeletingATripIsDestructiveAndOnlyReadsAreReadOnly(t *testing.T) {
 		"travel_get_settings": {true, false}, "travel_save_settings": {false, false},
 		"travel_list_trips": {true, false}, "travel_get_trip": {true, false},
 		"travel_save_trip": {false, false}, "travel_set_trip_status": {false, false},
-		"travel_delete_trip": {false, true},
+		"travel_delete_trip":      {false, true},
+		"travel_start_fare_check": {false, false}, "travel_record_fares": {false, false},
+		"travel_finish_fare_check": {false, false}, "travel_fare_stats": {true, false},
 	}
 	seen := 0
 	for _, tool := range tools.Tools {
