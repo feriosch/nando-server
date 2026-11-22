@@ -61,7 +61,7 @@ func (s *EntriesService) checkEditable(ctx context.Context, day coremodel.Day) e
 		return err
 	}
 	if !utils.InEditableWindow(day, today) {
-		return utils.Refusal{Status: http.StatusConflict, Message: "only today and the 7 Days before it can be changed"}
+		return utils.Refusal{Message: "only today and the 7 Days before it can be changed"}
 	}
 	return nil
 }
@@ -153,7 +153,7 @@ func (s *EntriesService) entryFromMeal(ctx context.Context, mealID string, servi
 func (s *EntriesService) editableEntry(ctx context.Context, id string) (model.Entry, error) {
 	entry, err := s.entries.Find(ctx, id)
 	if errors.Is(err, coreutils.ErrNotFound) {
-		return model.Entry{}, utils.Refusal{Status: http.StatusNotFound, Message: "there's no such Entry"}
+		return model.Entry{}, utils.Refusal{Message: "there's no such Entry"}
 	} else if err != nil {
 		return model.Entry{}, err
 	}
