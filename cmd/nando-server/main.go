@@ -265,6 +265,7 @@ func run() error {
 		return err
 	}
 	nandoCore.AddToolProvider(travelModule.ToolProvider())
+	nandoCore.AddNotificationProvider(travelModule.NotificationProvider())
 	nandoCore.AddAssistant(travelModule.Assistant())
 
 	switch args := os.Args[1:]; {

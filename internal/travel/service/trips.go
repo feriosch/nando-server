@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
@@ -19,6 +20,7 @@ type TripsService struct {
 	trips    model.TripsRepository
 	fares    model.FaresRepository
 	verdicts model.PriceVerdictsRepository
+	alerts   model.FareAlertsRepository
 	settings *SettingsService
 	core     coremodel.CoreService
 }
@@ -27,9 +29,9 @@ type TripsService struct {
 // Price Verdicts too,
 // and asks the SettingsService for where
 // Trips leave from by default.
-func NewTrips(trips model.TripsRepository, fares model.FaresRepository, verdicts model.PriceVerdictsRepository,
+func NewTrips(trips model.TripsRepository, fares model.FaresRepository, verdicts model.PriceVerdictsRepository, alerts model.FareAlertsRepository,
 	settings *SettingsService, core coremodel.CoreService) *TripsService {
-	return &TripsService{trips: trips, fares: fares, verdicts: verdicts, settings: settings, core: core}
+	return &TripsService{trips: trips, fares: fares, verdicts: verdicts, alerts: alerts, settings: settings, core: core}
 }
 
 // Tools are what the TripsService offers Connectors: reading and changing the
@@ -66,6 +68,14 @@ func (s *TripsService) Tools() []coremodel.Tool {
 			`"status":{"type":"string","enum":["watching","booked","dropped"]}},"required":["id","status"]}`),
 		Handle: s.setTripStatus,
 	}, {
+		Name: "travel_set_target_fare",
+		Description: "Sets the Target Fare of tripId's Party: the price per person in JPY below which the Owner wants " +
+			"to hear, only once they agreed it. perPerson null clears it. Answers the Trip.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"tripId":{"type":"string"},` +
+			`"party":{"type":"string","enum":["owner","with_companion"]},"perPerson":{"type":["integer","null"]}},` +
+			`"required":["tripId","party","perPerson"]}`),
+		Handle: s.setTargetFare,
+	}, {
 		Name: "travel_delete_trip",
 		Description: "Deletes the Trip with id for good, with its Fares and Price Verdicts. Only on the Owner's yes in a later message: " +
 			"a Trip they booked or no longer want is better set to booked or dropped.",
@@ -82,6 +92,9 @@ func (s *TripsService) Tools() []coremodel.Tool {
 				return nil, err
 			}
 			if err := s.verdicts.DeleteTrip(ctx, trip.ID); err != nil {
+				return nil, err
+			}
+			if err := s.alerts.DeleteTrip(ctx, trip.ID); err != nil {
 				return nil, err
 			}
 			if err := s.trips.Delete(ctx, trip.ID); err != nil {
@@ -305,7 +318,47 @@ func changedTrip(trip model.Trip, args model.SaveTripJSON) model.Trip {
 	return trip
 }
 
+// setTargetFare sets or clears a Party's Target Fare, from today.
+func (s *TripsService) setTargetFare(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		TripID    string `json:"tripId"`
+		Party     string `json:"party"`
+		PerPerson *int   `json:"perPerson"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, errors.New("give tripId, party and perPerson, a number or null")
+	}
+	trip, err := s.find(ctx, json.RawMessage(`{"id":`+strconv.Quote(args.TripID)+`}`))
+	if err != nil {
+		return nil, err
+	}
+	party := model.PartyKey(args.Party)
+	if !slices.ContainsFunc(trip.Parties, func(p model.Party) bool { return p.Key == party }) {
+		return nil, fmt.Errorf("the Trip has no Party %q", args.Party)
+	}
+	if args.PerPerson != nil && *args.PerPerson <= 0 {
+		return nil, errors.New("perPerson must be a price in JPY, more than 0, or null to clear it")
+	}
+	today, err := s.core.Today(ctx)
+	if err != nil {
+		return nil, err
+	}
+	targets := slices.DeleteFunc(slices.Clone(trip.TargetFares), func(t model.TargetFare) bool { return t.Party == party })
+	if args.PerPerson != nil {
+		targets = append(targets, model.TargetFare{Party: party, PerPerson: *args.PerPerson, AgreedOn: today})
+	}
+	if err := s.trips.SetTargetFares(ctx, trip.ID, targets); err != nil {
+		return nil, err
+	}
+	trip.TargetFares = targets
+	return toTripJSON(trip), nil
+}
+
 func toTripJSON(trip model.Trip) model.TripJSON {
+	targets := make([]model.TargetFareJSON, len(trip.TargetFares))
+	for i, t := range trip.TargetFares {
+		targets[i] = model.TargetFareJSON{Party: string(t.Party), PerPerson: t.PerPerson, AgreedOn: string(t.AgreedOn)}
+	}
 	windows := make([]model.WindowJSON, len(trip.Windows))
 	for i, w := range trip.Windows {
 		windows[i] = model.WindowJSON{From: string(w.From), To: string(w.To), Note: w.Note}
@@ -334,6 +387,7 @@ func toTripJSON(trip model.Trip) model.TripJSON {
 		Status:          string(trip.Status),
 		StatusChangedOn: string(trip.StatusChangedOn),
 		Notes:           trip.Notes,
+		TargetFares:     targets,
 	}
 }
 

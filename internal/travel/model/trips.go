@@ -29,6 +29,17 @@ type Trip struct {
 	StatusChangedOn coremodel.Day `bson:"statusChangedOn"`
 	// Notes is free text the Travel Assistant keeps for itself.
 	Notes string `bson:"notes"`
+	// TargetFares are the prices per person, one per Party at most, below
+	// which the Owner wants to hear, which only SetTargetFares changes.
+	TargetFares []TargetFare `bson:"targetFares"`
+}
+
+// TargetFare is the price per person below which the Owner wants to hear
+// about a Party's Fares, and the Day they agreed it.
+type TargetFare struct {
+	Party     PartyKey      `bson:"party"`
+	PerPerson int           `bson:"perPerson"`
+	AgreedOn  coremodel.Day `bson:"agreedOn"`
 }
 
 // Nights is how long the stay may be, Min to Max nights.
@@ -102,6 +113,9 @@ type TripsRepository interface {
 	// SetStatus sets the Status of the Trip with id, since on, changing
 	// nothing else, or returns Core's utils.ErrNotFound.
 	SetStatus(ctx context.Context, id string, status Status, on coremodel.Day) error
+	// SetTargetFares sets the TargetFares of the Trip with id, changing
+	// nothing else, or returns Core's utils.ErrNotFound.
+	SetTargetFares(ctx context.Context, id string, targets []TargetFare) error
 	// Delete deletes the Trip with id, or returns Core's utils.ErrNotFound.
 	Delete(ctx context.Context, id string) error
 }
@@ -110,21 +124,30 @@ type TripsRepository interface {
 
 // TripJSON is a Trip as the Tools answer it.
 type TripJSON struct {
-	ID              string       `json:"id"`
-	Name            string       `json:"name"`
-	Origins         []string     `json:"origins"`
-	Destinations    []string     `json:"destinations"`
-	Nights          NightsJSON   `json:"nights"`
-	Windows         []WindowJSON `json:"windows"`
-	Avoid           []AvoidJSON  `json:"avoid"`
-	Cabin           string       `json:"cabin"`
-	CheckedBags     int          `json:"checkedBags"`
-	MaxStops        int          `json:"maxStops"`
-	SeparateTickets bool         `json:"separateTickets"`
-	Parties         []PartyJSON  `json:"parties"`
-	Status          string       `json:"status"`
-	StatusChangedOn string       `json:"statusChangedOn"`
-	Notes           string       `json:"notes"`
+	ID              string           `json:"id"`
+	Name            string           `json:"name"`
+	Origins         []string         `json:"origins"`
+	Destinations    []string         `json:"destinations"`
+	Nights          NightsJSON       `json:"nights"`
+	Windows         []WindowJSON     `json:"windows"`
+	Avoid           []AvoidJSON      `json:"avoid"`
+	Cabin           string           `json:"cabin"`
+	CheckedBags     int              `json:"checkedBags"`
+	MaxStops        int              `json:"maxStops"`
+	SeparateTickets bool             `json:"separateTickets"`
+	Parties         []PartyJSON      `json:"parties"`
+	Status          string           `json:"status"`
+	StatusChangedOn string           `json:"statusChangedOn"`
+	Notes           string           `json:"notes"`
+	TargetFares     []TargetFareJSON `json:"targetFares"`
+}
+
+// TargetFareJSON is a Party's Target Fare, per person in JPY, and the Day
+// the Owner agreed it.
+type TargetFareJSON struct {
+	Party     string `json:"party"`
+	PerPerson int    `json:"perPerson"`
+	AgreedOn  string `json:"agreedOn"`
 }
 
 // NightsJSON is how long the stay may be.
