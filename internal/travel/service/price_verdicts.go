@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
@@ -30,6 +32,10 @@ type PriceVerdictsService struct {
 	// its key: empty turns Price Verdicts off.
 	serpAPIURL, serpAPIKey string
 	client                 *http.Client
+	// fetching lets one new verdict at a time check the limit, call SerpApi
+	// and be kept, so two asked at once neither pass the limit together nor
+	// both call for the same dates.
+	fetching sync.Mutex
 }
 
 // NewPriceVerdicts returns the PriceVerdictsService.
@@ -106,6 +112,9 @@ func (s *PriceVerdictsService) getVerdict(ctx context.Context, arguments json.Ra
 	if err != nil {
 		return nil, err
 	}
+	if trip.Status != model.Watching {
+		return nil, errors.New("the Trip is " + string(trip.Status) + ": only a Watching Trip's Price Verdicts are fetched")
+	}
 	party := model.PartyKey(args.Party)
 	i := slices.IndexFunc(trip.Parties, func(p model.Party) bool { return p.Key == party })
 	if i < 0 {
@@ -119,24 +128,35 @@ func (s *PriceVerdictsService) getVerdict(ctx context.Context, arguments json.Ra
 	if err != nil {
 		return nil, err
 	}
-	verdict, err := s.verdicts.FindOn(ctx, trip.ID, party, depart, back, today)
-	if err == nil {
-		return toPriceVerdictJSON(verdict), nil
+	if depart < today {
+		return nil, fmt.Errorf("departDate %s is before today, %s", depart, today)
 	}
-	if !errors.Is(err, coreutils.ErrNotFound) {
+	query := searchQuery(trip, trip.Parties[i], depart, back)
+	search := query.Encode()
+	if verdict, err := s.verdicts.FindOn(ctx, trip.ID, party, depart, back, today, search); err == nil {
+		return toPriceVerdictJSON(verdict), nil
+	} else if !errors.Is(err, coreutils.ErrNotFound) {
 		return nil, err
 	}
 	if s.serpAPIKey == "" {
 		return nil, errors.New("Price Verdicts are off: Nando has no SerpApi key")
 	}
+	s.fetching.Lock()
+	defer s.fetching.Unlock()
+	// Fetched while this one waited?
+	if verdict, err := s.verdicts.FindOn(ctx, trip.ID, party, depart, back, today, search); err == nil {
+		return toPriceVerdictJSON(verdict), nil
+	} else if !errors.Is(err, coreutils.ErrNotFound) {
+		return nil, err
+	}
 	if err := s.withinLimit(ctx); err != nil {
 		return nil, err
 	}
-	verdict, err = s.fetch(ctx, trip, trip.Parties[i], depart, back)
+	verdict, err := s.fetch(ctx, trip, trip.Parties[i], depart, back, query)
 	if err != nil {
 		return nil, err
 	}
-	verdict.Day = today
+	verdict.Day, verdict.Search = today, search
 	if err := s.verdicts.Insert(ctx, verdict); err != nil {
 		return nil, err
 	}
@@ -194,10 +214,10 @@ type flightOffer struct {
 // maxHistory is how many points of Google's price history a verdict keeps.
 const maxHistory = 60
 
-// fetch asks SerpApi for the verdict, counting the call whatever comes of it.
-// Its errors never carry the request, whose URL holds the key.
-func (s *PriceVerdictsService) fetch(ctx context.Context, trip model.Trip, party model.Party, depart, back coremodel.Day) (model.PriceVerdict, error) {
-	query := url.Values{
+// searchQuery is what SerpApi is asked for a Trip's Party's dates, without
+// the key.
+func searchQuery(trip model.Trip, party model.Party, depart, back coremodel.Day) url.Values {
+	return url.Values{
 		"engine":        {"google_flights"},
 		"type":          {"1"},
 		"departure_id":  {strings.Join(trip.Origins, ",")},
@@ -208,8 +228,15 @@ func (s *PriceVerdictsService) fetch(ctx context.Context, trip model.Trip, party
 		"travel_class":  {travelClasses[trip.Cabin]},
 		"currency":      {"JPY"},
 		"hl":            {"en"},
-		"api_key":       {s.serpAPIKey},
 	}
+}
+
+// fetch asks SerpApi for the verdict with query, adding the key, counting the
+// call whatever comes of it. Its errors never carry the request, whose URL
+// holds the key.
+func (s *PriceVerdictsService) fetch(ctx context.Context, trip model.Trip, party model.Party, depart, back coremodel.Day, query url.Values) (model.PriceVerdict, error) {
+	query = maps.Clone(query)
+	query.Set("api_key", s.serpAPIKey)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.serpAPIURL+"/search.json?"+query.Encode(), nil)
 	if err != nil {
 		return model.PriceVerdict{}, errors.New("couldn't ask SerpApi")
@@ -231,7 +258,7 @@ func (s *PriceVerdictsService) fetch(ctx context.Context, trip model.Trip, party
 		return model.PriceVerdict{}, fmt.Errorf("SerpApi answered %d", resp.StatusCode)
 	case decodeErr != nil:
 		return model.PriceVerdict{}, errors.New("SerpApi's answer couldn't be read")
-	case answer.Insights == nil:
+	case answer.Insights == nil || answer.Insights.PriceLevel == "":
 		return model.PriceVerdict{}, errors.New("Google has no Price Verdict for these dates")
 	}
 	history := answer.Insights.History

@@ -14,9 +14,17 @@ import (
 )
 
 // NewPriceVerdicts returns the PriceVerdictsRepository over the
-// price_verdicts collection in db.
-func NewPriceVerdicts(db *mongo.Database) model.PriceVerdictsRepository {
-	return priceVerdicts{collection: db.Collection("price_verdicts")}
+// price_verdicts collection in db, with its index: a Trip's Party's verdicts
+// by dates and Day.
+func NewPriceVerdicts(ctx context.Context, db *mongo.Database) (model.PriceVerdictsRepository, error) {
+	collection := db.Collection("price_verdicts")
+	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "tripId", Value: 1}, {Key: "party", Value: 1},
+			{Key: "departDate", Value: 1}, {Key: "returnDate", Value: 1}, {Key: "day", Value: 1},
+		},
+	})
+	return priceVerdicts{collection: collection}, err
 }
 
 // priceVerdicts is the price_verdicts collection.
@@ -30,11 +38,12 @@ func (r priceVerdicts) Insert(ctx context.Context, verdict model.PriceVerdict) e
 	return err
 }
 
-func (r priceVerdicts) FindOn(ctx context.Context, tripID string, party model.PartyKey, depart, back, day coremodel.Day) (model.PriceVerdict, error) {
+func (r priceVerdicts) FindOn(ctx context.Context, tripID string, party model.PartyKey, depart, back, day coremodel.Day, search string) (model.PriceVerdict, error) {
 	var verdict model.PriceVerdict
 	err := r.collection.FindOne(ctx, bson.D{
 		{Key: "tripId", Value: tripID}, {Key: "party", Value: party},
 		{Key: "departDate", Value: depart}, {Key: "returnDate", Value: back}, {Key: "day", Value: day},
+		{Key: "search", Value: search},
 	}).Decode(&verdict)
 	return verdict, utils.NotFound(err)
 }
@@ -55,9 +64,11 @@ func (r priceVerdicts) DeleteTrip(ctx context.Context, tripID string) error {
 }
 
 // NewSerpAPICalls returns the SerpAPICallsRepository over the serpapi_calls
-// collection in db.
-func NewSerpAPICalls(db *mongo.Database) model.SerpAPICallsRepository {
-	return serpAPICalls{collection: db.Collection("serpapi_calls")}
+// collection in db, with its index: calls by when they were made.
+func NewSerpAPICalls(ctx context.Context, db *mongo.Database) (model.SerpAPICallsRepository, error) {
+	collection := db.Collection("serpapi_calls")
+	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{Keys: bson.D{{Key: "at", Value: 1}}})
+	return serpAPICalls{collection: collection}, err
 }
 
 // serpAPICalls is the serpapi_calls collection.

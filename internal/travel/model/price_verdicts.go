@@ -19,6 +19,9 @@ type PriceVerdict struct {
 	// that Day answers it without another call.
 	Day       coremodel.Day `bson:"day"`
 	FetchedAt time.Time     `bson:"fetchedAt"`
+	// Search is what SerpApi was asked, without the key: the Trip's
+	// airports, cabin and adults then, so a Trip changed since is asked again.
+	Search string `bson:"search"`
 	// Level is low, typical or high.
 	Level        string `bson:"level"`
 	LowestPrice  int    `bson:"lowestPrice"`
@@ -32,9 +35,9 @@ type PriceVerdict struct {
 // PriceVerdictsRepository reads and writes the price_verdicts collection.
 type PriceVerdictsRepository interface {
 	Insert(ctx context.Context, verdict PriceVerdict) error
-	// FindOn returns the verdict fetched on day for a Trip's Party's dates,
-	// or Core's utils.ErrNotFound.
-	FindOn(ctx context.Context, tripID string, party PartyKey, depart, back, day coremodel.Day) (PriceVerdict, error)
+	// FindOn returns the verdict fetched on day for a Trip's Party's dates
+	// with search, or Core's utils.ErrNotFound.
+	FindOn(ctx context.Context, tripID string, party PartyKey, depart, back, day coremodel.Day, search string) (PriceVerdict, error)
 	// List returns a Trip's Party's latest verdicts, newest first, at most
 	// limit.
 	List(ctx context.Context, tripID string, party PartyKey, limit int) ([]PriceVerdict, error)

@@ -26,8 +26,8 @@ type priceVerdictJSON struct {
 	FetchedAt        string     `json:"fetchedAt"`
 }
 
-// verdict asks for the Price Verdict on trip's Party party, leaving on depart
-// and back on back.
+// verdictArgs ask for the Price Verdict on trip's Party party, leaving on
+// depart and back on back.
 func verdictArgs(trip tripJSON, party, depart, back string) map[string]any {
 	return map[string]any{"tripId": trip.ID, "party": party, "departDate": depart, "returnDate": back}
 }
@@ -167,6 +167,7 @@ func TestAPriceVerdictIsOnlyForATripsOwnPartyAndRealDates(t *testing.T) {
 		verdictArgs(tripJSON{ID: "nosuchtrip"}, "owner", "2027-05-12", "2027-05-19"),
 		verdictArgs(trip, "owner", "2027-05-19", "2027-05-12"),
 		verdictArgs(trip, "owner", "next week", "2027-05-19"),
+		verdictArgs(trip, "owner", "2026-11-21", "2027-05-19"), // before today
 	} {
 		toolError(t, phone.tools(), "travel_get_price_verdict", args)
 	}

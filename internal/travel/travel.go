@@ -49,12 +49,19 @@ func NewTravelModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 	}
 	settings := service.NewSettings(repository.NewSettings(db))
 	trips := repository.NewTrips(db)
-	verdicts := repository.NewPriceVerdicts(db)
+	verdicts, err := repository.NewPriceVerdicts(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	calls, err := repository.NewSerpAPICalls(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	return &Module{
 		settings: settings,
 		trips:    service.NewTrips(trips, fares, verdicts, settings, core),
 		fares:    service.NewFares(repository.NewFareChecks(db), fares, trips, core),
-		verdicts: service.NewPriceVerdicts(verdicts, repository.NewSerpAPICalls(db), trips, settings, core, cfg.SerpAPIURL, cfg.SerpAPIKey),
+		verdicts: service.NewPriceVerdicts(verdicts, calls, trips, settings, core, cfg.SerpAPIURL, cfg.SerpAPIKey),
 	}, nil
 }
 

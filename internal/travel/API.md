@@ -139,7 +139,8 @@ A **Price Verdict** is Google's judgement of a Trip's Party's price on some date
 
 - `level`: `low`, `typical` or `high`, as Google says. `history` is Google's price history, `[Unix seconds, price]`, its last 60 points.
 - `cheapestPrice`, `cheapestAirlines`: the cheapest offer Google showed with it.
-- Asking again the same Day, in the Owner Time Zone, for the same Trip, Party and dates answers the verdict already fetched, without calling SerpApi.
+- Only a Watching Trip's verdicts are fetched, and only for dates leaving today or later.
+- Asking again the same Day, in the Owner Time Zone, for the same Trip, Party and dates answers the verdict already fetched, without calling SerpApi, unless the Trip's airports, cabin or adults changed since.
 - Each call to SerpApi counts toward the settings' `serpApiMonthlyLimit` for the calendar month, in the Owner Time Zone, answered or not, as SerpApi bills it. Past it, a new verdict is refused, saying when the month turns.
 - Without `SERPAPI_KEY`, every new verdict is refused. Fares are still recorded.
 - A call SerpApi refuses, fails, or answers without a verdict is refused, and nothing is kept.
