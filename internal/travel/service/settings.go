@@ -149,12 +149,13 @@ func changedCompanion(c model.Companion, j model.CompanionJSON) (model.Companion
 		c.Name = strings.TrimSpace(*j.Name)
 	}
 	if j.Calendars != nil {
-		for _, id := range *j.Calendars {
-			if strings.TrimSpace(id) == "" {
+		calendars := make([]string, len(*j.Calendars))
+		for i, id := range *j.Calendars {
+			if calendars[i] = strings.TrimSpace(id); calendars[i] == "" {
 				return c, errors.New("companion.calendars must be Google Calendar IDs, none empty")
 			}
 		}
-		c.Calendars = *j.Calendars
+		c.Calendars = calendars
 	}
 	if j.WorkWeekdays != nil {
 		days := make([]time.Weekday, 0, len(*j.WorkWeekdays))

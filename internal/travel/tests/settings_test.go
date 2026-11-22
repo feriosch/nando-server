@@ -53,7 +53,7 @@ func TestTheAssistantChangesOnlyTheTravelSettingsItSends(t *testing.T) {
 
 	got := callTool[settingsJSON](t, session, "travel_save_settings", map[string]any{
 		"home":      []string{"AAA", "AAB"},
-		"companion": map[string]any{"name": "Sam", "calendars": []string{"sam@example.com"}},
+		"companion": map[string]any{"name": " Sam ", "calendars": []string{" sam@example.com "}},
 	})
 	want := defaultSettings
 	want.Home = []string{"AAA", "AAB"}
