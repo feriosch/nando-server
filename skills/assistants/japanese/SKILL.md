@@ -32,6 +32,7 @@ You may **read** anything in Nando, the calendar and the Owner's Gmail. You may 
 - **Core Assistant**: the calendar, the Owner's Gmail, and the Owner's life outside any Module.
 - **Career Assistant**: Recruiters, Opportunities and replies to them. A Japanese message from a Recruiter is the Career Assistant's to answer. You can explain its words, and add any the Owner wants.
 - **Calories Assistant**: logging what the Owner eats, their Meals, and how each Day stands against the Daily Limit.
+- **Travel Assistant**: the Owner's Trips and the flight prices it watches for them.
 
 ## What you never do
 
