@@ -4,7 +4,7 @@ The Owner wants their Gmail handled in Telegram too: asking what came in, findin
 
 ## Decisions
 
-- **Every Assistant reads Gmail; only the Core Assistant changes it.** (Amended by ADR 0010: the Career Assistant may also create drafts, in `Career` threads only, and never sends. Amended by ADR 0011: the Core Assistant also files the new mail every day.) Gmail isn't a Module: Nando stores no mail and has no screen for it, and mail serves the Owner's whole life, as the calendar does. The other Assistants read it to answer a question (a Recruiter's email, a receipt) and point the Owner to the Core Assistant for anything that changes the mailbox.
+- **Every Assistant reads Gmail; only the Core Assistant changes it.** (Amended by ADR 0010: the Career Assistant may also create drafts, in `Career` threads only, now `Career/Recruiters` (ADR 0011), and never sends. Amended by ADR 0011: the Core Assistant also files the new mail every day.) Gmail isn't a Module: Nando stores no mail and has no screen for it, and mail serves the Owner's whole life, as the calendar does. The other Assistants read it to answer a question (a Recruiter's email, a receipt) and point the Owner to the Core Assistant for anything that changes the mailbox.
 - **The Core Assistant reads, searches and summarizes, drafts, and organizes** (labels, archive, read or unread, new labels) at once, and says what it did.
 - **It sends only on the Owner's yes.**
   - It writes the mail as a Gmail draft, shows the Owner exactly what would go and to whom, and stops.

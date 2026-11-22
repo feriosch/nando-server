@@ -27,7 +27,7 @@ Most of the Owner's career mail is LinkedIn InMail, which the LinkedIn Sync alre
 - **The Owner files each thread by hand, in the chat**: kept as an extra way in (asking for a Gmail Career Sync), but not the only one: it would need a new habit.
 - **One Conversation per Recruiter across channels**: rejected. It breaks the glossary's "one message thread", and the LinkedIn Sync's key.
 - **Emails read on demand, never stored**: rejected. Suggested Replies, follow-ups and Faded all need the messages.
-- **The Core Assistant files career mail in the Gmail Digest's run**: rejected. It changes the Career Module from outside its lane, and the digest run changes nothing.
+- **The Core Assistant files career mail in the Gmail Digest's run**: rejected. It changes the Career Module from outside its lane, and the digest run changes nothing. (Amended by ADR 0011: the digest run now files the Owner's mail, and applies `Career/Recruiters`. Filing that mail into Career stays the Career Assistant's, in the Gmail Career Sync.)
 - **Only the Core Assistant touches Gmail, even for drafts** (ADR 0009 as it stood): rejected. A ready draft in the right thread saves the Owner copying the reply over, and sending stays with the Core Assistant alone.
 - **The Career Assistant sends on the Owner's yes**: rejected. ADR 0009's one careful owner for sending stays.
 - **LinkedIn's notification emails as a source**: out of scope, for its own decision. It would change ADR 0007's LinkedIn Sync.

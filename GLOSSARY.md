@@ -281,7 +281,7 @@ What Nando keeps of each change a Gmail Filing makes, for 90 days: the thread, t
 _Avoid_: Log, history, audit trail
 
 **Starred**:
-In the Owner's Gmail, the mark for mail that needs the Owner: a reply someone waits for, a request, a payment, an upcoming booking, a delivery this week. A Gmail Filing leaves starred mail in the inbox and archives the rest; the Owner unstars it once it's done.
+In the Owner's Gmail, the mark for mail that needs the Owner: a reply someone waits for, a request, a payment, an upcoming booking, a delivery this week. A Recruiter's mail is never starred: it goes to `Career/Recruiters`, where the Gmail Career Sync picks it up. A Gmail Filing leaves starred mail in the inbox and archives the rest; the Owner unstars it once it's done.
 _Avoid_: Important (that is Gmail's own marker), flagged, pinned, to-do
 
 ## Notifications
