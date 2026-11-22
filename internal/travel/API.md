@@ -1,6 +1,6 @@
 # Travel API
 
-The Travel Module watches flight prices for the Owner's Trips, through the Travel Assistant ([ADR 0013](../../docs/adr/0013-travel-watches-fares-through-the-travel-assistant.md)). The Travel Assistant reads and writes everything through the Module's [Tools](#tools), over the Owner's Connector. There are no routes under `/api/travel/` yet: the web app's read-only routes come with #187.
+The Travel Module watches flight prices for the Owner's Trips, through the Travel Assistant ([ADR 0013](../../docs/adr/0013-travel-watches-fares-through-the-travel-assistant.md)). The Travel Assistant reads and writes everything through the Module's [Tools](#tools), over the Owner's Connector. The web app only reads Travel, through the [routes](#routes) under `/api/travel/`, which, like all of `/api/`, need a valid Session cookie (see [Core's API](../core/API.md)). Errors are a status code with a short plain-text message.
 
 The repo is public, so nothing here names a real Trip, place, date or person. Those are the Owner's data, held only in the `travel` database.
 
@@ -175,6 +175,56 @@ Travel's Notifications ask the Travel Assistant for work (ADR 0009, ADR 0013): e
 - **Daily Fare Check**, `✈️ Daily Fare Check`, at `dailyFareCheck.time`, except on the Weekly Fare Check's weekday while it is on.
 - **Weekly Fare Check**, `✈️ Weekly Fare Check`, on `weeklyFareCheck.weekday` at its time.
 - Neither is sent while no Trip is Watching.
+
+## Routes
+
+Every route is a `GET`. Prices are JPY per person unless named `total`; a Fare is as in [Fare Checks and Fares](#fare-checks-and-fares), a Price Verdict as in [Price Verdicts](#price-verdicts).
+
+### `GET /api/travel/trips`
+
+`200`: every Trip, Watching ones first, each group by name. For each Party: `best`, its best Fare now, the cheapest found in the last 7 days; `sinceLastWeek`, this week's best per person less last week's; `targetFare`; and `verdictLevel`, its latest Price Verdict's level. Each is `null` when there is none.
+
+```json
+{
+  "trips": [
+    {
+      "id": "6af05d493ea403a78bf5997b",
+      "name": "Beach week",
+      "origins": ["AAA"],
+      "destinations": ["BBB"],
+      "status": "watching",
+      "parties": [
+        {"key": "owner", "adults": 1, "best": {"…": "a Fare"}, "sinceLastWeek": -10000, "targetFare": 110000, "verdictLevel": "low"}
+      ]
+    }
+  ]
+}
+```
+
+### `GET /api/travel/trips/{id}`
+
+`200`: the Trip, as the Tools answer it, and for each Party:
+
+- `history`: `[{day, perPerson}]`, the best per person on each Day Fares were found, oldest first: the line chart.
+- `byWeek`: `[{week, fare}]`, the cheapest Fare departing in each week, by its Monday: the heat map.
+- `top`: the 3 cheapest itineraries found in the last 7 days.
+- `bestSingleTicket`: the cheapest current Fare on one ticket, to show beside one on Separate Tickets, or `null`.
+- `verdicts`: its latest 5 Price Verdicts, newest first.
+- `targetFare`: or `null`.
+
+`404` for an unknown `id`.
+
+### `GET /api/travel/cards`
+
+`200`: one Home Card per Watching Trip, by name: the cheaper Party's best per person now (found in the last 7 days), which Party, and its `trend`, this week's best against last week's, (`down`, `flat` or `up`). `party`, `perPerson` and `trend` are `null` without a Fare, `trend` also without a best last week.
+
+```json
+{"cards": [{"tripId": "6af05d493ea403a78bf5997b", "name": "Beach week", "party": "owner", "perPerson": 120000, "trend": "down"}]}
+```
+
+### `GET /api/travel/settings`
+
+`200`: the [settings](#settings), for Travel's Settings Section, which only shows them: the Travel Assistant changes them.
 
 ## Tools
 

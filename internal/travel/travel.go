@@ -26,6 +26,7 @@ type Module struct {
 	trips    *service.TripsService
 	fares    *service.FaresService
 	verdicts *service.PriceVerdictsService
+	overview *service.OverviewService
 	// notifications is the Module's Notification provider.
 	notifications *service.NotificationsService
 }
@@ -60,18 +61,22 @@ func NewTravelModule(ctx context.Context, db *mongo.Database, core coremodel.Cor
 	if err != nil {
 		return nil, err
 	}
+	faresService := service.NewFares(repository.NewFareChecks(db), fares, alerts, trips, core)
 	return &Module{
 		settings:      settings,
 		trips:         service.NewTrips(trips, fares, verdicts, alerts, settings, core),
-		fares:         service.NewFares(repository.NewFareChecks(db), fares, alerts, trips, core),
+		fares:         faresService,
+		overview:      service.NewOverview(trips, verdicts, faresService, settings),
 		notifications: service.NewNotifications(settings, trips),
 		verdicts:      service.NewPriceVerdicts(verdicts, calls, trips, settings, core, cfg.SerpAPIURL, cfg.SerpAPIKey),
 	}, nil
 }
 
-// Routes adds the Module's routes to mux, all under /api/travel/. It has none
-// yet: the Travel Assistant works through its Tools.
-func (m *Module) Routes(*http.ServeMux) {}
+// Routes adds the Module's routes to mux, all under /api/travel/: the web
+// app's reads. The Travel Assistant writes, through its Tools.
+func (m *Module) Routes(mux *http.ServeMux) {
+	m.overview.Routes(mux)
+}
 
 // NotificationProvider is the Module's Notification provider, for Core to ask
 // at every tick: it asks the Travel Assistant for Fare Checks.

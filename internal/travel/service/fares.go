@@ -435,16 +435,30 @@ const (
 // stats is what a Trip's Party's Fares say. Weeks run Monday to Sunday in the
 // Owner Time Zone.
 func (s *FaresService) stats(ctx context.Context, tripID string, party model.PartyKey) (model.FareStatsJSON, error) {
-	stats := model.FareStatsJSON{ByWeek: []model.WeekFareJSON{}, Top: []model.FareJSON{}}
+	fares, loc, now, err := s.faresNow(ctx, tripID, party)
+	if err != nil {
+		return model.FareStatsJSON{ByWeek: []model.WeekFareJSON{}, Top: []model.FareJSON{}}, err
+	}
+	return statsOf(fares, loc, now), nil
+}
+
+// faresNow is every Fare of a Trip's Party, cheapest per person first, with
+// the Owner Time Zone and the time now, which is all statsOf needs.
+func (s *FaresService) faresNow(ctx context.Context, tripID string, party model.PartyKey) ([]model.Fare, *time.Location, time.Time, error) {
 	fares, err := s.fares.List(ctx, tripID, party, time.Time{})
 	if err != nil {
-		return stats, err
+		return nil, nil, time.Time{}, err
 	}
 	loc, err := s.core.OwnerTimeZone(ctx)
 	if err != nil {
-		return stats, err
+		return nil, nil, time.Time{}, err
 	}
-	now := s.core.Now()
+	return fares, loc, s.core.Now(), nil
+}
+
+// statsOf is what fares, cheapest per person first, say at now.
+func statsOf(fares []model.Fare, loc *time.Location, now time.Time) model.FareStatsJSON {
+	stats := model.FareStatsJSON{ByWeek: []model.WeekFareJSON{}, Top: []model.FareJSON{}}
 	thisWeek := coremodel.DayOf(now, loc).Week()
 	lastWeek := thisWeek.AddDays(-7)
 	byWeek := map[coremodel.Day]model.FareJSON{}
@@ -478,7 +492,7 @@ func (s *FaresService) stats(ctx context.Context, tripID string, party model.Par
 		stats.ByWeek = append(stats.ByWeek, model.WeekFareJSON{Week: string(week), Fare: f})
 	}
 	slices.SortFunc(stats.ByWeek, func(a, b model.WeekFareJSON) int { return strings.Compare(a.Week, b.Week) })
-	return stats, nil
+	return stats
 }
 
 // itinerary is what makes two Fares the same itinerary: their dates, their
