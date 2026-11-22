@@ -5,7 +5,7 @@ Most of the Owner's career mail is LinkedIn InMail, which the LinkedIn Sync alre
 ## Decisions
 
 - **A Gmail thread with a Recruiter is a Conversation of its own**, keyed by Gmail's thread ID, linked to open in Gmail, and filed under the Recruiter. A Recruiter can have LinkedIn and Gmail Conversations side by side.
-- **Mail reaches Career only through the Gmail label `Career`.** The Owner applies it by hand or with a Gmail filter, until #156 decides how it is applied for them.
+- **Mail reaches Career only through the Gmail label `Career`.** The Owner applies it by hand or with a Gmail filter, until #156 decides how it is applied for them. (Amended by ADR 0011: the label is now `Career/Recruiters`, which the Core Assistant applies in the Gmail Digest's run to any mail from a Recruiter, agency or in-house. The Gmail Career Sync reads only that label, so job platforms, LinkedIn's notices and Career's history never reach it, and its time should come after the Gmail Digest's.)
 - **The Gmail Career Sync**:
   - Once a day, at a time in Career's Settings Section (off until the Owner turns it on), Nando asks the Career Assistant for one, with a Notification that asks for work (ADR 0009). The Owner can also ask for one in the Career chat at any time.
   - Nando records each pass, apart from the LinkedIn Syncs, so a pass never counts toward a LinkedIn Sync's limits or alerts.

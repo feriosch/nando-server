@@ -9,7 +9,7 @@ The Career Module: the Owner's LinkedIn Conversations with Recruiters, the Oppor
 ```
 
 - `looking`: whether the Owner is Looking for a new role right now. It sets the tone of every Suggested Reply. `false` until the Owner first changes it.
-- `gmailCareerSync`: the daily ask for a Gmail Career Sync ([ADR 0010](../../docs/adr/0010-recruiters-gmail-through-a-label.md)), off at 08:00 until the Owner turns it on. `time` is `"HH:MM"` on the hour or half hour, in the Owner Time Zone.
+- `gmailCareerSync`: the daily ask for a Gmail Career Sync ([ADR 0010](../../docs/adr/0010-recruiters-gmail-through-a-label.md)), off at 08:00 until the Owner turns it on. `time` is `"HH:MM"` on the hour or half hour, in the Owner Time Zone. Set it after Core's Gmail Digest, whose run files Recruiters' mail under `Career/Recruiters` ([ADR 0011](../../docs/adr/0011-the-core-assistant-files-gmail-daily.md)), so the night's mail is filed before Career reads it.
 
 ### `GET /api/career/settings`
 
@@ -252,7 +252,7 @@ Core asks the Module at every tick (see [Core's API](../core/API.md)), and sends
 | **Looking**, every Item a LinkedIn Sync queued is done or set aside, and an `answer` Suggested Reply now answers a message it brought, within 48 hours of the LinkedIn Sync | "Recruiters waiting" / "N Recruiters are waiting for your reply" | `/career` | `career:replies:<sync id>` |
 | **Not Looking**, Monday and Thursday in the 19:00 slot, when any Recruiter is waiting | the same | `/career` | `career:replies:<YYYY-MM-DD>` |
 | The 20:00 slot, for each Step on the next Day in an open Opportunity | "Tomorrow: \<Step kind\>" / "\<Company\>, \<HH:MM\>", or only the Company with no time | `/career/opportunities/{id}` | `career:step:<opportunity id>:<step id>:<YYYY-MM-DD>` |
-| The Gmail Career Sync's time, while it is `enabled`. It **asks** the Career Assistant for work (Core's asking Notification): it waits in the Career Talk and wakes a run, which files the mail labeled `Career` | "📨 Gmail Career Sync" / "Filing your Career mail…" | none | `career:gmail-career-sync:<YYYY-MM-DD>` |
+| The Gmail Career Sync's time, while it is `enabled`. It **asks** the Career Assistant for work (Core's asking Notification): it waits in the Career Talk and wakes a run, which files the mail labeled `Career/Recruiters` (ADR 0011) | "📨 Gmail Career Sync" / "Filing your Career mail…" | none | `career:gmail-career-sync:<YYYY-MM-DD>` |
 | A LinkedIn Sync reported `session_expired`: once for the first such report since the last LinkedIn Sync that read LinkedIn, as the Mac reports it again every hour, and only within 7 days of it | "Log in to LinkedIn again" / "Open the Mac and run the Sync's login" | `/career` | `career:sync-problem:<sync id>` |
 | No LinkedIn Sync has read LinkedIn for 36 hours, sent within the 7 days after that (a LinkedIn Sync that reported a problem doesn't count) | "No LinkedIn Sync since \<weekday\>" / "Check that the Mac is on and its Sync job is loaded" | `/career` | `career:no-sync:<last sync id>` |
 

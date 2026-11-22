@@ -201,7 +201,7 @@ One pass in which Nando picks up the Owner's new LinkedIn messages from the Owne
 _Avoid_: Sync (alone), pull, fetch, scrape, import, read
 
 **Gmail Career Sync**:
-One pass in which the Career Assistant files into Nando the new mail the Owner's Gmail holds under the label `Career`, once a Day at the time in Career's settings, or whenever the Owner asks. It reads only labeled threads, and never LinkedIn.
+One pass in which the Career Assistant files into Nando the new mail the Owner's Gmail holds under the label `Career/Recruiters`, once a Day at the time in Career's settings, or whenever the Owner asks. It reads only that label, which the Core Assistant applies in its Gmail Filing (ADR 0011), and never LinkedIn.
 _Avoid_: Mail Sync, Gmail Sync, Sync (alone), import, scan
 
 **Career Profile**:
@@ -261,7 +261,7 @@ The Assistant for Core, and for anything the Owner asks that belongs to no Modul
 _Avoid_: Nando Assistant, general bot, main bot
 
 **Outside Service**:
-An app outside Nando that serves the Owner's whole life rather than one Module: Google Calendar and Gmail so far, and perhaps documents later. Every Assistant reads the Outside Services, and only the Core Assistant changes the Owner's Gmail, but for the drafts the Career Assistant creates in `Career` threads (ADR 0010).
+An app outside Nando that serves the Owner's whole life rather than one Module: Google Calendar and Gmail so far, and perhaps documents later. Every Assistant reads the Outside Services, and only the Core Assistant changes the Owner's Gmail, but for the drafts the Career Assistant creates in `Career/Recruiters` threads (ADR 0010, ADR 0011).
 _Avoid_: Integration, external app, Connector (that is the reverse: an outside app using Nando)
 
 **Note**:
@@ -269,8 +269,20 @@ What a run leaves in a Talk for later runs with its reply, such as the ID of a d
 _Avoid_: Memo, comment, metadata, hidden message
 
 **Gmail Digest**:
-The Core Assistant's short daily summary of the mail that came since the last one, at the time in the Owner's settings. Nando only asks for it, with a Notification; Claude reads the mail and writes it, changing nothing.
+The Core Assistant's short daily summary of the mail that came since the last one, at the time in the Owner's settings. Nando only asks for it, with a Notification; Claude reads the mail, files it in a Gmail Filing, and writes the digest, saying what it filed and what it starred.
 _Avoid_: Mail Digest (its old name), inbox summary, newsletter, briefing, report
+
+**Gmail Filing**:
+The Core Assistant's daily filing of the Owner's new mail, in the Gmail Digest's run (ADR 0011): it labels each thread by judgment, stars what needs the Owner, and archives the rest. It never archives mail without a label, and never trashes, marks spam or sends.
+_Avoid_: Auto-labeling, rules, filters, sorting, triage
+
+**Filing Record**:
+What Nando keeps of each change a Gmail Filing makes, for 90 days: the thread, the labels added and removed, whether it was starred, and why. The Owner can ask the Core Assistant to undo any of it.
+_Avoid_: Log, history, audit trail
+
+**Starred**:
+In the Owner's Gmail, the mark for mail that needs the Owner: a reply someone waits for, a request, a payment, an upcoming booking, a delivery this week. A Gmail Filing leaves starred mail in the inbox and archives the rest; the Owner unstars it once it's done.
+_Avoid_: Important (that is Gmail's own marker), flagged, pinned, to-do
 
 ## Notifications
 
