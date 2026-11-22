@@ -216,6 +216,58 @@ _Avoid_: Resume (for the whole), CV, preferences, about me
 Whether the Owner is looking for a new role right now, set by the Owner as Looking or Not Looking. It changes the tone of every Suggested Reply and how often the Owner hears about them.
 _Avoid_: Open to Work (that is LinkedIn's), job hunting, active, available
 
+## Travel
+
+The Module that watches flight prices for the Owner's Trips, so the Owner never has to check fares or price emails themselves. Claude searches and judges; the Owner always books (ADR 0013).
+
+**Trip**:
+A journey the Owner may take: a round trip from where the Owner lives to one destination, with a range of nights, the windows of dates it may fall in, the dates it must avoid, and the cabin, bags and stops it allows. It is Watching until the Owner says it is Booked or Dropped, and only a Watching Trip is searched. Trips are the Owner's data, held only in Nando's database, never named in the code or docs.
+_Avoid_: Plan, itinerary, route, search, watch
+
+**Party**:
+Who a Trip is priced for: the Owner alone, or the Owner with the Companion. A Trip has one or two Parties, watched side by side, so the Owner can weigh going alone against going together.
+_Avoid_: Travellers, passengers, group, version
+
+**Companion**:
+The person who travels with the Owner in a Party. Nando reads their calendar, never changes it, to know which dates they can travel and what Leave Needed a Fare would cost them. Who they are and which calendars are theirs are held only in Travel's settings.
+_Avoid_: Partner (in code and docs), passenger, guest, plus-one
+
+**Leave Needed**:
+How many days off work the Companion would take for a Fare: the workdays it covers, less public holidays and leave they have already booked. It is shown with and without up to 2 days the Companion could work remotely from the destination, which counts only when staying longer is worth it.
+_Avoid_: PTO, vacation days, days off (alone)
+
+**Fare**:
+One priced round trip found for a Trip and Party: its dates, flights, stops and journey time, its price per person and in total, whether that includes checked bags (not every source prices them), where it was found, and a link to book it.
+_Avoid_: Flight, offer, deal, price, result
+
+**Separate Tickets**:
+A Fare made of flights sold apart, which the Owner connects between themselves: if the first is late, no airline has to carry them on. It is always shown beside the best Fare on one ticket, never alone, and never changes airport at the connection.
+_Avoid_: Self-transfer, hacker fare, virtual interlining
+
+**Price Verdict**:
+Google's judgement of a Fare's price for its route and dates: low, typical or high, with the typical range. Nando fetches it from Google Flights through SerpApi, within a monthly limit in Travel's settings.
+_Avoid_: Rating, score, price level, insight
+
+**Price Alert**:
+An email from a fare site or an airline about prices, such as Google Flights tracking or an airline's sale. The Core Assistant files it under `Travel Log/Alerts` in its Gmail Filing, and the next Daily Fare Check reads it. Nando keeps the Fares it yields, never the email.
+_Avoid_: Fare Alert (that is Nando's own message), deal email, newsletter
+
+**Fare Check**:
+One pass in which the Travel Assistant searches for Fares and records them. The **Daily Fare Check**, after the Gmail Digest, reads the new Price Alerts and searches again only where something moved. The **Weekly Fare Check**, on Sunday unless Travel's settings name another weekday, searches every Watching Trip's whole window for each Party, and ends with the Weekly Travel Summary.
+_Avoid_: Search, scan, scrape, poll, sync
+
+**Fare Alert**:
+The Travel Assistant's message about a Fare worth acting on, saying why: the lowest seen for its Trip and Party, a low Price Verdict, a big drop since last week, or below the Target Fare. It comes in the day's one Travel message, unless it needs action within hours (a sale ending, few seats left at a good price), when it is sent at once, at any hour.
+_Avoid_: Price Alert (that is a site's email), deal alert, notification (alone)
+
+**Target Fare**:
+The price per person below which the Owner wants to hear about a Trip and Party. The Travel Assistant suggests one after about a month of Fares, and it holds only once the Owner agrees.
+_Avoid_: Budget, goal, limit, threshold
+
+**Weekly Travel Summary**:
+The Travel Assistant's message at the end of the Weekly Fare Check on how each Watching Trip stands: the best Fares for each Party, their trend, the cheapest stretches of its windows, and any Target Fare it suggests.
+_Avoid_: Report, digest (that is Gmail's), newsletter
+
 ## Identity
 
 **Passkey**:
