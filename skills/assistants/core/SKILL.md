@@ -109,7 +109,7 @@ Each thread gets its group's parent label, plus a sub-label when one fits. A sen
 - **Deliveries** (`Deliveries`): `Deliveries/Japan Post`, `Deliveries/Amazon`, `Deliveries/Yamato`. A store's own "shipped" notice gets the parent alone.
 - **Bookings**: anything reserved for a date: a restaurant, a hotel, a capsule, a health check.
 - **Travel Log** (`Travel Log`): trips, flights, airlines, and hotels' follow-ups.
-  - `Travel Log/Alerts`: Price Alerts only: price tracking from fare sites (Google Flights' "Your tracked route…" from `noreply-travel@google.com`, SlickTrip's, KAYAK's) and airlines' fare sales. It is archived, not starred: the Daily Fare Check gives it attention (ADR 0013). A booking, an itinerary or a loyalty statement stays under the parent alone.
+  - `Travel Log/Alerts`: Price Alerts only: price tracking from fare sites (Google Flights' "Your tracked route…" from `noreply-travel@google.com`, SlickTrip's, KAYAK's) and airlines' fare sales. It is archived, not starred: the Daily Fare Check gives it attention (ADR 0013). A booking, an itinerary or a loyalty statement stays under the parent alone. If `list_labels` has no `Travel Log/Alerts` yet, file Price Alerts under the parent alone, say in the digest that the Travel Assistant can't see them until the label exists, and offer to create it.
 - **Dev**: developer services, GitHub, cloud consoles, developer newsletters and forums.
 - **Security** (`Security`): account alerts and password changes. `Security/Sign-ups` for new accounts and welcome mail, `Security/Codes` for one-time codes and sign-in links.
 - **Procedures** (`Procedures`): government, residence, tax, insurance and paperwork: `Procedures/Japan`, `Procedures/Mexico`.
