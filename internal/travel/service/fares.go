@@ -172,6 +172,9 @@ func (s *FaresService) recordFares(ctx context.Context, arguments json.RawMessag
 	if err != nil {
 		return nil, err
 	}
+	if check.FinishedAt != nil {
+		return nil, errors.New("the Fare Check " + args.CheckID + " is finished: start another with travel_start_fare_check")
+	}
 	answer := model.RecordedFaresJSON{Recorded: []model.RecordedFareJSON{}, Refused: []model.RefusedFareJSON{}}
 	for i, j := range args.Fares {
 		trip, err := s.trips.Find(ctx, j.TripID)
@@ -229,8 +232,15 @@ func fareFrom(j model.FareJSON, trip model.Trip, found bool) (model.Fare, string
 	if j.SeparateTickets && !trip.SeparateTickets {
 		return model.Fare{}, "the Trip doesn't welcome Fares on Separate Tickets"
 	}
-	if !slices.Contains([]model.Cabin{model.Economy, model.PremiumEconomy, model.Business, model.First}, model.Cabin(j.Cabin)) {
+	if j.Outbound.Stops > trip.MaxStops || j.Inbound.Stops > trip.MaxStops {
+		return model.Fare{}, fmt.Sprintf("it makes more stops each way than the Trip's %d", trip.MaxStops)
+	}
+	cabin := slices.Index(cabins, model.Cabin(j.Cabin))
+	if cabin < 0 {
 		return model.Fare{}, "cabin must be economy, premium_economy, business or first"
+	}
+	if cabin < slices.Index(cabins, trip.Cabin) {
+		return model.Fare{}, "it is in " + j.Cabin + ", below the Trip's " + string(trip.Cabin)
 	}
 	if j.Total <= 0 {
 		return model.Fare{}, "total must be the Fare's price in JPY for the whole Party, more than 0"
@@ -240,6 +250,9 @@ func fareFrom(j model.FareJSON, trip model.Trip, found bool) (model.Fare, string
 	}
 	if j.LeaveNeeded != nil && party != model.WithCompanion {
 		return model.Fare{}, "leaveNeeded is only for a Fare for the Party with the Companion"
+	}
+	if j.LeaveNeeded == nil && party == model.WithCompanion {
+		return model.Fare{}, "a Fare for the Party with the Companion needs leaveNeeded, worked out from their calendars"
 	}
 	if l := j.LeaveNeeded; l != nil && (l.Days < 0 || l.WithRemoteDays < 0 || l.WithRemoteDays > l.Days) {
 		return model.Fare{}, "leaveNeeded must be {days, withRemoteDays} with 0 ≤ withRemoteDays ≤ days"
@@ -258,6 +271,9 @@ func fareFrom(j model.FareJSON, trip model.Trip, found bool) (model.Fare, string
 	}
 	return fare, ""
 }
+
+// cabins are the cabins, cheapest first.
+var cabins = []model.Cabin{model.Economy, model.PremiumEconomy, model.Business, model.First}
 
 // nightsBetween is how many nights there are from depart to back.
 func nightsBetween(depart, back coremodel.Day) int {
@@ -320,6 +336,8 @@ func (s *FaresService) stats(ctx context.Context, tripID string, party model.Par
 	thisWeek := coremodel.DayOf(now, loc).Week()
 	lastWeek := thisWeek.AddDays(-7)
 	byWeek := map[coremodel.Day]model.FareJSON{}
+	// Each check records an itinerary it finds again, so top counts each once.
+	inTop := map[string]bool{}
 	// fares are cheapest first, so the first Fare to fit each is its best.
 	for _, f := range fares {
 		j := toFareJSON(f)
@@ -339,7 +357,8 @@ func (s *FaresService) stats(ctx context.Context, tripID string, party model.Par
 		if _, ok := byWeek[f.DepartDate.Week()]; !ok {
 			byWeek[f.DepartDate.Week()] = j
 		}
-		if len(stats.Top) < topFares && now.Sub(f.FoundAt) <= current {
+		if key := itinerary(f); len(stats.Top) < topFares && now.Sub(f.FoundAt) <= current && !inTop[key] {
+			inTop[key] = true
 			stats.Top = append(stats.Top, j)
 		}
 	}
@@ -348,6 +367,19 @@ func (s *FaresService) stats(ctx context.Context, tripID string, party model.Par
 	}
 	slices.SortFunc(stats.ByWeek, func(a, b model.WeekFareJSON) int { return strings.Compare(a.Week, b.Week) })
 	return stats, nil
+}
+
+// itinerary is what makes two Fares the same itinerary: their dates, their
+// flights each way, and whether they are on Separate Tickets.
+func itinerary(f model.Fare) string {
+	key := []string{string(f.DepartDate), string(f.ReturnDate), fmt.Sprint(f.SeparateTickets)}
+	for _, leg := range []model.Leg{f.Outbound, f.Inbound} {
+		key = append(key, "|")
+		for _, flight := range leg.Flights {
+			key = append(key, flight.Carrier+flight.Number+flight.Departs)
+		}
+	}
+	return strings.Join(key, " ")
 }
 
 func toFareJSON(f model.Fare) model.FareJSON {

@@ -110,11 +110,12 @@ A **Fare** is one priced round trip found for a Watching Trip and one of its Par
 
 - `source`: `kiwi`, `expedia`, `skiplagged`, `slicktrip`, `price_alert` or `other`.
 - `departDate`, `returnDate`: the departure must fall in one of the Trip's windows, the stay (`nights`, which Nando works out) in its range, and the whole trip clear of its `avoid` ranges.
+- `stops`: each way, at most the Trip's `maxStops`. `cabin`: the Trip's or a better one.
 - `separateTickets`: only on a Trip that welcomes them.
 - `bagsIncluded`: whether `total` includes the Trip's checked bags, which not every source prices.
 - `total`: JPY, more than 0, for the whole Party. Nando works out `perPerson`, rounded, from the Party's adults.
 - `bookingUrl`: an `https://` link, or empty.
-- `leaveNeeded`: only on a `with_companion` Fare: the Companion's days off, and with the remote days the settings allow (`0 ≤ withRemoteDays ≤ days`). The Travel Assistant works it out from their calendars; Nando never reads them.
+- `leaveNeeded`: needed on a `with_companion` Fare, and only there: the Companion's days off, and with the remote days the settings allow (`0 ≤ withRemoteDays ≤ days`). The Travel Assistant works it out from their calendars; Nando never reads them.
 
 ## Tools
 
@@ -127,7 +128,7 @@ Each Tool answers JSON. A Tool refuses what it can't do with a message saying wh
 | `travel_get_settings` | none | Answers the settings |
 | `travel_list_trips` | `status`: `watching` (when left out), `booked`, `dropped` or `all` | Answers `{trips}`, by name, ignoring case |
 | `travel_get_trip` | `id` | Answers the Trip |
-| `travel_fare_stats` | `tripId`, `party` | Answers what that Party's Fares say: `lowestEver`; `bestThisWeek` and `bestLastWeek`, by when they were found, weeks running Monday to Sunday in the Owner Time Zone (each `null` when there is none); `byWeek`, `[{week, fare}]`, the cheapest Fare departing in each week, by its Monday; and `top`, the 3 cheapest found in the last 7 days |
+| `travel_fare_stats` | `tripId`, `party` | Answers what that Party's Fares say: `lowestEver`; `bestThisWeek` and `bestLastWeek`, by when they were found, weeks running Monday to Sunday in the Owner Time Zone (each `null` when there is none); `byWeek`, `[{week, fare}]`, the cheapest Fare departing in each week, by its Monday; and `top`, the 3 cheapest itineraries found in the last 7 days, each once however many checks found it |
 
 ### Write
 
@@ -136,7 +137,7 @@ Each Tool answers JSON. A Tool refuses what it can't do with a message saying wh
 | `travel_save_settings` | `home`; `companion` `{name, calendars, workWeekdays, holidayCalendar, usualLeaveDays, remoteDaysAbroad}`; `serpApiMonthlyLimit` | Changes the settings. Only the fields sent change, within `companion` too, and at least one must come. Refuses the whole save if any field is wrong. Answers the settings |
 | `travel_save_trip` | `id`; any Trip field | Without `id`, creates a Watching Trip: `name`, `destinations`, `nights` and `windows` are needed, and the rest start as above. With `id`, changes only the fields sent. Refuses the whole save if the Trip it would make is wrong. Answers the Trip |
 | `travel_start_fare_check` | `kind`: `daily`, `weekly` or `asked` | Starts a Fare Check. Answers `{id, lastFinished}`: when the last finished check of each kind finished, or `null` |
-| `travel_record_fares` | `checkId`, `fares` | Records each Fare sent (without the fields Nando sets) in that Fare Check, or refuses it with why. Answers `{recorded: [{index, id}], refused: [{index, reason}]}`, by place in the list sent |
+| `travel_record_fares` | `checkId`, `fares` | Records each Fare sent (without the fields Nando sets) in that unfinished Fare Check, or refuses it with why. Answers `{recorded: [{index, id}], refused: [{index, reason}]}`, by place in the list sent |
 | `travel_finish_fare_check` | `id`; `sources`, `summary`, `errors` | Finishes the Fare Check, once. Answers it |
 | `travel_set_trip_status` | `id`, `status` | Sets the Trip to `watching`, `booked` or `dropped`, from today, changing nothing else. A Trip is watched again only while one of its windows isn't over. The Travel Assistant asks the Owner before dropping one. Answers the Trip |
 

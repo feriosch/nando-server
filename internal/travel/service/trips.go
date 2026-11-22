@@ -80,6 +80,10 @@ func (s *TripsService) Tools() []coremodel.Tool {
 			if err := s.trips.Delete(ctx, trip.ID); err != nil {
 				return nil, err
 			}
+			// Again, for any a Fare Check recorded while the Trip was going.
+			if err := s.fares.DeleteTrip(ctx, trip.ID); err != nil {
+				return nil, err
+			}
 			return map[string]string{"deleted": trip.ID}, nil
 		},
 	}}

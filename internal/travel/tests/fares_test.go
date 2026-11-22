@@ -199,6 +199,7 @@ func TestEachFareThatDoesntFitItsTripIsRefusedWithWhyAndTheRestAreKept(t *testin
 	session := phone.tools()
 	dropped := newTrip(t, phone, map[string]any{"name": "Dropped"})
 	callTool[tripJSON](t, session, "travel_set_trip_status", map[string]any{"id": dropped.ID, "status": "dropped"})
+	business := newTrip(t, phone, map[string]any{"name": "Business", "cabin": "business"})
 
 	good := fare(trip, "owner", "2027-05-12", "2027-05-19", 112000, nil)
 	bad := []map[string]any{
@@ -215,6 +216,8 @@ func TestEachFareThatDoesntFitItsTripIsRefusedWithWhyAndTheRestAreKept(t *testin
 		fare(trip, "owner", "2027-5-12", "2027-05-19", 100000, nil),  // not a date
 		fare(trip, "owner", "2027-05-12", "2027-05-19", 100000, map[string]any{"source": "a friend"}),
 		fare(trip, "owner", "2027-05-12", "2027-05-19", 100000, map[string]any{"cabin": "steerage"}),
+		fare(trip, "owner", "2027-05-12", "2027-05-19", 100000, map[string]any{"outbound": map[string]any{"stops": 2}}),   // over maxStops 1
+		fare(business, "owner", "2027-05-12", "2027-05-19", 100000, nil),                                                  // economy on a business Trip
 		fare(trip, "owner", "2027-05-12", "2027-05-19", 100000, map[string]any{"leaveNeeded": map[string]any{"days": 3}}), // only for the Companion
 		fare(trip, "owner", "2027-05-12", "2027-05-19", 100000, map[string]any{"bookingUrl": "javascript:alert(1)"}),
 	}
@@ -235,6 +238,21 @@ func TestEachFareThatDoesntFitItsTripIsRefusedWithWhyAndTheRestAreKept(t *testin
 		t.Errorf("lowestEver = %+v; want the good Fare at 112000", s.LowestEver)
 	}
 	toolError(t, session, "travel_record_fares", map[string]any{"checkId": "nosuchcheck", "fares": []map[string]any{good}})
+}
+
+func TestAFinishedFareCheckRecordsNoMoreFares(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	trip := newTrip(t, phone, nil)
+	session := phone.tools()
+	_, checkID := record(t, phone, "daily")
+	callTool[fareCheckJSON](t, session, "travel_finish_fare_check", map[string]any{"id": checkID})
+
+	toolError(t, session, "travel_record_fares", map[string]any{
+		"checkId": checkID, "fares": []map[string]any{fare(trip, "owner", "2027-05-12", "2027-05-19", 112000, nil)},
+	})
+	if s := stats(t, phone, trip, "owner"); s.LowestEver != nil {
+		t.Errorf("lowestEver = %+v; want none recorded in a finished Fare Check", s.LowestEver)
+	}
 }
 
 func TestAFareForTheCompanionIsPricedPerPersonAndCarriesLeaveNeeded(t *testing.T) {
@@ -324,4 +342,38 @@ func TestATripWithNoFaresHasNoStats(t *testing.T) {
 	}
 	toolError(t, phone.tools(), "travel_fare_stats", map[string]any{"tripId": "nosuchtrip", "party": "owner"})
 	toolError(t, phone.tools(), "travel_fare_stats", map[string]any{"tripId": trip.ID, "party": "with_companion"})
+}
+
+func TestTheSameItineraryFoundAgainCountsOnceInTheTopFares(t *testing.T) {
+	n, phone := signedInBrowser(t)
+	trip := newTrip(t, phone, nil)
+
+	same := fare(trip, "owner", "2027-05-12", "2027-05-19", 110000, nil)
+	for day := range 3 {
+		n.clock.Set(today.AddDate(0, 0, day))
+		record(t, phone, "daily", same)
+	}
+	record(t, phone, "daily",
+		fare(trip, "owner", "2027-05-20", "2027-05-27", 120000, nil),
+		fare(trip, "owner", "2027-06-02", "2027-06-09", 130000, nil))
+
+	if got, want := totals(stats(t, phone, trip, "owner").Top), []int{110000, 120000, 130000}; !reflect.DeepEqual(got, want) {
+		t.Errorf("top = %v, want %v: the 110000 itinerary once, then the next cheapest", got, want)
+	}
+}
+
+func TestAFareForTheCompanionNeedsItsLeaveNeeded(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	trip := newTrip(t, phone, nil)
+	session := phone.tools()
+	callTool[settingsJSON](t, session, "travel_save_settings", map[string]any{"companion": map[string]any{"name": "Sam"}})
+	callTool[tripJSON](t, session, "travel_save_trip", map[string]any{
+		"id": trip.ID, "parties": []map[string]any{{"key": "with_companion", "adults": 2}},
+	})
+
+	got, _ := record(t, phone, "weekly", fare(trip, "with_companion", "2027-05-12", "2027-05-19", 220000, nil))
+
+	if len(got.Recorded) != 0 || len(got.Refused) != 1 {
+		t.Errorf("recording a Companion Fare without leaveNeeded = %+v; want it refused", got)
+	}
 }
