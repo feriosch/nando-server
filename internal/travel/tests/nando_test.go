@@ -30,10 +30,21 @@ const (
 	travelBotToken  = "333:travel-bot"
 )
 
+// clock is the time Nando sees; tests set it by hand.
+type clock struct{ now time.Time }
+
+func (c *clock) Now() time.Time  { return c.now }
+func (c *clock) Set(t time.Time) { c.now = t }
+
+// today is the Day tests set Nando's clock to once the Owner is signed in:
+// Sunday 22 November 2026, at noon in UTC, the Owner Time Zone until set.
+var today = time.Date(2026, 11, 22, 12, 0, 0, 0, time.UTC)
+
 // nando is the whole HTTP API, Core and Travel, over a fresh MongoDB, as main
 // wires it.
 type nando struct {
 	t        *testing.T
+	clock    *clock
 	core     *core.Core
 	handler  http.Handler
 	telegram *testtelegram.Telegram
@@ -47,7 +58,10 @@ func newNando(t *testing.T) *nando {
 	}
 	t.Cleanup(func() { _ = client.Disconnect(context.Background()) })
 	telegram := testtelegram.New(t)
+	// Real time to start with: go-webauthn checks its ceremony timeouts against it.
+	clk := &clock{now: time.Now()}
 	c, err := core.New(context.Background(), client.Database("core"), core.Config{
+		Now:                  clk.Now,
 		Domain:               "example.com",
 		Origins:              []string{webOrigin},
 		VerifySchedulerToken: func(context.Context, string) error { return nil },
@@ -66,8 +80,9 @@ func newNando(t *testing.T) *nando {
 	c.AddAssistant(tr.Assistant())
 	c.AddToolProvider(tr.ToolProvider())
 	return &nando{
-		t:    t,
-		core: c,
+		t:     t,
+		clock: clk,
+		core:  c,
 		handler: server.New(server.Config{
 			AllowedOrigins: []string{webOrigin},
 			Core:           c,
@@ -85,7 +100,7 @@ type browser struct {
 }
 
 // signedInBrowser returns Nando with a browser on the Owner's iPhone that has
-// enrolled a Passkey and has a Session.
+// enrolled a Passkey and has a Session, its clock set to today.
 func signedInBrowser(t *testing.T) (*nando, *browser) {
 	t.Helper()
 	n := newNando(t)
@@ -96,6 +111,7 @@ func signedInBrowser(t *testing.T) (*nando, *browser) {
 	}
 	rec := phone.must(http.MethodPost, "/auth/register/begin", map[string]string{"code": code}, http.StatusOK)
 	phone.must(http.MethodPost, "/auth/register/finish", json.RawMessage(phone.passkey.Create(t, webOrigin, rec.Body.Bytes())), http.StatusNoContent)
+	n.clock.Set(today)
 	return n, phone
 }
 
