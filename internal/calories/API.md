@@ -173,7 +173,7 @@ When the Calories Notifications are sent. There is no Calories Settings Section:
 
 ### `GET /api/calories/settings`
 
-`200`: the settings. Until the Owner first saves them, every Notification is off: the daily ones set for 14:00 and 21:00, the Weigh-in reminder for Monday at 08:00. The Weigh-in reminder the Owner had saved in Core before ADR 0012 was taken over at startup.
+`200`: the settings. Until the Owner first saves them, every Notification is off: the daily ones set for 14:00 and 21:00, the Weigh-in reminder for Monday at 08:00.
 
 ```json
 {

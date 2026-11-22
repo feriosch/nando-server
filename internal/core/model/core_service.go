@@ -16,7 +16,4 @@ type CoreService interface {
 	Now() time.Time
 	// HeightCm is the Owner's height in cm, or 0 until it is set.
 	HeightCm(ctx context.Context) (int, error)
-	// WeighInsLeft is what Core kept of Weigh-ins until they moved to
-	// Calories (ADR 0012), for Calories to take once at startup.
-	WeighInsLeft(ctx context.Context) (WeighInsLeft, error)
 }

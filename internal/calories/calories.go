@@ -57,17 +57,13 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	entriesService := service.NewEntries(entries, meals, dailyLimits, core, now)
 	days := service.NewDays(entries, dailyLimits, core)
 	settings := service.NewSettings(repository.NewSettings(db))
-	weighIns := repository.NewWeighIns(db)
-	if err := service.TakeWeighInsFromCore(ctx, core, weighIns, settings, repository.NewMigrations(db)); err != nil {
-		return nil, err
-	}
 	return &Module{
 		meals:         service.NewMeals(meals, entries, core, now),
 		entries:       entriesService,
 		dailyLimits:   service.NewDailyLimits(dailyLimits, core),
 		days:          days,
 		settings:      settings,
-		weighIns:      service.NewWeighIns(weighIns, core),
+		weighIns:      service.NewWeighIns(repository.NewWeighIns(db), core),
 		notifications: service.NewNotifications(settings, days),
 	}, nil
 }

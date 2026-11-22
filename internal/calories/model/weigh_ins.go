@@ -19,8 +19,6 @@ type WeighIn struct {
 type WeighInsRepository interface {
 	// Save stores weighIn, replacing any for the same week.
 	Save(ctx context.Context, weighIn WeighIn) error
-	// AddMissing stores weighIn unless its week already has one.
-	AddMissing(ctx context.Context, weighIn WeighIn) error
 	// Find returns the Weigh-in for the week starting on Monday week.
 	Find(ctx context.Context, week coremodel.Day) (WeighIn, error)
 	// FindLatest returns the newest week's Weigh-in.
