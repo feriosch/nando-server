@@ -53,9 +53,9 @@ type wordsJSON struct {
 func TestTheConsentPageSaysWhatJapanesesToolsLetAConnectorDo(t *testing.T) {
 	n := newNando(t)
 
-	// Core's Messenger Tools are offered too, as these tests' Nando has bots (#128).
+	// Core's Messenger and Filing Record Tools are offered too, as these tests' Nando has bots (#128).
 	got := slices.DeleteFunc(testconnector.ToolsDescriptions(t, n.handler, webOrigin), func(d string) bool {
-		return strings.Contains(d, "Telegram")
+		return strings.Contains(d, "Telegram") || strings.Contains(d, "files your Gmail")
 	})
 
 	// Deleting and merging are said, as they can't be undone.
@@ -879,8 +879,8 @@ func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
 
 	got := map[string]hints{}
 	for _, tool := range listed.Tools {
-		if strings.HasPrefix(tool.Name, "messenger_") {
-			continue // Core's, offered as these tests' Nando has bots (#128)
+		if strings.HasPrefix(tool.Name, "messenger_") || strings.HasPrefix(tool.Name, "core_") {
+			continue // Core's, offered as these tests' Nando has bots (#128, #168)
 		}
 		if !strings.HasPrefix(tool.Name, "japanese_") {
 			t.Errorf("Tool %s: a Module's Tool names start with the Module's name", tool.Name)

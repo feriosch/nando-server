@@ -431,3 +431,28 @@ Core's database holds:
 - `talks`: one document per Talk, with its messages, and at most one open Talk per Assistant;
 - `telegram_updates`: each bot's updates, until they expire;
 - `messenger_scheduled_task`: one document per Assistant, holding its last fire and when its runs last worked or stopped.
+
+## Filing Record
+
+What each Gmail Filing changed, kept so the Owner can ask the Core Assistant to undo it ([ADR 0011](../../docs/adr/0011-the-core-assistant-files-gmail-daily.md)). Nando never touches Gmail: the run records what it did, and undoes it with Gmail's Tools.
+
+### Tools for the run
+
+Served with the Messenger's Tools, while any bot has a token, since only the Core Assistant's run uses them.
+
+- **`core_record_gmail_filing`** (`entries`): records one entry per thread the run changed, under today's Day in the Owner Time Zone. Several calls on one Day add to it. Each entry has:
+  - `threadId` and `reason` ("Uber Eats receipt → Food Delivery"), both required;
+  - `subject` and `from`, so the record reads well without Gmail;
+  - `added` and `removed`, the labels as `{"id", "name"}`, where `INBOX` removed means archived;
+  - `starred`.
+
+  An entry without a `threadId` or a `reason`, or with a label without its `id`, is a Tool error, and nothing in that call is recorded. It answers `{"recorded": [ids]}`.
+- **`core_list_gmail_filings`** (`day`, or `from` and `to`; `query` optional): answers `filings`, the entries of that Day or range, both Days included, oldest first. Each has the fields above, plus `id`, `day` and `undone`.
+  - `query` keeps those whose subject, sender or reason contains it, ignoring case.
+  - It answers at most the newest 200, with `more: true` when there were others.
+  - It is read-only.
+- **`core_mark_gmail_filing_undone`** (`id`): marks the entry undone, once the run has reversed it with Gmail's Tools: it removes what was added, adds back what was removed, and unstars a starred thread. Marking it again changes nothing. An unknown `id` is a Tool error. It answers `{"filing": …}`.
+
+At each tick Core drops the entries recorded more than 90 days before, since undo is for recent mistakes.
+
+Core's database holds `gmail_filings`, one document per entry.

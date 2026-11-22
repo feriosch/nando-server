@@ -75,6 +75,7 @@ type Core struct {
 	connectors    *service.ConnectorsService
 	oauth         *service.OAuthService
 	messenger     *service.MessengerService
+	gmailFilings  *service.GmailFilingsService
 	// coreService is what Modules' services are handed.
 	coreService coreService
 }
@@ -121,6 +122,10 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
+	gmailFilings, err := repository.NewGmailFilings(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	passkeys := repository.NewPasskeys(db)
 	weighIns := repository.NewWeighIns(db)
 
@@ -141,8 +146,12 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	}
 	// Without a bot, no Assistant can be answered, so no Connector is
 	// offered the Messenger's Tools or told of them.
+	// The Filing Record serves the Core Assistant's run alone, so it goes
+	// with the Messenger.
+	c.gmailFilings = service.NewGmailFilings(gmailFilings, c.settings, now)
 	if len(cfg.Messenger.BotTokens) > 0 {
 		mcp.AddToolProvider(c.messenger)
+		mcp.AddToolProvider(c.gmailFilings)
 	}
 	c.weighIns = service.NewWeighIns(weighIns, c.settings)
 	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns, now: now}
@@ -156,6 +165,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		return nil, err
 	}
 	c.notifications.AddTickJob(c.messenger)
+	c.notifications.AddTickJob(c.gmailFilings)
 	c.notifications.SetMessenger(c.messenger)
 	return c, nil
 }
