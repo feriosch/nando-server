@@ -66,6 +66,56 @@ A Trip is a journey the Owner may take: a round trip from `origins` to `destinat
 - `status`: `watching`, `booked` or `dropped`, since `statusChangedOn`, a Day in the Owner Time Zone. Only a Watching Trip is searched.
 - `notes`: free text the Travel Assistant keeps for itself.
 
+## Fare Checks and Fares
+
+A **Fare Check** is one pass in which the Travel Assistant searches for Fares: `daily` or `weekly`, which Nando asks for, or `asked`, by the Owner in the chat. The run starts one, records the Fares it finds in it, and finishes it.
+
+```json
+{
+  "id": "6af05d493ea403a78bf5997c",
+  "kind": "daily",
+  "startedAt": "2026-11-22T12:00:00Z",
+  "finishedAt": "2026-11-22T12:20:00Z",
+  "sources": ["kiwi", "slicktrip"],
+  "summary": "2 new lows",
+  "errors": ["expedia timed out"]
+}
+```
+
+A **Fare** is one priced round trip found for a Watching Trip and one of its Parties. Fares are kept as long as their Trip.
+
+```json
+{
+  "id": "6af05d493ea403a78bf5997d",
+  "tripId": "6af05d493ea403a78bf5997b",
+  "party": "with_companion",
+  "checkId": "6af05d493ea403a78bf5997c",
+  "foundAt": "2026-11-22T12:05:00Z",
+  "source": "kiwi",
+  "departDate": "2027-05-12",
+  "returnDate": "2027-05-19",
+  "nights": 7,
+  "outbound": {"flights": [{"carrier": "XX", "number": "XX1", "from": "AAA", "to": "BBB", "departs": "2027-05-12T10:00", "arrives": "2027-05-12T22:00"}], "stops": 0, "durationMinutes": 480},
+  "inbound": {"flights": [{"carrier": "XX", "number": "XX2", "from": "BBB", "to": "AAA", "departs": "2027-05-19T10:00", "arrives": "2027-05-20T14:00"}], "stops": 0, "durationMinutes": 540},
+  "separateTickets": false,
+  "cabin": "economy",
+  "bagsIncluded": true,
+  "currency": "JPY",
+  "total": 220461,
+  "perPerson": 110231,
+  "bookingUrl": "https://fares.example.com/1",
+  "leaveNeeded": {"days": 5, "withRemoteDays": 3}
+}
+```
+
+- `source`: `kiwi`, `expedia`, `skiplagged`, `slicktrip`, `price_alert` or `other`.
+- `departDate`, `returnDate`: the departure must fall in one of the Trip's windows, the stay (`nights`, which Nando works out) in its range, and the whole trip clear of its `avoid` ranges.
+- `separateTickets`: only on a Trip that welcomes them.
+- `bagsIncluded`: whether `total` includes the Trip's checked bags, which not every source prices.
+- `total`: JPY, more than 0, for the whole Party. Nando works out `perPerson`, rounded, from the Party's adults.
+- `bookingUrl`: an `https://` link, or empty.
+- `leaveNeeded`: only on a `with_companion` Fare: the Companion's days off, and with the remote days the settings allow (`0 ≤ withRemoteDays ≤ days`). The Travel Assistant works it out from their calendars; Nando never reads them.
+
 ## Tools
 
 Each Tool answers JSON. A Tool refuses what it can't do with a message saying why, and changes nothing.
@@ -77,6 +127,7 @@ Each Tool answers JSON. A Tool refuses what it can't do with a message saying wh
 | `travel_get_settings` | none | Answers the settings |
 | `travel_list_trips` | `status`: `watching` (when left out), `booked`, `dropped` or `all` | Answers `{trips}`, by name, ignoring case |
 | `travel_get_trip` | `id` | Answers the Trip |
+| `travel_fare_stats` | `tripId`, `party` | Answers what that Party's Fares say: `lowestEver`; `bestThisWeek` and `bestLastWeek`, by when they were found, weeks running Monday to Sunday in the Owner Time Zone (each `null` when there is none); `byWeek`, `[{week, fare}]`, the cheapest Fare departing in each week, by its Monday; and `top`, the 3 cheapest found in the last 7 days |
 
 ### Write
 
@@ -84,6 +135,9 @@ Each Tool answers JSON. A Tool refuses what it can't do with a message saying wh
 | --- | --- | --- |
 | `travel_save_settings` | `home`; `companion` `{name, calendars, workWeekdays, holidayCalendar, usualLeaveDays, remoteDaysAbroad}`; `serpApiMonthlyLimit` | Changes the settings. Only the fields sent change, within `companion` too, and at least one must come. Refuses the whole save if any field is wrong. Answers the settings |
 | `travel_save_trip` | `id`; any Trip field | Without `id`, creates a Watching Trip: `name`, `destinations`, `nights` and `windows` are needed, and the rest start as above. With `id`, changes only the fields sent. Refuses the whole save if the Trip it would make is wrong. Answers the Trip |
+| `travel_start_fare_check` | `kind`: `daily`, `weekly` or `asked` | Starts a Fare Check. Answers `{id, lastFinished}`: when the last finished check of each kind finished, or `null` |
+| `travel_record_fares` | `checkId`, `fares` | Records each Fare sent (without the fields Nando sets) in that Fare Check, or refuses it with why. Answers `{recorded: [{index, id}], refused: [{index, reason}]}`, by place in the list sent |
+| `travel_finish_fare_check` | `id`; `sources`, `summary`, `errors` | Finishes the Fare Check, once. Answers it |
 | `travel_set_trip_status` | `id`, `status` | Sets the Trip to `watching`, `booked` or `dropped`, from today, changing nothing else. A Trip is watched again only while one of its windows isn't over. The Travel Assistant asks the Owner before dropping one. Answers the Trip |
 
 ### Delete (`destructiveHint`)
@@ -92,4 +146,4 @@ The Travel Assistant asks the Owner before this, and prefers `booked` or `droppe
 
 | Tool | Arguments | What it does |
 | --- | --- | --- |
-| `travel_delete_trip` | `id` | Deletes the Trip for good. Answers `{deleted: id}` |
+| `travel_delete_trip` | `id` | Deletes the Trip for good, with its Fares. Answers `{deleted: id}` |
