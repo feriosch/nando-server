@@ -20,7 +20,10 @@ The Owner wants to take some trips next year, and has no time to keep checking f
   - An all-day or multi-day event in their calendar blocks those dates for the Party with the Companion. An evening event doesn't block anything, and their own leave counts as days already off.
   - Every Fare for that Party shows its **Leave Needed**.
 - **Where Fares come from:**
-  - **Searches**: the Assistant uses the fare sites' claude.ai connectors (Kiwi.com first; Expedia, Skiplagged and SlickTrip once a run shows each works from the scheduled task), and records each Fare through a Travel Tool.
+  - **Searches**: the Assistant uses the fare sites' claude.ai connectors, Kiwi.com, Expedia, SlickTrip and Skiplagged, all checked from a cloud session (#179), and records each Fare through a Travel Tool.
+    - Kiwi.com searches whole windows, a range of dates and of nights at once.
+    - SlickTrip's and Skiplagged's calendars price every day for one length of stay. Their prices matched, so they count as one source.
+    - Expedia prices exact dates only, to cross-check a Fare.
   - **Price Alerts**: the Owner turns on price tracking at sites that email it, such as Google Flights. The Core Assistant files those emails under `Travel Log/Alerts` in its Gmail Filing (ADR 0011). The Travel Assistant reads only that label. It never labels, archives or stars mail.
   - **Price Verdicts**: a Travel Tool asks SerpApi's Google Flights API for Google's verdict on a Fare's route and dates, and Nando records the answer. Nando makes this call itself, the way Japanese looks Words up on jisho.org: it is an outside service, not a model. The key stays in Secret Manager, never in a connector's URL, and Nando refuses calls past the monthly limit in Travel's settings, which starts at SerpApi's free 250 searches.
 - **Fare Checks are asked for by Notifications that ask for work** (ADR 0009), in the Travel chat, answered by the Assistants' scheduled task (ADR 0008), as the Gmail Career Sync is (ADR 0010). There is no Travel scheduled task of its own.
