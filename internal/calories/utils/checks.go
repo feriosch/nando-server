@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -16,9 +15,6 @@ const (
 	MaxNameLength = 100
 	MaxKcal       = 10000
 	MaxServings   = 100
-	// MaxEntryKcal is the most kcal one Entry can have: the most kcal per
-	// serving times the most Servings.
-	MaxEntryKcal = MaxKcal * MaxServings
 	// MaxEmojiLength is in code points: enough for one emoji built of
 	// several, such as a family or a flag.
 	MaxEmojiLength = 8
@@ -50,16 +46,6 @@ func CheckDailyLimit(field string, kcal *int) (int, error) {
 		return 0, errors.New(field + " must be a whole number from 1 to 10000")
 	}
 	return *kcal, nil
-}
-
-// CheckEntryKcal parses kcal, sent as text, and checks it is a whole number
-// from 0 to 1,000,000: what one Entry can have.
-func CheckEntryKcal(field, kcal string) (int, error) {
-	n, err := strconv.Atoi(kcal)
-	if err != nil || n < 0 || n > MaxEntryKcal {
-		return 0, errors.New(field + " must be a whole number from 0 to 1000000")
-	}
-	return n, nil
 }
 
 // CheckServings checks that servings is a whole number from 1 to 100.

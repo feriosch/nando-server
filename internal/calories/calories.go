@@ -54,7 +54,7 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	meals := repository.NewMeals(db)
 	dailyLimits := repository.NewDailyLimits(db)
 	entriesService := service.NewEntries(entries, meals, dailyLimits, core, now)
-	days := service.NewDays(entries, dailyLimits, entriesService, core)
+	days := service.NewDays(entries, dailyLimits, core)
 	settings := service.NewSettings(repository.NewSettings(db))
 	return &Module{
 		meals:         service.NewMeals(meals, entries, core, now),
@@ -99,9 +99,10 @@ type toolProvider struct{ m *Module }
 // ToolsDescription says what the Module's Tools let a Connector do, for the
 // consent page.
 func (p toolProvider) ToolsDescription() string {
-	return "read your Days and Daily Limit, log, correct and delete what you eat, and save, change and archive your Meals"
+	return "read your Days and Daily Limit, log, correct and delete what you eat, save, change and archive your Meals, " +
+		"and set your Daily Limit and when Calories Notifications come"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.meals.Tools(), p.m.entries.Tools(), p.m.days.Tools(), p.m.dailyLimits.Tools())
+	return slices.Concat(p.m.meals.Tools(), p.m.entries.Tools(), p.m.days.Tools(), p.m.dailyLimits.Tools(), p.m.settings.Tools())
 }

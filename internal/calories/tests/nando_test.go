@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 
@@ -90,6 +91,15 @@ type browser struct {
 	session *http.Cookie
 	// passkey is the Owner's Passkey on this iPhone, to approve a Connector.
 	passkey *testpasskey.Passkey
+}
+
+// tools is the MCP session of a Connector the Owner approves now, as the
+// Calories Assistant writes through one (the web app only reads). It is a
+// fresh one each time: a test that moves the clock on by Days would outlive
+// an earlier one's access token.
+func (d *browser) tools() *mcp.ClientSession {
+	d.nando.t.Helper()
+	return d.connect()
 }
 
 // signedInBrowser returns Nando with a browser on the Owner's iPhone that has

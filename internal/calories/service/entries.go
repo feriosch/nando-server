@@ -34,9 +34,6 @@ func NewEntries(entries model.EntriesRepository, meals model.MealsRepository, da
 // Routes adds the Entry routes to mux, under /api/calories/.
 func (s *EntriesService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/calories/days/{day}/entries", s.listEntries)
-	mux.HandleFunc("POST /api/calories/days/{day}/entries", s.postEntry)
-	mux.HandleFunc("PUT /api/calories/entries/{id}", s.putEntry)
-	mux.HandleFunc("DELETE /api/calories/entries/{id}", s.deleteEntry)
 }
 
 // fromEntryValues checks all three of v's values and returns an Entry with
@@ -64,19 +61,9 @@ func (s *EntriesService) checkEditable(ctx context.Context, day coremodel.Day) e
 		return err
 	}
 	if !utils.InEditableWindow(day, today) {
-		return utils.Refusal{Status: http.StatusConflict, Message: "only today and the 7 Days before it can be changed"}
+		return utils.Refusal{Message: "only today and the 7 Days before it can be changed"}
 	}
 	return nil
-}
-
-// CheckEditable reports whether day is in the Editable Window. If it isn't, it
-// answers 409 (or 500 if today can't be known) and returns false.
-func (s *EntriesService) CheckEditable(w http.ResponseWriter, r *http.Request, day coremodel.Day) bool {
-	if err := s.checkEditable(r.Context(), day); err != nil {
-		utils.WriteError(w, err)
-		return false
-	}
-	return true
 }
 
 // listEntries lists a Day's Entries in the order they were logged.
@@ -101,26 +88,6 @@ type logRequest struct {
 	// SaveAsMeal also saves a one-off Entry as a Meal, which it then
 	// belongs to.
 	SaveAsMeal bool `json:"saveAsMeal"`
-}
-
-// postEntry logs an Entry on the Day in the path: from a Meal, copying its
-// name and kcal, or a one-off with its own.
-func (s *EntriesService) postEntry(w http.ResponseWriter, r *http.Request) {
-	day, ok := utils.PathDay(w, r)
-	if !ok {
-		return
-	}
-	var body logRequest
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "the body isn't an Entry", http.StatusBadRequest)
-		return
-	}
-	entry, err := s.log(r.Context(), day, body)
-	if err != nil {
-		utils.WriteError(w, err)
-		return
-	}
-	coreutils.WriteCreated(w, entry.ID)
 }
 
 // log logs the Entry req asks for on day, and returns it.
@@ -186,34 +153,11 @@ func (s *EntriesService) entryFromMeal(ctx context.Context, mealID string, servi
 func (s *EntriesService) editableEntry(ctx context.Context, id string) (model.Entry, error) {
 	entry, err := s.entries.Find(ctx, id)
 	if errors.Is(err, coreutils.ErrNotFound) {
-		return model.Entry{}, utils.Refusal{Status: http.StatusNotFound, Message: "there's no such Entry"}
+		return model.Entry{}, utils.Refusal{Message: "there's no such Entry"}
 	} else if err != nil {
 		return model.Entry{}, err
 	}
 	return entry, s.checkEditable(ctx, entry.Day)
-}
-
-// putEntry edits an Entry's name, kcal per serving and Servings.
-func (s *EntriesService) putEntry(w http.ResponseWriter, r *http.Request) {
-	var body model.EntryValues
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "the body isn't an Entry", http.StatusBadRequest)
-		return
-	}
-	edited, err := fromEntryValues(body)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-	entry, err := s.editableEntry(r.Context(), r.PathValue("id"))
-	if err == nil {
-		_, err = s.edit(r.Context(), entry, edited)
-	}
-	if err != nil {
-		utils.WriteError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // edit gives entry, found with editableEntry, edited's name, kcal per
@@ -224,24 +168,6 @@ func (s *EntriesService) edit(ctx context.Context, entry, edited model.Entry) (m
 		return model.Entry{}, err
 	}
 	return entry, nil
-}
-
-// deleteEntry deletes an Entry. Deleting one that doesn't exist also succeeds.
-func (s *EntriesService) deleteEntry(w http.ResponseWriter, r *http.Request) {
-	entry, err := s.editableEntry(r.Context(), r.PathValue("id"))
-	var refusal utils.Refusal
-	if errors.As(err, &refusal) && refusal.Status == http.StatusNotFound {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	} else if err != nil {
-		utils.WriteError(w, err)
-		return
-	}
-	if err := s.entries.Delete(r.Context(), entry.ID); err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 // Tools are what the EntriesService offers Connectors.
