@@ -257,7 +257,10 @@ func run() error {
 	nandoCore.AddNotificationProvider(careerModule.NotificationProvider())
 	nandoCore.AddAssistant(careerModule.Assistant())
 	nandoCore.AddTickJob(careerModule.TickJob())
-	travelModule, err := travel.NewTravelModule(connectCtx, dbs.Travel, nandoCore.Service(), travel.Config{})
+	travelModule, err := travel.NewTravelModule(connectCtx, dbs.Travel, nandoCore.Service(), travel.Config{
+		// Without it, Price Verdicts are off and Fares are still recorded (ADR 0013).
+		SerpAPIKey: strings.TrimSpace(os.Getenv("SERPAPI_KEY")),
+	})
 	if err != nil {
 		return err
 	}

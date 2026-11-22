@@ -48,9 +48,18 @@ type nando struct {
 	core     *core.Core
 	handler  http.Handler
 	telegram *testtelegram.Telegram
+	// serpAPI is the fake SerpApi the Module fetches Price Verdicts from.
+	serpAPI *fakeSerpAPI
 }
 
 func newNando(t *testing.T) *nando {
+	t.Helper()
+	return newNandoWith(t, nil)
+}
+
+// newNandoWith is newNando with Travel's Config changed by change, if not
+// nil: it starts with the fake SerpApi and its key.
+func newNandoWith(t *testing.T, change func(*travel.Config)) *nando {
 	t.Helper()
 	client, err := mongo.Connect(options.Client().ApplyURI(testmongo.URI(t)))
 	if err != nil {
@@ -73,7 +82,12 @@ func newNando(t *testing.T) *nando {
 	if err != nil {
 		t.Fatalf("core.New: %v", err)
 	}
-	tr, err := travel.NewTravelModule(context.Background(), client.Database("travel"), c.Service(), travel.Config{})
+	serpAPI := newFakeSerpAPI(t)
+	cfg := travel.Config{SerpAPIURL: serpAPI.URL, SerpAPIKey: serpAPIKey}
+	if change != nil {
+		change(&cfg)
+	}
+	tr, err := travel.NewTravelModule(context.Background(), client.Database("travel"), c.Service(), cfg)
 	if err != nil {
 		t.Fatalf("NewTravelModule: %v", err)
 	}
@@ -89,6 +103,7 @@ func newNando(t *testing.T) *nando {
 			Modules:        []server.Module{tr},
 		}),
 		telegram: telegram,
+		serpAPI:  serpAPI,
 	}
 }
 
@@ -103,7 +118,13 @@ type browser struct {
 // enrolled a Passkey and has a Session, its clock set to today.
 func signedInBrowser(t *testing.T) (*nando, *browser) {
 	t.Helper()
-	n := newNando(t)
+	return signedInBrowserWith(t, nil)
+}
+
+// signedInBrowserWith is signedInBrowser over newNandoWith(t, change).
+func signedInBrowserWith(t *testing.T, change func(*travel.Config)) (*nando, *browser) {
+	t.Helper()
+	n := newNandoWith(t, change)
 	phone := &browser{nando: n, passkey: testpasskey.New()}
 	code, err := n.core.IssueEnrollmentCode(context.Background())
 	if err != nil {
