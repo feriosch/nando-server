@@ -2,8 +2,9 @@ package model
 
 import "context"
 
-// WeighIn is the Owner's weight for one week, Monday to Sunday in the Owner
-// Time Zone. There is at most one per week; a later one replaces it.
+// WeighIn is the Owner's weight for one week, as Core kept it until Weigh-ins
+// moved to Calories (ADR 0012). Core only hands what it kept to Calories, once,
+// through CoreService.WeighInsLeft.
 type WeighIn struct {
 	// Week is the Monday the week starts on.
 	Week Day `bson:"_id"`
@@ -11,21 +12,16 @@ type WeighIn struct {
 	Kg float64 `bson:"kg"`
 }
 
-// WeighInsRepository reads and writes the weigh_ins collection.
+// WeighInsRepository reads the weigh_ins collection Core kept until ADR 0012.
 type WeighInsRepository interface {
-	// Save stores weighIn, replacing any for the same week.
-	Save(ctx context.Context, weighIn WeighIn) error
-	// Find returns the Weigh-in for the week starting on Monday week.
-	Find(ctx context.Context, week Day) (WeighIn, error)
-	// FindLatest returns the newest week's Weigh-in.
-	FindLatest(ctx context.Context) (WeighIn, error)
 	// List returns every Weigh-in, newest first.
 	List(ctx context.Context) ([]WeighIn, error)
-	Delete(ctx context.Context, week Day) error
 }
 
-// WeighInJSON is a Weigh-in as the API shows it.
-type WeighInJSON struct {
-	Week Day     `json:"week"`
-	Kg   float64 `json:"kg"`
+// WeighInsLeft is what Core kept of Weigh-ins until they moved to Calories
+// (ADR 0012): the Weigh-ins, and the Weigh-in reminder, nil if the Owner
+// never saved one.
+type WeighInsLeft struct {
+	WeighIns []WeighIn
+	Reminder *WeighInReminder
 }

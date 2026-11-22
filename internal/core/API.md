@@ -1,7 +1,7 @@
 # Core API
 
 Identity: Passkeys, Enrollment Codes and Sessions ([ADR 0002](../../docs/adr/0002-passkey-only-identity.md)).
-Settings and body measurements: the Owner Time Zone, height and Weigh-ins ([ADR 0003](../../docs/adr/0003-body-measurements-in-core.md)).
+Settings: the Owner Time Zone and height. Weigh-ins, and the BMI derived from the height, belong to Calories ([ADR 0012](../../docs/adr/0012-weigh-ins-belong-to-calories.md)).
 Notifications: sent in the Messenger at the scheduler's tick ([ADR 0001](../../docs/adr/0001-cloud-run-hosting.md), [ADR 0008](../../docs/adr/0008-assistants-on-telegram.md)).
 Connectors: Nando as its own OAuth 2.1 authorization server, the consent page's calls, the Tools at `/mcp`, and the Owner's list of Connectors ([ADR 0004](../../docs/adr/0004-connectors-over-oauth.md)).
 
@@ -100,81 +100,26 @@ Core's own Settings Section.
 
 ### `GET /api/settings`
 
-`200`: the settings. Until the Owner first saves them, they are `"UTC"`, no height, the reminder off, set for Monday at 08:00, and the Gmail Digest off, set for 08:00.
+`200`: the settings. Until the Owner first saves them, they are `"UTC"`, no height, and the Gmail Digest off, set for 08:00.
 
 ```json
 {
   "timeZone": "UTC",
   "heightCm": 175,
-  "weighInReminder": { "enabled": false, "weekday": "monday", "time": "08:00" },
   "gmailDigest": { "enabled": false, "time": "08:00" }
 }
 ```
 
-- `timeZone`: the Owner Time Zone, an IANA name such as `"Asia/Tokyo"`. Every Day, and every clock time such as the reminder's, is in this zone. Changing it never moves stored data: a Weigh-in stays in its week. Only which Day is today changes.
-- `heightCm`: a whole number of cm, or `null` until it is set.
-- `weighInReminder`: the weekly Notification reminding the Owner to weigh in. `weekday` is `"monday"` to `"sunday"`, and `time` is `"HH:MM"` on the hour or half hour (`"00:00"` to `"23:30"`).
+- `timeZone`: the Owner Time Zone, an IANA name such as `"Asia/Tokyo"`. Every Day, and every clock time such as the Gmail Digest's, is in this zone. Changing it never moves stored data: a Weigh-in stays in its week. Only which Day is today changes.
+- `heightCm`: a whole number of cm, or `null` until it is set. Calories reads it, through `CoreService.HeightCm`, for the BMI.
 - `gmailDigest`: the daily Notification asking the Core Assistant for the Gmail Digest ([ADR 0009](../../docs/adr/0009-gmail-for-the-core-assistant.md)), whose run also files the new mail in a Gmail Filing ([ADR 0011](../../docs/adr/0011-the-core-assistant-files-gmail-daily.md)). `time` is `"HH:MM"` on the hour or half hour.
 
 ### `PUT /api/settings`
 
-Body: all of the settings, as `GET` answers them. `gmailDigest` may be left out, which keeps the saved one, so a web app that doesn't know it yet can't turn it off.
+Body: all of the settings, as `GET` answers them. `gmailDigest` may be left out, which keeps the saved one, so a web app that doesn't know it yet can't turn it off. A `weighInReminder`, which a web app from before ADR 0012 sends, is ignored: the Weigh-in reminder is Calories' now.
 
 - `204`: saved.
-- `400`: the body isn't settings, or one is invalid: an unknown time zone, a height outside 1 to 300 cm or not a whole number, an unknown weekday, or a time that isn't on the hour or half hour. The message says which.
-
-## Weigh-ins
-
-A Weigh-in is the Owner's weight for one week, Monday to Sunday in the Owner Time Zone, in kg to 1 decimal. Each week has at most one. A week is named by the Monday it starts on, as `YYYY-MM-DD`.
-
-Only this week's and last week's Weigh-ins can be logged, replaced or deleted. Older weeks are read-only.
-
-### `GET /api/weigh-ins`
-
-`200`: every Weigh-in, newest week first.
-
-```json
-[
-  { "week": "2026-10-19", "kg": 72.4 },
-  { "week": "2026-10-12", "kg": 72.8 }
-]
-```
-
-### `PUT /api/weigh-ins/{week}`
-
-Logs the Weigh-in for `week`, replacing any it already has.
-
-```json
-{ "kg": 72.4 }
-```
-
-- `204`: saved.
-- `400`: `week` isn't a Monday written `YYYY-MM-DD`, or `kg` is missing, not more than 0 and at most 500, or has more than 1 decimal.
-- `409`: `week` is neither this week nor last week.
-
-### `DELETE /api/weigh-ins/{week}`
-
-- `204`: that week has no Weigh-in now. This is also the answer if it had none.
-- `400`: `week` isn't a Monday written `YYYY-MM-DD`.
-- `409`: `week` is neither this week nor last week.
-
-## Body Home Card
-
-### `GET /api/body`
-
-`200`: what the Body Home Card shows.
-
-```json
-{
-  "latest": { "week": "2026-10-19", "kg": 72.4 },
-  "bmi": 23.6,
-  "change": -0.4
-}
-```
-
-- `latest`: the newest week's Weigh-in, or `null` if there are none. Then `bmi` and `change` are `null` too.
-- `bmi`: `latest`'s body mass index to 1 decimal, or `null` until the height is set. It is always derived, never stored.
-- `change`: `latest`'s kg minus the kg of the week before it, or `null` if that week has no Weigh-in.
+- `400`: the body isn't settings, or one is invalid: an unknown time zone, a height outside 1 to 300 cm or not a whole number, or a Gmail Digest time that isn't on the hour or half hour. The message says which.
 
 ## Notifications
 
@@ -186,7 +131,7 @@ Core sends every Notification, for a Module or for itself, in the Messenger when
 
 Each Notification is sent at most once, even if the scheduler retries a tick. With no bot configured, as in local development, nothing is sent or recorded as sent, and the tick says so. Web Push was retired ([#137](https://github.com/feriosch/nando-server/issues/137)): Telegram is the only channel.
 
-Core's own Notifications are the Weigh-in reminder, "Weigh-in" / "Time to log this week's weight", sent once a week at the `weighInReminder`'s weekday and time while it is `enabled`, and the Gmail Digest's ask, `core:gmail-digest:<day>`, "📬 Gmail Digest" / "Reading your new mail…", sent once a day at the `gmailDigest`'s time while it is `enabled`.
+Core's own Notification is the Gmail Digest's ask, `core:gmail-digest:<day>`, "📬 Gmail Digest" / "Reading your new mail…", sent once a day at the `gmailDigest`'s time while it is `enabled`.
 
 ### `POST /internal/tick`
 

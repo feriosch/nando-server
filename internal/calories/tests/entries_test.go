@@ -80,14 +80,13 @@ func equalEntries(a, b []entryJSON) bool {
 	return true
 }
 
-// saveTimeZone sets the Owner Time Zone through Core's settings API.
+// saveTimeZone sets the Owner Time Zone through Core's settings API,
+// keeping the height.
 func (d *browser) saveTimeZone(name string) {
 	d.nando.t.Helper()
-	d.must(http.MethodPut, "/api/settings", map[string]any{
-		"timeZone":        name,
-		"heightCm":        nil,
-		"weighInReminder": map[string]any{"enabled": false, "weekday": "monday", "time": "08:00"},
-	}, http.StatusNoContent)
+	settings := get[map[string]any](d, "/api/settings")
+	settings["timeZone"] = name
+	d.must(http.MethodPut, "/api/settings", settings, http.StatusNoContent)
 }
 
 // logEntry logs entry on day through calories_log_entry, and returns what

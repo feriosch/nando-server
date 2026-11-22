@@ -44,9 +44,8 @@ type threadJSON struct {
 func (d *browser) saveTimeZone(name string) {
 	d.nando.t.Helper()
 	d.must(http.MethodPut, "/api/settings", map[string]any{
-		"timeZone":        name,
-		"heightCm":        nil,
-		"weighInReminder": map[string]any{"enabled": false, "weekday": "monday", "time": "08:00"},
+		"timeZone": name,
+		"heightCm": nil,
 	}, http.StatusNoContent)
 }
 

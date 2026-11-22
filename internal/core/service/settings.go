@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 	"time"
 
 	// The Owner Time Zone mustn't depend on the image having a zoneinfo database.
@@ -54,11 +53,6 @@ func toSettingsJSON(settings model.Settings) model.SettingsJSON {
 	return model.SettingsJSON{
 		TimeZone: settings.TimeZone,
 		HeightCm: height,
-		WeighInReminder: model.ReminderJSON{
-			Enabled: settings.WeighInReminder.Enabled,
-			Weekday: strings.ToLower(settings.WeighInReminder.Weekday.String()),
-			Time:    settings.WeighInReminder.Time,
-		},
 		GmailDigest: &model.GmailDigestJSON{
 			Enabled: settings.GmailDigest.Enabled,
 			Time:    settings.GmailDigest.Time,
@@ -75,18 +69,10 @@ func (s *SettingsService) getSettings(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, toSettingsJSON(settings))
 }
 
-// weekdays are the weekdays by their API names, such as "monday".
-var weekdays = func() map[string]time.Weekday {
-	m := map[string]time.Weekday{}
-	for d := time.Sunday; d <= time.Saturday; d++ {
-		m[strings.ToLower(d.String())] = d
-	}
-	return m
-}()
-
 // fromSettingsJSON turns the settings the API was sent into Settings, or
-// explains what's wrong with them. saved gives what j leaves out: the Mail
-// Digest, which a web app that doesn't know it yet doesn't send.
+// explains what's wrong with them. saved gives what j leaves out: the Gmail
+// Digest, which a web app that doesn't know it yet doesn't send, and the
+// Weigh-in reminder kept from before ADR 0012, which the API no longer shows.
 func fromSettingsJSON(j model.SettingsJSON, saved model.Settings) (model.Settings, error) {
 	// "" and "Local" load too, as UTC and the server's own zone.
 	if _, err := time.LoadLocation(j.TimeZone); err != nil || j.TimeZone == "" || j.TimeZone == "Local" {
@@ -94,13 +80,6 @@ func fromSettingsJSON(j model.SettingsJSON, saved model.Settings) (model.Setting
 	}
 	if j.HeightCm != nil && (*j.HeightCm < 1 || *j.HeightCm > 300) {
 		return model.Settings{}, errors.New("heightCm must be a whole number of cm from 1 to 300, or null")
-	}
-	weekday, ok := weekdays[j.WeighInReminder.Weekday]
-	if !ok {
-		return model.Settings{}, errors.New("weighInReminder.weekday must be a weekday such as monday")
-	}
-	if !utils.IsHalfHour(j.WeighInReminder.Time) {
-		return model.Settings{}, errors.New("weighInReminder.time must be HH:MM on the hour or half hour")
 	}
 	digest := saved.GmailDigest
 	if j.GmailDigest != nil {
@@ -110,13 +89,9 @@ func fromSettingsJSON(j model.SettingsJSON, saved model.Settings) (model.Setting
 		digest = model.GmailDigest{Enabled: j.GmailDigest.Enabled, Time: j.GmailDigest.Time}
 	}
 	settings := model.Settings{
-		TimeZone:    j.TimeZone,
-		GmailDigest: digest,
-		WeighInReminder: model.WeighInReminder{
-			Enabled: j.WeighInReminder.Enabled,
-			Weekday: weekday,
-			Time:    j.WeighInReminder.Time,
-		},
+		TimeZone:        j.TimeZone,
+		GmailDigest:     digest,
+		WeighInReminder: saved.WeighInReminder,
 	}
 	if j.HeightCm != nil {
 		settings.HeightCm = *j.HeightCm

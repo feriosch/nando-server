@@ -17,7 +17,7 @@ const (
 // NotificationsService is the Module's Notification provider, which Core asks
 // at every tick: the no-Entries reminder that nothing is logged yet today and
 // the evening summary of how today went, each at the time in the Calories
-// settings. It asks the SettingsService for those settings and the
+// settings, and the weekly Weigh-in reminder at its weekday and time. It asks the SettingsService for those settings and the
 // DaysService for how today went.
 type NotificationsService struct {
 	settings *SettingsService
@@ -36,17 +36,20 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 	if err != nil {
 		return nil, err
 	}
+	day := coremodel.DayOf(slot, slot.Location())
+	var due []coremodel.Notification
+	if settings.WeighInReminder.DueAt(slot) {
+		due = append(due, notification("weigh-in-reminder", day.Week(), "Time to log this week's weight"))
+	}
 	reminderDue := settings.NoEntriesReminder.DueAt(slot)
 	summaryDue := settings.EveningSummary.DueAt(slot)
 	if !reminderDue && !summaryDue {
-		return nil, nil
+		return due, nil
 	}
-	day := coremodel.DayOf(slot, slot.Location())
 	calories, _, err := s.days.dayCalories(ctx, day)
 	if err != nil {
 		return nil, err
 	}
-	var due []coremodel.Notification
 	// The evening summary of an Unlogged Day already says nothing was logged,
 	// so the reminder isn't sent alongside it.
 	if reminderDue && !summaryDue && calories.ConsumedCalories == nil {
@@ -58,7 +61,8 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 	return due, nil
 }
 
-// notification is the Calories Notification of this kind for day.
+// notification is the Calories Notification of this kind for day, or for
+// the week starting on day.
 func notification(kind string, day coremodel.Day, body string) coremodel.Notification {
 	return coremodel.Notification{
 		ID:    coremodel.NotificationID("calories", kind, day),

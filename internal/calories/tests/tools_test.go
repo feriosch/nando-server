@@ -289,7 +289,7 @@ func TestTheConsentPageSaysWhatCaloriessToolsLetAConnectorDo(t *testing.T) {
 
 	// Deleting and archiving are said, as the Owner is asked first.
 	if want := []string{"read your Days and Daily Limit, log, correct and delete what you eat, save, change and archive your Meals, " +
-		"and set your Daily Limit and when Calories Notifications come"}; !slices.Equal(got, want) {
+		"read, log and delete your weekly Weigh-ins, and set your Daily Limit and when Calories Notifications come"}; !slices.Equal(got, want) {
 		t.Errorf("toolsDescriptions = %q, want %q", got, want)
 	}
 }
@@ -329,7 +329,10 @@ func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
 		"calories_restore_meal":    write,
 		"calories_delete_entry":    destroy,
 		// Archiving can be undone, but takes a Meal out of use.
-		"calories_archive_meal": destroy,
+		"calories_archive_meal":    destroy,
+		"calories_list_weigh_ins":  lookUp,
+		"calories_log_weigh_in":    write,
+		"calories_delete_weigh_in": destroy,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Tools and their hints =\n%v\nwant\n%v", got, want)

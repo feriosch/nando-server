@@ -10,10 +10,21 @@ type notificationSettingJSON struct {
 	Time    string `json:"time"`
 }
 
-// settingsJSON is what the Calories Settings Section saves, as the API reads and writes it.
+// weighInReminderJSON is when the weekly Weigh-in reminder is sent.
+type weighInReminderJSON struct {
+	Enabled bool   `json:"enabled"`
+	Weekday string `json:"weekday"`
+	Time    string `json:"time"`
+}
+
+// defaultWeighInReminder is the Weigh-in reminder until the Owner changes it.
+var defaultWeighInReminder = weighInReminderJSON{Enabled: false, Weekday: "monday", Time: "08:00"}
+
+// settingsJSON is when the Calories Notifications are sent, as the API reads them.
 type settingsJSON struct {
 	NoEntriesReminder notificationSettingJSON `json:"noEntriesReminder"`
 	EveningSummary    notificationSettingJSON `json:"eveningSummary"`
+	WeighInReminder   weighInReminderJSON     `json:"weighInReminder"`
 }
 
 func TestCaloriesNotificationsAreOffUntilTheOwnerTurnsThemOn(t *testing.T) {
@@ -22,6 +33,7 @@ func TestCaloriesNotificationsAreOffUntilTheOwnerTurnsThemOn(t *testing.T) {
 	want := settingsJSON{
 		NoEntriesReminder: notificationSettingJSON{Enabled: false, Time: "14:00"},
 		EveningSummary:    notificationSettingJSON{Enabled: false, Time: "21:00"},
+		WeighInReminder:   defaultWeighInReminder,
 	}
 	if got := get[settingsJSON](phone, "/api/calories/settings"); got != want {
 		t.Errorf("settings = %+v, want %+v", got, want)
@@ -36,6 +48,7 @@ func TestTheAssistantReadsWhenCaloriesNotificationsAreSent(t *testing.T) {
 	want := settingsJSON{
 		NoEntriesReminder: notificationSettingJSON{Enabled: false, Time: "14:00"},
 		EveningSummary:    notificationSettingJSON{Enabled: false, Time: "21:00"},
+		WeighInReminder:   defaultWeighInReminder,
 	}
 	if got != want {
 		t.Errorf("calories_get_settings = %+v, want the defaults %+v", got, want)
@@ -52,6 +65,7 @@ func TestTheAssistantChangesOnlyTheNotificationSettingsItSends(t *testing.T) {
 	want := settingsJSON{
 		NoEntriesReminder: notificationSettingJSON{Enabled: false, Time: "14:00"}, // not sent, so as it was
 		EveningSummary:    notificationSettingJSON{Enabled: true, Time: "22:00"},
+		WeighInReminder:   defaultWeighInReminder,
 	}
 	if got != want {
 		t.Errorf("after turning the evening summary on at 22:00: %+v, want %+v", got, want)
@@ -65,6 +79,7 @@ func TestTheAssistantChangesOnlyTheNotificationSettingsItSends(t *testing.T) {
 	want = settingsJSON{
 		NoEntriesReminder: notificationSettingJSON{Enabled: false, Time: "13:30"},
 		EveningSummary:    notificationSettingJSON{Enabled: false, Time: "22:00"},
+		WeighInReminder:   defaultWeighInReminder,
 	}
 	if got != want {
 		t.Errorf("after moving the reminder and turning the summary off: %+v, want %+v", got, want)
@@ -102,6 +117,7 @@ func TestInvalidCaloriesNotificationSettingsAreRefused(t *testing.T) {
 	want := settingsJSON{
 		NoEntriesReminder: notificationSettingJSON{Enabled: true, Time: "14:00"},
 		EveningSummary:    notificationSettingJSON{Enabled: true, Time: "21:00"},
+		WeighInReminder:   defaultWeighInReminder,
 	}
 	if got := get[settingsJSON](phone, "/api/calories/settings"); got != want {
 		t.Errorf("settings after refused changes = %+v, want unchanged %+v", got, want)

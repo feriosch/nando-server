@@ -30,6 +30,7 @@ type Module struct {
 	dailyLimits *service.DailyLimitsService
 	days        *service.DaysService
 	settings    *service.SettingsService
+	weighIns    *service.WeighInsService
 	// notifications is the Module's Notification provider.
 	notifications *service.NotificationsService
 }
@@ -56,12 +57,17 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	entriesService := service.NewEntries(entries, meals, dailyLimits, core, now)
 	days := service.NewDays(entries, dailyLimits, core)
 	settings := service.NewSettings(repository.NewSettings(db))
+	weighIns := repository.NewWeighIns(db)
+	if err := service.TakeWeighInsFromCore(ctx, core, weighIns, settings, repository.NewMigrations(db)); err != nil {
+		return nil, err
+	}
 	return &Module{
 		meals:         service.NewMeals(meals, entries, core, now),
 		entries:       entriesService,
 		dailyLimits:   service.NewDailyLimits(dailyLimits, core),
 		days:          days,
 		settings:      settings,
+		weighIns:      service.NewWeighIns(weighIns, core),
 		notifications: service.NewNotifications(settings, days),
 	}, nil
 }
@@ -73,6 +79,7 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	m.dailyLimits.Routes(mux)
 	m.days.Routes(mux)
 	m.settings.Routes(mux)
+	m.weighIns.Routes(mux)
 }
 
 // NotificationProvider is the Module's Notification provider, for Core to ask
@@ -100,9 +107,9 @@ type toolProvider struct{ m *Module }
 // consent page.
 func (p toolProvider) ToolsDescription() string {
 	return "read your Days and Daily Limit, log, correct and delete what you eat, save, change and archive your Meals, " +
-		"and set your Daily Limit and when Calories Notifications come"
+		"read, log and delete your weekly Weigh-ins, and set your Daily Limit and when Calories Notifications come"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.meals.Tools(), p.m.entries.Tools(), p.m.days.Tools(), p.m.dailyLimits.Tools(), p.m.settings.Tools())
+	return slices.Concat(p.m.meals.Tools(), p.m.entries.Tools(), p.m.days.Tools(), p.m.dailyLimits.Tools(), p.m.settings.Tools(), p.m.weighIns.Tools())
 }

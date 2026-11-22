@@ -128,19 +128,6 @@ func TestWithNoBotADueNotificationWaitsUnsentAndTheTickSaysWhy(t *testing.T) {
 	}
 }
 
-// saveWeighInReminder sets the Weigh-in reminder, keeping the other settings.
-func (d *browser) saveWeighInReminder(r reminderJSON) {
-	d.nando.t.Helper()
-	s := d.getSettings()
-	s.WeighInReminder = r
-	if rec := d.do(http.MethodPut, "/api/settings", mustJSON(d.nando.t, s)); rec.Code != http.StatusNoContent {
-		d.nando.t.Fatalf("PUT /api/settings with reminder %+v: status = %d, body %q", r, rec.Code, rec.Body)
-	}
-}
-
-// weighInReminder is the Weigh-in reminder as the Core bot sends it.
-const weighInReminder = "Weigh-in\nTime to log this week's weight"
-
 func TestANotificationWithoutATitleIsSentAsItsBodyAlone(t *testing.T) {
 	n, _, telegram := signedInWithBots(t, wednesday)
 	n.core.AddNotificationProvider(&provider{due: []model.Notification{{ID: "calories:no-entries:2026-10-21", Body: "Nothing logged today"}}})
@@ -164,91 +151,6 @@ func TestWithNoBotAndAFailingProviderTheTickSaysBoth(t *testing.T) {
 
 	if want := "tick: 1 Notification due, but no Assistant has a bot to send them, 1 error\n"; !strings.Contains(logs.String(), want) {
 		t.Errorf("log = %q; want a line %q", logs, want)
-	}
-}
-
-func TestWeighInReminderIsSentAtItsTimeEachWeek(t *testing.T) {
-	tokyo, _ := time.LoadLocation("Asia/Tokyo")
-	mondayMorning := time.Date(2026, 10, 26, 8, 0, 0, 0, tokyo) // Sunday 23:00 UTC
-	n, phone, telegram := signedInWithBots(t, mondayMorning.Add(-30*time.Minute))
-	phone.saveTimeZone("Asia/Tokyo")
-	phone.saveWeighInReminder(reminderJSON{Enabled: true, Weekday: "monday", Time: "08:00"})
-
-	n.mustTick() // 07:30
-	if got := received(telegram); len(got) != 0 {
-		t.Fatalf("at 07:30 received %q, want nothing yet", got)
-	}
-
-	n.clock.Set(mondayMorning)
-	n.mustTick()
-	n.clock.Advance(2 * time.Minute) // a retried tick
-	n.mustTick()
-	n.clock.Advance(28 * time.Minute) // 08:30
-	n.mustTick()
-	if got := received(telegram); !slices.Equal(got, []string{weighInReminder}) {
-		t.Fatalf("on Monday by 08:30 received %q, want one %q", got, weighInReminder)
-	}
-	if sent := telegram.CallsTo("sendMessage"); sent[0].Token != coreBotToken {
-		t.Errorf("the Weigh-in reminder was sent by %s, want the Core bot", sent[0].Token)
-	}
-
-	n.clock.Set(mondayMorning.AddDate(0, 0, 7))
-	n.mustTick()
-	if got := len(received(telegram)); got != 2 {
-		t.Errorf("by the next Monday's 08:00 received %d reminders, want 2", got)
-	}
-}
-
-func TestDisabledWeighInReminderIsNotSent(t *testing.T) {
-	monday8am := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
-	n, phone, telegram := signedInWithBots(t, monday8am)
-	phone.saveWeighInReminder(reminderJSON{Enabled: false, Weekday: "monday", Time: "08:00"})
-
-	n.mustTick()
-
-	if got := received(telegram); len(got) != 0 {
-		t.Errorf("received %q, want nothing", got)
-	}
-}
-
-func TestWeighInReminderIsSentInATimeZoneOffsetByAQuarterHour(t *testing.T) {
-	kathmandu, _ := time.LoadLocation("Asia/Kathmandu") // UTC+5:45
-	mondayMorning := time.Date(2026, 10, 26, 8, 0, 0, 0, kathmandu)
-	n, phone, telegram := signedInWithBots(t, mondayMorning)
-	phone.saveTimeZone("Asia/Kathmandu")
-	phone.saveWeighInReminder(reminderJSON{Enabled: true, Weekday: "monday", Time: "08:00"})
-
-	n.mustTick()
-
-	if got := received(telegram); !slices.Equal(got, []string{weighInReminder}) {
-		t.Errorf("at 08:00 in Kathmandu received %q, want %q", got, weighInReminder)
-	}
-}
-
-func TestTicksEveryFiveMinutesSendTheWeighInReminderOnceAtItsHalfHour(t *testing.T) {
-	tokyo, _ := time.LoadLocation("Asia/Tokyo")
-	mondayMorning := time.Date(2026, 10, 26, 8, 0, 0, 0, tokyo)
-	for _, c := range []struct {
-		name  string
-		first time.Duration // after 08:00, the first tick that runs
-	}{
-		{name: "the 08:00 tick ran", first: 0},
-		{name: "the 08:00 tick never ran", first: 5 * time.Minute},
-	} {
-		t.Run(c.name, func(t *testing.T) {
-			n, phone, telegram := signedInWithBots(t, mondayMorning.Add(-30*time.Minute))
-			phone.saveTimeZone("Asia/Tokyo")
-			phone.saveWeighInReminder(reminderJSON{Enabled: true, Weekday: "monday", Time: "08:00"})
-
-			for at := c.first; at < 30*time.Minute; at += 5 * time.Minute {
-				n.clock.Set(mondayMorning.Add(at))
-				n.mustTick()
-			}
-
-			if got := received(telegram); !slices.Equal(got, []string{weighInReminder}) {
-				t.Errorf("by 08:25 received %q, want the Weigh-in reminder once", got)
-			}
-		})
 	}
 }
 

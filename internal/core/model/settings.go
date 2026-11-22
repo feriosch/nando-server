@@ -10,12 +10,16 @@ type Settings struct {
 	// TimeZone is the Owner Time Zone, an IANA name such as "Asia/Tokyo".
 	TimeZone string `bson:"timeZone"`
 	// HeightCm is the Owner's height; 0 means not set yet.
-	HeightCm        int             `bson:"heightCm"`
+	HeightCm int `bson:"heightCm"`
+	// WeighInReminder is the Weigh-in reminder as the Owner saved it before
+	// it moved to Calories (ADR 0012): kept, never changed, for Calories to
+	// take once. Its Time is "" if they never saved one.
 	WeighInReminder WeighInReminder `bson:"weighInReminder"`
 	GmailDigest     GmailDigest     `bson:"gmailDigest"`
 }
 
-// WeighInReminder is the weekly Notification reminding the Owner to weigh in.
+// WeighInReminder is the weekly Notification that reminded the Owner to
+// weigh in, before it moved to Calories (ADR 0012).
 type WeighInReminder struct {
 	Enabled bool         `bson:"enabled"`
 	Weekday time.Weekday `bson:"weekday"`
@@ -35,9 +39,8 @@ type GmailDigest struct {
 
 // DefaultSettings are the settings until the Owner first saves theirs.
 var DefaultSettings = Settings{
-	TimeZone:        "UTC",
-	WeighInReminder: WeighInReminder{Enabled: false, Weekday: time.Monday, Time: "08:00"},
-	GmailDigest:     GmailDigest{Enabled: false, Time: "08:00"},
+	TimeZone:    "UTC",
+	GmailDigest: GmailDigest{Enabled: false, Time: "08:00"},
 }
 
 // SettingsRepository reads and writes the settings collection.
@@ -48,23 +51,15 @@ type SettingsRepository interface {
 }
 
 // SettingsJSON is the settings as the API reads and writes them.
+// A weighInReminder sent by a web app from before ADR 0012 is ignored.
 type SettingsJSON struct {
-	TimeZone        string           `json:"timeZone"`
-	HeightCm        *int             `json:"heightCm"`
-	WeighInReminder ReminderJSON     `json:"weighInReminder"`
-	GmailDigest     *GmailDigestJSON `json:"gmailDigest,omitempty"`
+	TimeZone    string           `json:"timeZone"`
+	HeightCm    *int             `json:"heightCm"`
+	GmailDigest *GmailDigestJSON `json:"gmailDigest,omitempty"`
 }
 
 // GmailDigestJSON is the Gmail Digest as the API reads and writes it.
 type GmailDigestJSON struct {
 	Enabled bool   `json:"enabled"`
-	Time    string `json:"time"`
-}
-
-// ReminderJSON is the Weigh-in reminder as the API reads and writes it.
-// Weekday is its API name, such as "monday".
-type ReminderJSON struct {
-	Enabled bool   `json:"enabled"`
-	Weekday string `json:"weekday"`
 	Time    string `json:"time"`
 }

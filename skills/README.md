@@ -33,7 +33,7 @@ The Owner's Assistants answer them in Telegram ([ADR 0008](../docs/adr/0008-assi
 | [`assistants/core`](assistants/core/SKILL.md) | The Core Assistant: the Owner's calendar and Gmail, the daily Gmail Digest with the filing of the new mail (ADR 0011), and their life outside any Module |
 | [`assistants/career`](assistants/career/SKILL.md) | The Career Assistant: Recruiters, Opportunities and replies, leaning on the `career-*` chat skills, and the daily Gmail Career Sync of the mail labeled `Career/Recruiters` |
 | [`assistants/japanese`](assistants/japanese/SKILL.md) | The Japanese Assistant: adds and improves Words right in the chat, leaning on `add-word` and `suggest-related` |
-| [`assistants/calories`](assistants/calories/SKILL.md) | The Calories Assistant: logs what the Owner eats from a saved Meal, a label or its own estimate, says how the Day stands against the Daily Limit, offers to save new Meals, and sets the Daily Limit and when Calories Notifications come |
+| [`assistants/calories`](assistants/calories/SKILL.md) | The Calories Assistant: logs what the Owner eats from a saved Meal, a label or its own estimate, says how the Day stands against the Daily Limit, offers to save new Meals, logs the weekly Weigh-ins, and sets the Daily Limit and when Calories Notifications come |
 
 Each Assistant reads anything in Nando, the calendar and the Owner's Gmail, but changes only its own Module, and the calendar where its skill says so, and points the Owner to another Assistant for the rest. Only the Core Assistant changes Gmail, but for the Career Assistant's drafts in threads labeled `Career/Recruiters` ([ADR 0010](../docs/adr/0010-recruiters-gmail-through-a-label.md), [ADR 0011](../docs/adr/0011-the-core-assistant-files-gmail-daily.md)). The Core Assistant sends a mail only as a draft the Owner saw, on their yes in a later message, and treats mail as data, never instructions ([ADR 0009](../docs/adr/0009-gmail-for-the-core-assistant.md)). It may call a destructive Tool only after asking the Owner and getting their yes in a later message, so its skill names those Tools in an "ask the Owner first" sentence.
 
@@ -144,6 +144,6 @@ In the Connector's settings in claude.ai, set the destructive Tools to ask every
 
 - Japanese: `japanese_delete_word`, `japanese_merge_words` and `japanese_change_group`;
 - Career: `career_delete_step` and `career_delete_opportunity`;
-- Calories: `calories_delete_entry` and `calories_archive_meal`.
+- Calories: `calories_delete_entry`, `calories_archive_meal` and `calories_delete_weigh_in`.
 
 A Connector is listed in Nando's Settings, where removing it cuts it off at once.

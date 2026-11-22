@@ -21,7 +21,7 @@ A self-contained area of functionality (such as calorie tracking) that exists as
 _Avoid_: Feature, app, plugin
 
 **Core**:
-The shared foundation every Module relies on: proving the Owner's identity, delivering Notifications, the Owner's settings and body measurements, and the Home screen. Core knows nothing about any specific Module.
+The shared foundation every Module relies on: proving the Owner's identity, delivering Notifications, the Owner's settings (including their height), and the Home screen. Core knows nothing about any specific Module.
 _Avoid_: Common, shared, platform, kernel
 
 **Home**:
@@ -29,7 +29,7 @@ The screen Nando opens to, made up of Home Cards from Core and from every Module
 _Avoid_: Dashboard, start page, landing
 
 **Home Card**:
-A small summary that a Module (or Core itself) supplies for Home, such as today's Consumed Calories against the Daily Limit, or the latest Weigh-in.
+A small summary that a Module (or Core itself) supplies for Home, such as today's Consumed Calories against the Daily Limit, or the latest Weigh-in. A Module may supply more than one.
 _Avoid_: Widget, tile, panel
 
 **Tool**:
@@ -79,6 +79,10 @@ _Avoid_: Empty day, zero day, fasting day
 **Daily Limit**:
 The most kcal the Owner intends to consume in a Day; a ceiling to stay under, not a goal to reach. It is set once and stays in force until the Owner changes it, and each change applies from the Day it is made, so past Days are judged against the limit they had. The very first Daily Limit also covers every Day before it.
 _Avoid_: Target, goal, budget, allowance
+
+**Weigh-in**:
+The Owner's weight for one week (Monday to Sunday in the Owner Time Zone), in kg; at most one per week, and a later one in the same week replaces the earlier. It belongs to Calories (ADR 0012), which also derives its BMI from the Owner's height in Core's settings.
+_Avoid_: Weight log, measurement, entry
 
 ## Japanese
 
@@ -212,14 +216,6 @@ _Avoid_: Resume (for the whole), CV, preferences, about me
 Whether the Owner is looking for a new role right now, set by the Owner as Looking or Not Looking. It changes the tone of every Suggested Reply and how often the Owner hears about them.
 _Avoid_: Open to Work (that is LinkedIn's), job hunting, active, available
 
-## Body
-
-Measurements of the Owner, kept in Core so that any Module can read them.
-
-**Weigh-in**:
-The Owner's weight for one week (Monday to Sunday in the Owner Time Zone), in kg; at most one per week, and a later one in the same week replaces the earlier.
-_Avoid_: Weight log, measurement, entry
-
 ## Identity
 
 **Passkey**:
@@ -287,6 +283,6 @@ _Avoid_: Important (that is Gmail's own marker), flagged, pinned, to-do
 ## Notifications
 
 **Notification**:
-A short message Nando sends the Owner first, without being asked. Core always sends it, either on a Module's behalf or for itself (such as the Weigh-in reminder), in the Messenger: in the chat of that Module's Assistant, or the Core Assistant's when the Module has none. It becomes part of that Assistant's Talk, so the Owner can answer it there. A Notification can also ask that Assistant for work, such as the Gmail Digest: then it waits in the Talk like the Owner's message, and a run answers it.
+A short message Nando sends the Owner first, without being asked. Core always sends it, either on a Module's behalf (such as Calories' Weigh-in reminder) or for itself, in the Messenger: in the chat of that Module's Assistant, or the Core Assistant's when the Module has none. It becomes part of that Assistant's Talk, so the Owner can answer it there. A Notification can also ask that Assistant for work, such as the Gmail Digest: then it waits in the Talk like the Owner's message, and a run answers it.
 _Avoid_: Alert, push, message
 

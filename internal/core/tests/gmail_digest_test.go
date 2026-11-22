@@ -40,7 +40,7 @@ func (d *browser) gmailDigest() gmailDigestJSON {
 func (d *browser) putGmailDigest(digest any) *httptest.ResponseRecorder {
 	d.nando.t.Helper()
 	s := d.getSettings()
-	body := map[string]any{"timeZone": s.TimeZone, "heightCm": s.HeightCm, "weighInReminder": s.WeighInReminder, "gmailDigest": digest}
+	body := map[string]any{"timeZone": s.TimeZone, "heightCm": s.HeightCm, "gmailDigest": digest}
 	return d.do(http.MethodPut, "/api/settings", mustJSON(d.nando.t, body))
 }
 
