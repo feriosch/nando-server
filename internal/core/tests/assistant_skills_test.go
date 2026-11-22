@@ -140,11 +140,12 @@ func TestOnlyTheCoreAssistantChangesMail(t *testing.T) {
 	}
 }
 
-func TestTheCoreSkillAnswersTheGmailDigestChangingNothingAndTheTalkSkillKnowsNandosAsks(t *testing.T) {
+func TestTheCoreSkillAnswersTheGmailDigestAndTheTalkSkillKnowsNandosAsks(t *testing.T) {
 	core := readSkill(t, "core", "assistant-core")
 	for _, want := range []string{
 		"📬 Gmail Digest", // the ask, as Nando sends it
-		"The digest run changes nothing",
+		// It files the mail first (ADR 0011), and changes nothing else.
+		"The digest run files the new mail and changes nothing else",
 	} {
 		if !strings.Contains(core, want) {
 			t.Errorf("the Core skill never says %s", want)
@@ -171,6 +172,43 @@ func TestTheCoreAssistantSendsTheCareerAssistantsDraftOnlyOnTheOwnersYes(t *test
 	for _, want := range []string{"Career Assistant's draft", "`list_drafts`", "`threadId`", "more than one"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("the Core skill never says %s: it finds the Career Assistant's draft, shows it, and sends it on the Owner's yes", want)
+		}
+	}
+}
+
+// coreToolName is how a skill names one of Core's own Tools.
+var coreToolName = regexp.MustCompile(`core_[a-z_]+`)
+
+func TestTheCoreSkillFilesTheDaysMailAndKeepsTheFilingRecord(t *testing.T) {
+	n, _ := messengerNando(t)
+	served := servedTools(t, n)
+
+	text := readSkill(t, "core", "assistant-core")
+	for _, want := range []string{
+		"`core_record_gmail_filing`", "`core_list_gmail_filings`", "`core_mark_gmail_filing_undone`",
+		"`list_labels`", "`label_thread`", "`unlabel_thread`", // labels by ID, archives by taking INBOX off
+		"`in:inbox`",                    // it files only what is still in the inbox
+		"Never archive without a label", // and `Unknown` when unsure
+		"`Unknown`",
+		"`UNREAD`",                       // archiving never changes read or unread
+		"`Career/Recruiters`",            // the Gmail Career Sync's label (ADR 0010)
+		"reserved",                       // label names avoid Gmail's reserved words
+		`label:"Payments/McDonald's"`,    // a name with punctuation is quoted in a search
+		"`get_thread`",                   // search lags right after labeling
+		"What needs the Owner (star it)", // starred, and kept in the inbox
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the Core skill never says %s", want)
+		}
+	}
+	for _, name := range coreToolName.FindAllString(text, -1) {
+		if !served[name] {
+			t.Errorf("the Core skill names %s, which Nando doesn't serve", name)
+		}
+	}
+	for _, folder := range []string{"talk", "career", "japanese", "calories"} {
+		if found := coreToolName.FindString(readSkill(t, folder, "assistant-"+folder)); found != "" {
+			t.Errorf("the %s skill names %s, but only the Core Assistant files Gmail", folder, found)
 		}
 	}
 }
