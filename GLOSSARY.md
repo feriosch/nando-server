@@ -237,7 +237,7 @@ How many days off work the Companion would take for a Fare: the workdays it cove
 _Avoid_: PTO, vacation days, days off (alone)
 
 **Fare**:
-One priced round trip found for a Trip and Party: its dates, flights, stops and journey time, its price per person and in total with checked bags, where it was found, and a link to book it.
+One priced round trip found for a Trip and Party: its dates, flights, stops and journey time, its price per person and in total, whether that includes checked bags (not every source prices them), where it was found, and a link to book it.
 _Avoid_: Flight, offer, deal, price, result
 
 **Separate Tickets**:
@@ -253,7 +253,7 @@ An email from a fare site or an airline about prices, such as Google Flights tra
 _Avoid_: Fare Alert (that is Nando's own message), deal email, newsletter
 
 **Fare Check**:
-One pass in which the Travel Assistant searches for Fares and records them. The **Daily Fare Check**, after the Gmail Digest, reads the new Price Alerts and searches again only where something moved. The **Weekly Fare Check**, on Sunday, searches every Watching Trip's whole window for each Party, and ends with the Weekly Travel Summary.
+One pass in which the Travel Assistant searches for Fares and records them. The **Daily Fare Check**, after the Gmail Digest, reads the new Price Alerts and searches again only where something moved. The **Weekly Fare Check**, on Sunday unless Travel's settings name another weekday, searches every Watching Trip's whole window for each Party, and ends with the Weekly Travel Summary.
 _Avoid_: Search, scan, scrape, poll, sync
 
 **Fare Alert**:
@@ -265,7 +265,7 @@ The price per person below which the Owner wants to hear about a Trip and Party.
 _Avoid_: Budget, goal, limit, threshold
 
 **Weekly Travel Summary**:
-The Travel Assistant's Sunday message on how each Watching Trip stands: the best Fares for each Party, their trend, the cheapest stretches of its windows, and any Target Fare it suggests.
+The Travel Assistant's message at the end of the Weekly Fare Check on how each Watching Trip stands: the best Fares for each Party, their trend, the cheapest stretches of its windows, and any Target Fare it suggests.
 _Avoid_: Report, digest (that is Gmail's), newsletter
 
 ## Identity

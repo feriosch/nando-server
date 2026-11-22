@@ -28,12 +28,14 @@ The Owner wants to take some trips next year, and has no time to keep checking f
   - **Price Verdicts**: a Travel Tool asks SerpApi's Google Flights API for Google's verdict on a Fare's route and dates, and Nando records the answer. Nando makes this call itself, the way Japanese looks Words up on jisho.org: it is an outside service, not a model. The key stays in Secret Manager, never in a connector's URL, and Nando refuses calls past the monthly limit in Travel's settings, which starts at SerpApi's free 250 searches.
 - **Fare Checks are asked for by Notifications that ask for work** (ADR 0009), in the Travel chat, answered by the Assistants' scheduled task (ADR 0008), as the Gmail Career Sync is (ADR 0010). There is no Travel scheduled task of its own.
   - The **Daily Fare Check** comes at a time in Travel's settings, after the Gmail Digest's, so the night's Price Alerts are filed first. It reads the new Price Alerts, searches again only where something moved, and fetches a Price Verdict for the best new Fares.
-  - The **Weekly Fare Check**, on Sunday, searches every Watching Trip's whole window for each Party, and ends with the **Weekly Travel Summary**.
+  - The **Weekly Fare Check**, on Sunday by default or the weekday in Travel's settings, searches every Watching Trip's whole window for each Party, and ends with the **Weekly Travel Summary**.
   - The Owner can also ask for either in the chat at any time.
 - **How the Assistant judges a Fare** without a target from the Owner. A Fare is worth a **Fare Alert** when any of these hold, and the alert names which:
   - it is the lowest seen for its Trip and Party;
   - its Price Verdict is low;
-  - it dropped sharply since last week's best.
+  - it dropped sharply since last week's best;
+  - it is below its Target Fare, once the Owner agreed one;
+  - it is a sale or offer about to end.
   - After about a month of Fares, the Assistant suggests a **Target Fare** for each Trip and Party, which holds only once the Owner agrees.
 - **How often it speaks:**
   - At most one Travel message a day, after the Daily Fare Check, with the day's Fare Alerts, plus the Weekly Travel Summary.
