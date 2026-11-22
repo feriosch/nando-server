@@ -27,12 +27,6 @@ func (r weighIns) Save(ctx context.Context, weighIn model.WeighIn) error {
 	return err
 }
 
-func (r weighIns) AddMissing(ctx context.Context, weighIn model.WeighIn) error {
-	_, err := r.collection.UpdateOne(ctx, bson.D{{Key: "_id", Value: weighIn.Week}},
-		bson.D{{Key: "$setOnInsert", Value: weighIn}}, options.UpdateOne().SetUpsert(true))
-	return err
-}
-
 func (r weighIns) List(ctx context.Context) ([]model.WeighIn, error) {
 	cursor, err := r.collection.Find(ctx, bson.D{}, options.Find().SetSort(bson.D{{Key: "_id", Value: -1}}))
 	if err != nil {

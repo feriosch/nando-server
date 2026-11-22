@@ -71,8 +71,7 @@ func (s *SettingsService) getSettings(w http.ResponseWriter, r *http.Request) {
 
 // fromSettingsJSON turns the settings the API was sent into Settings, or
 // explains what's wrong with them. saved gives what j leaves out: the Gmail
-// Digest, which a web app that doesn't know it yet doesn't send, and the
-// Weigh-in reminder kept from before ADR 0012, which the API no longer shows.
+// Digest, which a web app that doesn't know it yet doesn't send.
 func fromSettingsJSON(j model.SettingsJSON, saved model.Settings) (model.Settings, error) {
 	// "" and "Local" load too, as UTC and the server's own zone.
 	if _, err := time.LoadLocation(j.TimeZone); err != nil || j.TimeZone == "" || j.TimeZone == "Local" {
@@ -89,9 +88,8 @@ func fromSettingsJSON(j model.SettingsJSON, saved model.Settings) (model.Setting
 		digest = model.GmailDigest{Enabled: j.GmailDigest.Enabled, Time: j.GmailDigest.Time}
 	}
 	settings := model.Settings{
-		TimeZone:        j.TimeZone,
-		GmailDigest:     digest,
-		WeighInReminder: saved.WeighInReminder,
+		TimeZone:    j.TimeZone,
+		GmailDigest: digest,
 	}
 	if j.HeightCm != nil {
 		settings.HeightCm = *j.HeightCm

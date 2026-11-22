@@ -68,7 +68,6 @@ type Core struct {
 	sessions      *service.SessionsService
 	passkeys      *service.PasskeysService
 	settings      *service.SettingsService
-	weighIns      *service.WeighInsService
 	notifications *service.NotificationsService
 	mcp           *service.MCPService
 	connectors    *service.ConnectorsService
@@ -126,7 +125,6 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		return nil, err
 	}
 	passkeys := repository.NewPasskeys(db)
-	weighIns := repository.NewWeighIns(db)
 
 	// apiURL is the API's own URL, which Connectors reach it at, and webURL
 	// the web app's.
@@ -152,8 +150,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		mcp.AddToolProvider(c.messenger)
 		mcp.AddToolProvider(c.gmailFilings)
 	}
-	c.weighIns = service.NewWeighIns(weighIns, c.settings)
-	c.coreService = coreService{settings: c.settings, weighIns: c.weighIns, now: now}
+	c.coreService = coreService{settings: c.settings, now: now}
 	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, c.oauth, cfg.Domain, cfg.Origins, now)
 	if err != nil {
 		return nil, err
@@ -199,7 +196,6 @@ func (c *Core) Service() model.CoreService {
 // the services whose data it is.
 type coreService struct {
 	settings *service.SettingsService
-	weighIns *service.WeighInsService
 	now      func() time.Time
 }
 
@@ -218,10 +214,6 @@ func (s coreService) Today(ctx context.Context) (model.Day, error) {
 func (s coreService) HeightCm(ctx context.Context) (int, error) {
 	settings, err := s.settings.Settings(ctx)
 	return settings.HeightCm, err
-}
-
-func (s coreService) WeighInsLeft(ctx context.Context) (model.WeighInsLeft, error) {
-	return s.weighIns.WeighInsLeft(ctx)
 }
 
 // AddNotificationProvider has Core ask p for its due Notifications at every

@@ -69,22 +69,6 @@ func toNotificationSettingJSON(setting model.NotificationSetting) *model.Notific
 	return &model.NotificationSettingJSON{Enabled: &setting.Enabled, Time: setting.Time}
 }
 
-// takeWeighInReminder saves reminder, the Weigh-in reminder Core kept until
-// ADR 0012, unless the settings already have one of their own.
-func (s *SettingsService) takeWeighInReminder(ctx context.Context, reminder coremodel.WeighInReminder) error {
-	settings, err := s.settings.Find(ctx)
-	switch {
-	case errors.Is(err, coreutils.ErrNotFound):
-		settings = model.DefaultSettings
-	case err != nil:
-		return err
-	case settings.WeighInReminder.Time != "":
-		return nil
-	}
-	settings.WeighInReminder = model.WeighInReminder{Enabled: reminder.Enabled, Weekday: reminder.Weekday, Time: reminder.Time}
-	return s.settings.Save(ctx, settings)
-}
-
 // Tools are what the SettingsService offers Connectors: reading and changing
 // when the Calories Notifications are sent.
 func (s *SettingsService) Tools() []coremodel.Tool {

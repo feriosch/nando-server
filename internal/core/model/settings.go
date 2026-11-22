@@ -1,31 +1,14 @@
 package model
 
-import (
-	"context"
-	"time"
-)
+import "context"
 
 // Settings are the Owner's preferences that Core keeps: one document.
 type Settings struct {
 	// TimeZone is the Owner Time Zone, an IANA name such as "Asia/Tokyo".
 	TimeZone string `bson:"timeZone"`
 	// HeightCm is the Owner's height; 0 means not set yet.
-	HeightCm int `bson:"heightCm"`
-	// WeighInReminder is the Weigh-in reminder as the Owner saved it before
-	// it moved to Calories (ADR 0012): kept, never changed, for Calories to
-	// take once. Its Time is "" if they never saved one.
-	WeighInReminder WeighInReminder `bson:"weighInReminder"`
-	GmailDigest     GmailDigest     `bson:"gmailDigest"`
-}
-
-// WeighInReminder is the weekly Notification that reminded the Owner to
-// weigh in, before it moved to Calories (ADR 0012).
-type WeighInReminder struct {
-	Enabled bool         `bson:"enabled"`
-	Weekday time.Weekday `bson:"weekday"`
-	// Time is the clock time in the Owner Time Zone, "HH:MM" on the hour or
-	// half hour.
-	Time string `bson:"time"`
+	HeightCm    int         `bson:"heightCm"`
+	GmailDigest GmailDigest `bson:"gmailDigest"`
 }
 
 // GmailDigest is the daily Notification that asks the Core Assistant for
