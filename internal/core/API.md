@@ -446,7 +446,7 @@ Served with the Messenger's Tools, while any bot has a token, since only the Cor
   - `added` and `removed`, the labels as `{"id", "name"}`, where `INBOX` removed means archived;
   - `starred`.
 
-  An entry without a `threadId` or a `reason` is a Tool error, and nothing in that call is recorded. It answers `{"recorded": [ids]}`.
+  An entry without a `threadId` or a `reason`, or with a label without its `id`, is a Tool error, and nothing in that call is recorded. It answers `{"recorded": [ids]}`.
 - **`core_list_gmail_filings`** (`day`, or `from` and `to`; `query` optional): answers `filings`, the entries of that Day or range, both Days included, oldest first. Each has the fields above, plus `id`, `day` and `undone`.
   - `query` keeps those whose subject, sender or reason contains it, ignoring case.
   - It answers at most the newest 200, with `more: true` when there were others.

@@ -237,12 +237,14 @@ func TestTheTickDropsFilingsOlderThan90Days(t *testing.T) {
 	}
 }
 
-func TestAFilingWithoutAThreadOrAReasonRecordsNothing(t *testing.T) {
+func TestAFilingWithoutAThreadAReasonOrALabelsIDRecordsNothing(t *testing.T) {
 	_, r := filingNando(t)
 
 	for _, bad := range []map[string]any{
 		{"subject": "No thread", "reason": "Sign-in code"},
 		{"threadId": "19c3", "subject": "No reason"},
+		{"threadId": "19c3", "reason": "A label without its ID", "added": []map[string]any{{"name": "Payments"}}},
+		{"threadId": "19c3", "reason": "A label without its ID", "removed": []map[string]any{{"id": " ", "name": "Inbox"}}},
 	} {
 		result, err := r.session.CallTool(context.Background(), &mcp.CallToolParams{
 			Name: "core_record_gmail_filing", Arguments: map[string]any{"entries": []map[string]any{uberEats(), bad}},

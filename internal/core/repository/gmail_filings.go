@@ -15,11 +15,13 @@ import (
 )
 
 // NewGmailFilings returns the GmailFilingsRepository over the gmail_filings
-// collection in db, creating its index.
+// collection in db, creating its indexes: by Day for listing, and by when
+// each entry was recorded for the tick's retention.
 func NewGmailFilings(ctx context.Context, db *mongo.Database) (model.GmailFilingsRepository, error) {
 	collection := db.Collection("gmail_filings")
-	_, err := collection.Indexes().CreateOne(ctx, mongo.IndexModel{
-		Keys: bson.D{{Key: "day", Value: 1}, {Key: "at", Value: 1}},
+	_, err := collection.Indexes().CreateMany(ctx, []mongo.IndexModel{
+		{Keys: bson.D{{Key: "day", Value: 1}, {Key: "at", Value: 1}}},
+		{Keys: bson.D{{Key: "at", Value: 1}}},
 	})
 	return gmailFilings{collection: collection}, err
 }

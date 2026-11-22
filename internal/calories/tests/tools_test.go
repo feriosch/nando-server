@@ -285,7 +285,7 @@ func TestTheConsentPageSaysWhatCaloriessToolsLetAConnectorDo(t *testing.T) {
 
 	// Core's Messenger and Filing Record Tools are offered too, as these tests' Nando has bots (#128).
 	got := slices.DeleteFunc(testconnector.ToolsDescriptions(t, n.handler, webOrigin), func(d string) bool {
-		return strings.Contains(d, "Telegram") || strings.Contains(d, "Gmail")
+		return strings.Contains(d, "Telegram") || strings.Contains(d, "files your Gmail")
 	})
 
 	// Deleting and archiving are said, as the Owner is asked first.

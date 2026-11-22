@@ -82,6 +82,9 @@ func (s *GmailFilingsService) Tools() []model.Tool {
 					if strings.TrimSpace(e.ThreadID) == "" || strings.TrimSpace(e.Reason) == "" {
 						return nil, fmt.Errorf("entry %d needs a threadId and a reason; nothing was recorded", i+1)
 					}
+					if !labelsHaveIDs(e.Added) || !labelsHaveIDs(e.Removed) {
+						return nil, fmt.Errorf("entry %d has a label without its id; nothing was recorded", i+1)
+					}
 					filings = append(filings, model.GmailFiling{
 						ID: bson.NewObjectID().Hex(), Day: today, At: at,
 						ThreadID: e.ThreadID, Subject: e.Subject, From: e.From,
@@ -190,6 +193,16 @@ func filingDays(day, from, to string) (model.Day, model.Day, error) {
 		return "", "", errors.New("to comes before from")
 	}
 	return first, last, nil
+}
+
+// labelsHaveIDs is whether every label has Gmail's ID, which undo needs.
+func labelsHaveIDs(labels []model.GmailLabel) bool {
+	for _, l := range labels {
+		if strings.TrimSpace(l.ID) == "" {
+			return false
+		}
+	}
+	return true
 }
 
 // orEmpty is labels, or an empty list for none.
