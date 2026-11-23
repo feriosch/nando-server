@@ -94,3 +94,22 @@ type MonthSumJSON struct {
 	Income     int64            `json:"income"`
 	ByCategory map[string]int64 `json:"byCategory"`
 }
+
+// CardJSON is the Money Home Card: the latest Complete month, never the one
+// under way, since Statements arrive after a month ends (ADR 0014).
+type CardJSON struct {
+	Month    string `json:"month"`
+	Spending struct {
+		Total     int64  `json:"total"`
+		Average3  *int64 `json:"average3"`
+		Essential int64  `json:"essential"`
+		Optional  int64  `json:"optional"`
+		Unmarked  int64  `json:"unmarked"`
+	} `json:"spending"`
+	NetWorth struct {
+		Total    int64  `json:"total"`
+		Previous *int64 `json:"previous"`
+	} `json:"netWorth"`
+	// Unconfirmed counts the Transactions of every month still Unconfirmed.
+	Unconfirmed int `json:"unconfirmed"`
+}

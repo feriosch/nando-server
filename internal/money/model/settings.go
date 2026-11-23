@@ -62,3 +62,18 @@ type ReminderGroupJSON struct {
 	Accounts []string `json:"accounts"`
 	Day      int      `json:"day"`
 }
+
+// SettingsPageJSON is Money's settings as the web app reads them, for its
+// Settings Section: each reminder with its Accounts' names.
+type SettingsPageJSON struct {
+	AskAbove     map[string]int          `json:"askAbove"`
+	ReminderTime string                  `json:"reminderTime"`
+	Reminders    []ReminderGroupPageJSON `json:"reminders"`
+}
+
+// ReminderGroupPageJSON is a reminder as the web app reads it.
+type ReminderGroupPageJSON struct {
+	Name     string   `json:"name"`
+	Day      int      `json:"day"`
+	Accounts []string `json:"accounts"`
+}

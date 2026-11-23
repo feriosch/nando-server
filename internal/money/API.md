@@ -1,6 +1,6 @@
 # Money API
 
-The Money Module keeps the Owner's money across Japan and Mexico, from the Statements the Owner sends the Money Assistant ([ADR 0014](../../docs/adr/0014-money-reads-statements-the-owner-sends.md)). The Money Assistant reads and writes everything through the Module's [Tools](#tools), over the Owner's Connector. The web app only reads Money, through routes under `/api/money/`, which come with the Home Card (#213).
+The Money Module keeps the Owner's money across Japan and Mexico, from the Statements the Owner sends the Money Assistant ([ADR 0014](../../docs/adr/0014-money-reads-statements-the-owner-sends.md)). The Money Assistant reads and writes everything through the Module's [Tools](#tools), over the Owner's Connector. The web app only reads Money, through the [routes](#routes) under `/api/money/`, which, like all of `/api/`, need a valid Session cookie (see [Core's API](../core/API.md)).
 
 The repo is public, so nothing here names a real Account, Merchant or amount of the Owner's. Those are the Owner's data, held only in the `money` database.
 
@@ -108,6 +108,11 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
   - **returns**: for each savings and investment Account with a balance this month and last, its growth less what was Transferred in that month. Those are its own Transfers if it has any, else other Accounts' that name it.
   - **savingRate**: (income − spending) ÷ income, to 4 decimals, without Return; `null` with no income.
   - **unconfirmed**: how many Transactions are Unconfirmed, and their amounts in yen.
+
+## Routes
+
+- **`GET /api/money/card`**: the Home Card, for the latest Complete month, never the one under way, since Statements arrive after a month ends. It has `month`; `spending` (`total`, `average3` of up to 3 months before, `essential`, `optional`, `unmarked`); `netWorth` (`total`, and `previous`, the month before's); and `unconfirmed`, how many Transactions of any month are still Unconfirmed. It is `null` before any month is Complete, looking back at most 36 months.
+- **`GET /api/money/settings`**: the settings, for the Settings Section, read-only. It has `askAbove`, `reminderTime`, and each reminder's `name`, `day` and Accounts by name.
 
 ## Tools
 
