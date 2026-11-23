@@ -26,17 +26,8 @@ func NewMerchants(merchants model.MerchantsRepository, categories *CategoriesSer
 	return &MerchantsService{merchants: merchants, categories: categories}
 }
 
-// MerchantJSON is a Merchant as the Tools answer it.
-type MerchantJSON struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	RawTexts    []string `json:"rawTexts"`
-	Category    string   `json:"category"`
-	Subcategory string   `json:"subcategory"`
-}
-
-func toMerchantJSON(m model.Merchant) MerchantJSON {
-	j := MerchantJSON{ID: m.ID, Name: m.Name, RawTexts: m.RawTexts, Category: m.Category, Subcategory: m.SubcategoryID}
+func toMerchantJSON(m model.Merchant) model.MerchantJSON {
+	j := model.MerchantJSON{ID: m.ID, Name: m.Name, RawTexts: m.RawTexts, Category: m.Category, Subcategory: m.SubcategoryID}
 	if j.RawTexts == nil {
 		j.RawTexts = []string{}
 	}
@@ -109,7 +100,7 @@ func (s *MerchantsService) Tools() []coremodel.Tool {
 			if err != nil {
 				return nil, err
 			}
-			answer := make([]MerchantJSON, len(list))
+			answer := make([]model.MerchantJSON, len(list))
 			for i, m := range list {
 				answer[i] = toMerchantJSON(m)
 			}

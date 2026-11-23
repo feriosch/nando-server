@@ -72,84 +72,10 @@ func (s *StatementsService) keepFiles(ctx context.Context, statement *model.Stat
 	return missing, "", nil
 }
 
-// lineJSON is one Transaction as money_save_statement is sent it.
-type lineJSON struct {
-	Kind         string  `json:"kind"`
-	Day          string  `json:"day"`
-	Amount       float64 `json:"amount"`
-	Direction    string  `json:"direction"`
-	RawText      string  `json:"rawText"`
-	Note         string  `json:"note"`
-	OtherAccount string  `json:"otherAccount"`
-	Category     string  `json:"category"`
-	Subcategory  string  `json:"subcategory"`
-	Merchant     string  `json:"merchant"`
-	Essential    *bool   `json:"essential"`
-	Unconfirmed  bool    `json:"unconfirmed"`
-}
-
-// statementArgs is what money_save_statement is sent.
-type statementArgs struct {
-	Account        string     `json:"account"`
-	From           string     `json:"from"`
-	To             string     `json:"to"`
-	Source         string     `json:"source"`
-	FileIDs        []string   `json:"fileIds"`
-	Total          *float64   `json:"total"`
-	ClosingBalance *float64   `json:"closingBalance"`
-	Transactions   []lineJSON `json:"transactions"`
-}
-
-// TransactionJSON is a Transaction as the Tools answer it.
-type TransactionJSON struct {
-	ID           string  `json:"id"`
-	Kind         string  `json:"kind"`
-	Day          string  `json:"day"`
-	Amount       float64 `json:"amount"`
-	Direction    string  `json:"direction,omitempty"`
-	RawText      string  `json:"rawText"`
-	Note         string  `json:"note"`
-	OtherAccount string  `json:"otherAccount,omitempty"`
-	Category     string  `json:"category,omitempty"`
-	Subcategory  string  `json:"subcategory,omitempty"`
-	Merchant     string  `json:"merchant,omitempty"`
-	// EssentialOverride is set when this Transaction is Essential or
-	// Optional apart from its Subcategory, and Essential is what it counts
-	// as: its override, else its Subcategory's mark, else null, unmarked.
-	EssentialOverride *bool  `json:"essentialOverride,omitempty"`
-	Essential         *bool  `json:"essential"`
-	Unconfirmed       bool   `json:"unconfirmed,omitempty"`
-	Statement         string `json:"statement,omitempty"`
-	Account           string `json:"account,omitempty"`
-}
-
-// StatementJSON is a Statement as the Tools answer it.
-type StatementJSON struct {
-	ID      string   `json:"id"`
-	Account string   `json:"account"`
-	From    string   `json:"from"`
-	To      string   `json:"to"`
-	Source  string   `json:"source"`
-	FileIDs []string `json:"fileIds"`
-	// Files are the objects its files are kept as; MissingFiles the
-	// file_ids Telegram had dropped, and FilesNote why none were kept.
-	Files          []string          `json:"files"`
-	MissingFiles   []string          `json:"missingFiles,omitempty"`
-	FilesNote      string            `json:"filesNote,omitempty"`
-	Total          *float64          `json:"total"`
-	ClosingBalance *float64          `json:"closingBalance"`
-	Transactions   []TransactionJSON `json:"transactions,omitempty"`
-	// Late counts the Transactions saved that are dated before the period,
-	// and Skipped the late ones left out because another Statement of the
-	// Account already has them.
-	Late    int `json:"late,omitempty"`
-	Skipped int `json:"skipped,omitempty"`
-}
-
 // toTransactionJSON is t, in an Account in currency, with essentials, every
 // Subcategory's Essential mark by its ID.
-func toTransactionJSON(currency string, t model.Transaction, essentials map[string]bool) TransactionJSON {
-	j := TransactionJSON{
+func toTransactionJSON(currency string, t model.Transaction, essentials map[string]bool) model.TransactionJSON {
+	j := model.TransactionJSON{
 		ID: t.ID, Kind: string(t.Kind), Day: t.Day, Amount: utils.FromMinor(currency, t.Amount), Direction: t.Direction,
 		RawText: t.RawText, Note: t.Note, OtherAccount: t.OtherAccountID, Category: t.Category, Subcategory: t.SubcategoryID,
 		Merchant: t.MerchantID, EssentialOverride: t.Essential, Unconfirmed: t.Unconfirmed,
@@ -172,8 +98,8 @@ func fromMinorPtr(currency string, amount *int64) *float64 {
 	return &v
 }
 
-func toStatementJSON(currency string, s model.Statement, essentials map[string]bool) StatementJSON {
-	j := StatementJSON{
+func toStatementJSON(currency string, s model.Statement, essentials map[string]bool) model.StatementJSON {
+	j := model.StatementJSON{
 		ID: s.ID, Account: s.AccountID, From: s.From, To: s.To, Source: string(s.Source), FileIDs: s.FileIDs,
 		Total: fromMinorPtr(currency, s.Total), ClosingBalance: fromMinorPtr(currency, s.ClosingBalance),
 	}
@@ -368,7 +294,7 @@ func (s *StatementsService) find(ctx context.Context, id string) (model.Statemen
 // saveStatementTool saves a Statement and its Transactions, replacing the
 // Account's Statement for the same period.
 func (s *StatementsService) saveStatementTool(ctx context.Context, arguments json.RawMessage) (any, error) {
-	var args statementArgs
+	var args model.StatementArgsJSON
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, utils.Refusal{Message: "send account, from, to and source as strings, amounts as numbers, and transactions as a list"}
 	}
@@ -395,7 +321,7 @@ func (s *StatementsService) saveStatementTool(ctx context.Context, arguments jso
 		return nil, utils.Refusal{Message: fmt.Sprintf("the period overlaps the Account's Statement %s (%s to %s): "+
 			"ask the Owner which to keep, and delete the other first", other.ID, other.From, other.To)}
 	}
-	answer := StatementJSON{}
+	answer := model.StatementJSON{}
 	for i, t := range statement.Transactions {
 		if t.Day >= statement.From {
 			continue
@@ -497,7 +423,7 @@ func (s *StatementsService) countDuplicatesOf(ctx context.Context, accountID, st
 
 // checkStatement is the Statement args describe for account, or a Refusal
 // saying what is wrong with it.
-func (s *StatementsService) checkStatement(ctx context.Context, account model.Account, args statementArgs) (model.Statement, error) {
+func (s *StatementsService) checkStatement(ctx context.Context, account model.Account, args model.StatementArgsJSON) (model.Statement, error) {
 	if !utils.IsDay(args.From) || !utils.IsDay(args.To) {
 		return model.Statement{}, utils.Refusal{Message: "from and to must be Days, YYYY-MM-DD"}
 	}
@@ -540,7 +466,7 @@ func (s *StatementsService) checkStatement(ctx context.Context, account model.Ac
 
 // checkLine is the Transaction line describes, on a Statement of account, or
 // what is wrong with it.
-func (s *StatementsService) checkLine(ctx context.Context, account model.Account, statement model.Statement, line lineJSON) (model.Transaction, error) {
+func (s *StatementsService) checkLine(ctx context.Context, account model.Account, statement model.Statement, line model.LineJSON) (model.Transaction, error) {
 	t := model.Transaction{
 		Kind: model.TransactionKind(line.Kind), Day: line.Day, RawText: strings.TrimSpace(line.RawText),
 		Note: strings.TrimSpace(line.Note),
@@ -629,7 +555,7 @@ func (s *StatementsService) listStatementsTool(ctx context.Context, arguments js
 	if err != nil {
 		return nil, err
 	}
-	answer := make([]StatementJSON, len(list))
+	answer := make([]model.StatementJSON, len(list))
 	for i, statement := range list {
 		answer[i] = toStatementJSON(account.Currency, statement, nil)
 	}
@@ -702,7 +628,7 @@ func (s *StatementsService) listTransactionsTool(ctx context.Context, arguments 
 	if err != nil {
 		return nil, err
 	}
-	answer := make([]TransactionJSON, len(found))
+	answer := make([]model.TransactionJSON, len(found))
 	for i, f := range found {
 		answer[i] = toTransactionJSON(currencies[f.AccountID], f.Transaction, essentials)
 		answer[i].Statement, answer[i].Account = f.StatementID, f.AccountID
@@ -834,22 +760,6 @@ func (s *StatementsService) changeWhatItIs(ctx context.Context, t *model.Transac
 	return nil
 }
 
-// MonthJSON is whether a month is Complete, as money_get_month answers it.
-type MonthJSON struct {
-	Month    string `json:"month"`
-	Complete bool   `json:"complete"`
-	// Missing are the Accounts the month waits for, and Late those that
-	// don't hold the month and haven't reached its end yet: each id and name.
-	Missing []AccountRefJSON `json:"missing"`
-	Late    []AccountRefJSON `json:"late"`
-}
-
-// AccountRefJSON names an Account.
-type AccountRefJSON struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
-
 // getMonthTool answers whether a month is Complete.
 func (s *StatementsService) getMonthTool(ctx context.Context, arguments json.RawMessage) (any, error) {
 	var args struct {
@@ -865,12 +775,12 @@ func (s *StatementsService) getMonthTool(ctx context.Context, arguments json.Raw
 }
 
 // Month answers whether month is Complete (ADR 0014).
-func (s *StatementsService) Month(ctx context.Context, month string) (MonthJSON, error) {
+func (s *StatementsService) Month(ctx context.Context, month string) (model.MonthJSON, error) {
 	accounts, err := s.accounts.accounts.List(ctx)
 	if err != nil {
-		return MonthJSON{}, err
+		return model.MonthJSON{}, err
 	}
-	answer := MonthJSON{Month: month, Missing: []AccountRefJSON{}, Late: []AccountRefJSON{}}
+	answer := model.MonthJSON{Month: month, Missing: []model.AccountRefJSON{}, Late: []model.AccountRefJSON{}}
 	lastDay := utils.LastDay(month)
 	for _, a := range accounts {
 		if !a.TracksIn(month) {
@@ -878,12 +788,12 @@ func (s *StatementsService) Month(ctx context.Context, month string) (MonthJSON,
 		}
 		reached, err := s.reaches(ctx, a, lastDay)
 		if err != nil {
-			return MonthJSON{}, err
+			return model.MonthJSON{}, err
 		}
 		if reached {
 			continue
 		}
-		ref := AccountRefJSON{ID: a.ID, Name: a.Name}
+		ref := model.AccountRefJSON{ID: a.ID, Name: a.Name}
 		if a.HoldsMonth {
 			answer.Missing = append(answer.Missing, ref)
 		} else {

@@ -19,3 +19,13 @@ type RatesRepository interface {
 	// Insert stores a Rate, leaving one already stored as it is.
 	Insert(ctx context.Context, rate Rate) error
 }
+
+// RateJSON is a month's Rate, pesos in yen, as the Tools answer it.
+type RateJSON struct {
+	Month    string  `json:"month"`
+	Average  float64 `json:"average"`
+	MonthEnd float64 `json:"monthEnd"`
+	// Provisional is true for a month that hasn't ended: the rates so far,
+	// fetched again until it ends.
+	Provisional bool `json:"provisional,omitempty"`
+}

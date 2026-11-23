@@ -30,3 +30,20 @@ type SubscriptionsRepository interface {
 	List(ctx context.Context) ([]Subscription, error)
 	Replace(ctx context.Context, s Subscription) error
 }
+
+// SubscriptionJSON is a Subscription as the Tools answer it.
+type SubscriptionJSON struct {
+	ID          string  `json:"id"`
+	Merchant    string  `json:"merchant"`
+	Amount      float64 `json:"amount"`
+	Currency    string  `json:"currency"`
+	Every       string  `json:"every"`
+	LastCharged string  `json:"lastCharged"`
+	Category    string  `json:"category"`
+	Subcategory string  `json:"subcategory"`
+	Essential   bool    `json:"essential"`
+	Active      bool    `json:"active"`
+	// Late is whether it is active and its expected charge is more than a
+	// week past.
+	Late bool `json:"late"`
+}

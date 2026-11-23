@@ -150,3 +150,93 @@ type StatementsRepository interface {
 	// utils.ErrNotFound.
 	FindTransaction(ctx context.Context, id string) (FoundTransaction, error)
 }
+
+// LineJSON is one Transaction as money_save_statement is sent it.
+type LineJSON struct {
+	Kind         string  `json:"kind"`
+	Day          string  `json:"day"`
+	Amount       float64 `json:"amount"`
+	Direction    string  `json:"direction"`
+	RawText      string  `json:"rawText"`
+	Note         string  `json:"note"`
+	OtherAccount string  `json:"otherAccount"`
+	Category     string  `json:"category"`
+	Subcategory  string  `json:"subcategory"`
+	Merchant     string  `json:"merchant"`
+	Essential    *bool   `json:"essential"`
+	Unconfirmed  bool    `json:"unconfirmed"`
+}
+
+// StatementArgsJSON is what money_save_statement is sent.
+type StatementArgsJSON struct {
+	Account        string     `json:"account"`
+	From           string     `json:"from"`
+	To             string     `json:"to"`
+	Source         string     `json:"source"`
+	FileIDs        []string   `json:"fileIds"`
+	Total          *float64   `json:"total"`
+	ClosingBalance *float64   `json:"closingBalance"`
+	Transactions   []LineJSON `json:"transactions"`
+}
+
+// TransactionJSON is a Transaction as the Tools answer it.
+type TransactionJSON struct {
+	ID           string  `json:"id"`
+	Kind         string  `json:"kind"`
+	Day          string  `json:"day"`
+	Amount       float64 `json:"amount"`
+	Direction    string  `json:"direction,omitempty"`
+	RawText      string  `json:"rawText"`
+	Note         string  `json:"note"`
+	OtherAccount string  `json:"otherAccount,omitempty"`
+	Category     string  `json:"category,omitempty"`
+	Subcategory  string  `json:"subcategory,omitempty"`
+	Merchant     string  `json:"merchant,omitempty"`
+	// EssentialOverride is set when this Transaction is Essential or
+	// Optional apart from its Subcategory, and Essential is what it counts
+	// as: its override, else its Subcategory's mark, else null, unmarked.
+	EssentialOverride *bool  `json:"essentialOverride,omitempty"`
+	Essential         *bool  `json:"essential"`
+	Unconfirmed       bool   `json:"unconfirmed,omitempty"`
+	Statement         string `json:"statement,omitempty"`
+	Account           string `json:"account,omitempty"`
+}
+
+// StatementJSON is a Statement as the Tools answer it.
+type StatementJSON struct {
+	ID      string   `json:"id"`
+	Account string   `json:"account"`
+	From    string   `json:"from"`
+	To      string   `json:"to"`
+	Source  string   `json:"source"`
+	FileIDs []string `json:"fileIds"`
+	// Files are the objects its files are kept as; MissingFiles the
+	// file_ids Telegram had dropped, and FilesNote why none were kept.
+	Files          []string          `json:"files"`
+	MissingFiles   []string          `json:"missingFiles,omitempty"`
+	FilesNote      string            `json:"filesNote,omitempty"`
+	Total          *float64          `json:"total"`
+	ClosingBalance *float64          `json:"closingBalance"`
+	Transactions   []TransactionJSON `json:"transactions,omitempty"`
+	// Late counts the Transactions saved that are dated before the period,
+	// and Skipped the late ones left out because another Statement of the
+	// Account already has them.
+	Late    int `json:"late,omitempty"`
+	Skipped int `json:"skipped,omitempty"`
+}
+
+// MonthJSON is whether a month is Complete, as money_get_month answers it.
+type MonthJSON struct {
+	Month    string `json:"month"`
+	Complete bool   `json:"complete"`
+	// Missing are the Accounts the month waits for, and Late those that
+	// don't hold the month and haven't reached its end yet: each id and name.
+	Missing []AccountRefJSON `json:"missing"`
+	Late    []AccountRefJSON `json:"late"`
+}
+
+// AccountRefJSON names an Account.
+type AccountRefJSON struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}

@@ -28,24 +28,8 @@ func NewCategories(subcategories model.SubcategoriesRepository, movers ...model.
 	return &CategoriesService{subcategories: subcategories, movers: movers}
 }
 
-// SubcategoryJSON is a Subcategory as the Tools answer it.
-type SubcategoryJSON struct {
-	ID        string `json:"id"`
-	Category  string `json:"category"`
-	Name      string `json:"name"`
-	Essential bool   `json:"essential"`
-}
-
-// CategoryJSON is a Category with its Subcategories, as the Tools answer it.
-type CategoryJSON struct {
-	Key           string            `json:"key"`
-	Name          string            `json:"name"`
-	Kind          string            `json:"kind"`
-	Subcategories []SubcategoryJSON `json:"subcategories"`
-}
-
-func toSubcategoryJSON(s model.Subcategory) SubcategoryJSON {
-	return SubcategoryJSON{ID: s.ID, Category: s.Category, Name: s.Name, Essential: s.Essential}
+func toSubcategoryJSON(s model.Subcategory) model.SubcategoryJSON {
+	return model.SubcategoryJSON{ID: s.ID, Category: s.Category, Name: s.Name, Essential: s.Essential}
 }
 
 // essentials is every Subcategory's Essential mark, by its ID.
@@ -75,7 +59,7 @@ func (s *CategoriesService) subcategoryNames(ctx context.Context) (map[string]st
 }
 
 // sortSubcategoryTotals orders totals largest first, then by name.
-func sortSubcategoryTotals(totals []SubcategoryTotalJSON) {
+func sortSubcategoryTotals(totals []model.SubcategoryTotalJSON) {
 	sort.Slice(totals, func(i, j int) bool {
 		if totals[i].Total != totals[j].Total {
 			return totals[i].Total > totals[j].Total
@@ -149,9 +133,9 @@ func (s *CategoriesService) listCategoriesTool(ctx context.Context, _ json.RawMe
 	if err != nil {
 		return nil, err
 	}
-	answer := make([]CategoryJSON, len(model.Categories))
+	answer := make([]model.CategoryJSON, len(model.Categories))
 	for i, c := range model.Categories {
-		answer[i] = CategoryJSON{Key: c.Key, Name: c.Name, Kind: string(c.Kind), Subcategories: []SubcategoryJSON{}}
+		answer[i] = model.CategoryJSON{Key: c.Key, Name: c.Name, Kind: string(c.Kind), Subcategories: []model.SubcategoryJSON{}}
 		for _, sub := range subs {
 			if sub.Category == c.Key {
 				answer[i].Subcategories = append(answer[i].Subcategories, toSubcategoryJSON(sub))

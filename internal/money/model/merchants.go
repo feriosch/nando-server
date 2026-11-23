@@ -27,3 +27,12 @@ type MerchantsRepository interface {
 	List(ctx context.Context) ([]Merchant, error)
 	Replace(ctx context.Context, m Merchant) error
 }
+
+// MerchantJSON is a Merchant as the Tools answer it.
+type MerchantJSON struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	RawTexts    []string `json:"rawTexts"`
+	Category    string   `json:"category"`
+	Subcategory string   `json:"subcategory"`
+}
