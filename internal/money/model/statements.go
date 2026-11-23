@@ -1,6 +1,9 @@
 package model
 
-import "context"
+import (
+	"context"
+	"fmt"
+)
 
 // Statement is one record of an Account for one period that the Owner sent,
 // with its Transactions in it, so that saving or replacing one is a single
@@ -48,6 +51,17 @@ type Transaction struct {
 	// OtherAccountID is, for a Transfer, the Owner's other Account, when
 	// known.
 	OtherAccountID string `bson:"otherAccountId,omitempty"`
+	// Duplicate marks a late line another Statement of the Account already
+	// counts. It is kept, but left out of every read, so that it can count
+	// instead if that copy goes, with its Statement deleted or sent again
+	// without it.
+	Duplicate bool `bson:"duplicate,omitempty"`
+}
+
+// Key is what tells two copies of one Transaction on two Statements apart
+// from two Transactions: its Day, amount and raw text.
+func (t Transaction) Key() string {
+	return fmt.Sprintf("%s|%d|%s", t.Day, t.Amount, t.RawText)
 }
 
 // TransactionKind is whether a Transaction is spending, income, or money
@@ -97,10 +111,16 @@ type StatementsRepository interface {
 	Delete(ctx context.Context, id string) error
 	AccountHasStatements(ctx context.Context, accountID string) (bool, error)
 	// HasTransaction is whether a Statement of the Account other than
-	// exceptStatementID already has a Transaction on day, of amount, with
-	// rawText.
+	// exceptStatementID already counts a Transaction on day, of amount, with
+	// rawText: one that isn't a Duplicate.
 	HasTransaction(ctx context.Context, accountID, exceptStatementID, day string, amount int64, rawText string) (bool, error)
-	// Transactions returns the Transactions filter picks, by Day.
+	// Duplicates returns the Duplicate Transactions of the Account's
+	// Statements other than exceptStatementID.
+	Duplicates(ctx context.Context, accountID, exceptStatementID string) ([]FoundTransaction, error)
+	// Count makes the Duplicate Transaction with id count.
+	Count(ctx context.Context, id string) error
+	// Transactions returns the Transactions filter picks, by Day, leaving
+	// Duplicates out.
 	Transactions(ctx context.Context, filter TransactionFilter) ([]FoundTransaction, error)
 	// UpdateTransaction replaces the Transaction with t's ID, or returns
 	// Core's utils.ErrNotFound.

@@ -63,11 +63,11 @@ A Statement is one Account and one period (`from`, `to`, Days as `YYYY-MM-DD`), 
 
 - `source`: `csv`, `pdf` or `screenshots`. `fileIds`: the Telegram files it was read from.
 - `total` (such as a card's billed amount) and `closingBalance` (the balance at `to`), each `null` when it states none. A closing balance at a month's last Day is the Account's month-end balance.
-- Amounts are in the Account's currency: whole yen, or pesos to centavos. Nando keeps them in yen and centavos, so nothing is rounded.
+- Amounts are in the Account's currency: whole yen, or pesos to centavos. Nando keeps them in yen and centavos, so nothing is rounded. One above 1,000,000,000,000 is refused as misread.
 - A Transaction's `kind` is `expense`, `income` or `transfer`. Its `day` is the purchase date, which decides its month, whatever month it was billed in. Its `amount` is positive, but negative for a refund, an `expense` coming back. A `transfer` has a `direction`, `in` to or `out` of the Account, and its `otherAccount` when known: never counted as spending or income.
 - **Sending it again replaces it**: the same Account and period replaces the earlier Statement and all its Transactions, in one write.
 - **Statements of one Account never overlap**: a period that overlaps another, without being the same, is refused, naming the other, so the Assistant asks the Owner which to keep.
-- **A late Transaction**, dated before the period (it posted on a later bill), joins its own month. One already on another Statement of the Account (the same day, amount and raw text) isn't added twice. A Transaction dated after the period is refused.
+- **A late Transaction**, dated before the period (it posted on a later bill), joins its own month. One another Statement of the Account already counts (the same day, amount and raw text) isn't counted twice: it is kept as a duplicate, left out of every answer, and counts instead if the other copy goes, with its Statement deleted or sent again without it, so no Transaction is lost. A Transaction dated after the period is refused.
 - Money has **no Editable Window**: any period can be saved, replaced or deleted (ADR 0014).
 
 ## Months

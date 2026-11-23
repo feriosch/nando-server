@@ -96,6 +96,7 @@ func (r statements) HasTransaction(ctx context.Context, accountID, exceptStateme
 		{Key: "_id", Value: bson.D{{Key: "$ne", Value: exceptStatementID}}},
 		{Key: "transactions", Value: bson.D{{Key: "$elemMatch", Value: bson.D{
 			{Key: "day", Value: day}, {Key: "amount", Value: amount}, {Key: "rawText", Value: rawText},
+			{Key: "duplicate", Value: bson.D{{Key: "$ne", Value: true}}},
 		}}}},
 	}, options.Count().SetLimit(1))
 	return n > 0, err
@@ -106,7 +107,7 @@ func (r statements) Transactions(ctx context.Context, f model.TransactionFilter)
 	if f.AccountID != "" {
 		match = append(match, bson.E{Key: "accountId", Value: f.AccountID})
 	}
-	var lines bson.D
+	lines := bson.D{{Key: "transaction.duplicate", Value: bson.D{{Key: "$ne", Value: true}}}}
 	if f.FromMonth != "" {
 		lines = append(lines, bson.E{Key: "transaction.day", Value: bson.D{{Key: "$gte", Value: f.FromMonth + "-01"}}})
 	}
@@ -134,9 +135,7 @@ func (r statements) Transactions(ctx context.Context, f model.TransactionFilter)
 			{Key: "statementId", Value: "$_id"}, {Key: "accountId", Value: 1},
 		}}},
 	)
-	if len(lines) > 0 {
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: lines}})
-	}
+	pipeline = append(pipeline, bson.D{{Key: "$match", Value: lines}})
 	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: bson.D{{Key: "transaction.day", Value: 1}, {Key: "transaction.id", Value: 1}}}})
 	if f.Limit > 0 {
 		pipeline = append(pipeline, bson.D{{Key: "$limit", Value: f.Limit}})
@@ -147,6 +146,34 @@ func (r statements) Transactions(ctx context.Context, f model.TransactionFilter)
 	}
 	list := []model.FoundTransaction{}
 	return list, cursor.All(ctx, &list)
+}
+
+func (r statements) Duplicates(ctx context.Context, accountID, exceptStatementID string) ([]model.FoundTransaction, error) {
+	cursor, err := r.collection.Aggregate(ctx, mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.D{
+			{Key: "accountId", Value: accountID},
+			{Key: "_id", Value: bson.D{{Key: "$ne", Value: exceptStatementID}}},
+			{Key: "transactions.duplicate", Value: true},
+		}}},
+		bson.D{{Key: "$unwind", Value: "$transactions"}},
+		bson.D{{Key: "$match", Value: bson.D{{Key: "transactions.duplicate", Value: true}}}},
+		bson.D{{Key: "$project", Value: bson.D{
+			{Key: "_id", Value: 0}, {Key: "transaction", Value: "$transactions"},
+			{Key: "statementId", Value: "$_id"}, {Key: "accountId", Value: 1},
+		}}},
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "statementId", Value: 1}}}},
+	})
+	if err != nil {
+		return nil, err
+	}
+	list := []model.FoundTransaction{}
+	return list, cursor.All(ctx, &list)
+}
+
+func (r statements) Count(ctx context.Context, id string) error {
+	_, err := r.collection.UpdateOne(ctx, bson.D{{Key: "transactions.id", Value: id}},
+		bson.D{{Key: "$unset", Value: bson.D{{Key: "transactions.$.duplicate", Value: ""}}}})
+	return err
 }
 
 func (r statements) FindTransaction(ctx context.Context, id string) (model.FoundTransaction, error) {

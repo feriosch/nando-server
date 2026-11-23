@@ -5,9 +5,16 @@ import (
 	"math"
 )
 
+// maxAmount is the largest amount, in either currency, taken: far above any
+// the Owner has, and far below where int64 centavos overflow.
+const maxAmount = 1e12
+
 // ToMinor is amount, as the Tools send it, in currency's minor unit: whole
 // yen, or centavos. It refuses yen with decimals and pesos past centavos.
 func ToMinor(currency string, amount float64) (int64, error) {
+	if math.Abs(amount) > maxAmount || math.IsNaN(amount) {
+		return 0, Refusal{Message: fmt.Sprintf("%v is too large to be an amount: check it was read right", amount)}
+	}
 	if currency == "JPY" {
 		if amount != math.Trunc(amount) {
 			return 0, Refusal{Message: fmt.Sprintf("%v isn't whole yen", amount)}

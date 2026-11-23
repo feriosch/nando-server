@@ -108,7 +108,7 @@ func toStatementJSON(currency string, s model.Statement) StatementJSON {
 	if j.FileIDs == nil {
 		j.FileIDs = []string{}
 	}
-	for _, t := range s.Transactions {
+	for _, t := range counted(s.Transactions) {
 		j.Transactions = append(j.Transactions, toTransactionJSON(currency, t))
 	}
 	return j
@@ -183,11 +183,17 @@ func (s *StatementsService) Tools() []coremodel.Tool {
 			if err := json.Unmarshal(arguments, &args); err != nil {
 				return nil, err
 			}
-			err := s.statements.Delete(ctx, args.ID)
-			if errors.Is(err, coreutils.ErrNotFound) {
-				return nil, utils.Refusal{Message: fmt.Sprintf("there's no such Statement %q", args.ID)}
+			statement, _, err := s.find(ctx, args.ID)
+			if err != nil {
+				return nil, err
 			}
-			return map[string]bool{"deleted": err == nil}, err
+			if err := s.statements.Delete(ctx, args.ID); err != nil {
+				return nil, err
+			}
+			if err := s.countDuplicatesOf(ctx, statement.AccountID, statement.ID, counted(statement.Transactions)); err != nil {
+				return nil, err
+			}
+			return map[string]bool{"deleted": true}, nil
 		},
 	}, {
 		Name: "money_list_transactions",
@@ -262,30 +268,95 @@ func (s *StatementsService) saveStatementTool(ctx context.Context, arguments jso
 			"ask the Owner which to keep, and delete the other first", other.ID, other.From, other.To)}
 	}
 	answer := StatementJSON{}
-	kept := statement.Transactions[:0]
-	for _, t := range statement.Transactions {
-		if t.Day < statement.From {
-			has, err := s.statements.HasTransaction(ctx, account.ID, replaced, t.Day, t.Amount, t.RawText)
-			if err != nil {
-				return nil, err
-			}
-			if has {
-				answer.Skipped++
-				continue
-			}
+	for i, t := range statement.Transactions {
+		if t.Day >= statement.From {
+			continue
+		}
+		has, err := s.statements.HasTransaction(ctx, account.ID, replaced, t.Day, t.Amount, t.RawText)
+		if err != nil {
+			return nil, err
+		}
+		if has {
+			statement.Transactions[i].Duplicate = true
+			answer.Skipped++
+		} else {
 			answer.Late++
 		}
-		kept = append(kept, t)
 	}
-	statement.Transactions = kept
+	var old model.Statement
+	if replaced != "" {
+		if old, err = s.statements.Find(ctx, replaced); err != nil {
+			return nil, err
+		}
+	}
 	saved, err := s.statements.Save(ctx, statement)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.countDuplicatesOf(ctx, account.ID, saved.ID, gone(old.Transactions, saved.Transactions)); err != nil {
 		return nil, err
 	}
 	late, skipped := answer.Late, answer.Skipped
 	answer = toStatementJSON(account.Currency, saved)
 	answer.Late, answer.Skipped = late, skipped
 	return answer, nil
+}
+
+// counted is the Transactions of lines that count: not Duplicates.
+func counted(lines []model.Transaction) []model.Transaction {
+	var list []model.Transaction
+	for _, t := range lines {
+		if !t.Duplicate {
+			list = append(list, t)
+		}
+	}
+	return list
+}
+
+// gone is the counted Transactions of before that after no longer counts,
+// copy for copy.
+func gone(before, after []model.Transaction) []model.Transaction {
+	left := map[string]int{}
+	for _, t := range counted(after) {
+		left[t.Key()]++
+	}
+	var list []model.Transaction
+	for _, t := range counted(before) {
+		if left[t.Key()] > 0 {
+			left[t.Key()]--
+			continue
+		}
+		list = append(list, t)
+	}
+	return list
+}
+
+// countDuplicatesOf makes one Duplicate copy, on another Statement of the
+// Account than statementID, count for each of the lines that no longer
+// count, so that no Transaction is lost when the copy that counted it goes.
+func (s *StatementsService) countDuplicatesOf(ctx context.Context, accountID, statementID string, lines []model.Transaction) error {
+	if len(lines) == 0 {
+		return nil
+	}
+	duplicates, err := s.statements.Duplicates(ctx, accountID, statementID)
+	if err != nil || len(duplicates) == 0 {
+		return err
+	}
+	byKey := map[string][]string{}
+	for _, d := range duplicates {
+		byKey[d.Key()] = append(byKey[d.Key()], d.ID)
+	}
+	for _, t := range lines {
+		ids := byKey[t.Key()]
+		if len(ids) == 0 {
+			continue
+		}
+		byKey[t.Key()] = ids[1:]
+		if err := s.statements.Count(ctx, ids[0]); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // checkStatement is the Statement args describe for account, or a Refusal

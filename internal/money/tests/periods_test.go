@@ -169,3 +169,57 @@ func TestATransactionsNoteAndOtherAccountChange(t *testing.T) {
 		t.Errorf("money_get_statement = %+v; want both changes kept", stored.Transactions)
 	}
 }
+
+func TestALateLineSurvivesTheStatementThatCountedItGoing(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	_, card := twoAccounts(t, session)
+	hotel := line("expense", "2026-10-30", 250, "HOTEL")
+	november := saveStatement(t, session, map[string]any{
+		"account": card.ID, "from": "2026-11-01", "to": "2026-11-30", "source": "pdf", "transactions": []any{hotel},
+	})
+	december := saveStatement(t, session, map[string]any{
+		"account": card.ID, "from": "2026-12-01", "to": "2026-12-31", "source": "pdf", "transactions": []any{hotel},
+	})
+	if december.Skipped != 1 {
+		t.Fatalf("December skipped %d; want the late line skipped", december.Skipped)
+	}
+	hotels := func() int {
+		return len(callTool[[]transactionJSON](t, session, "money_list_transactions", map[string]any{"text": "HOTEL"}))
+	}
+
+	// November sent again without it: December's copy now counts.
+	saveStatement(t, session, map[string]any{
+		"account": card.ID, "from": "2026-11-01", "to": "2026-11-30", "source": "pdf",
+		"transactions": []any{line("expense", "2026-11-02", 80, "CAFE")},
+	})
+	if got := hotels(); got != 1 {
+		t.Errorf("after November is sent again without it: %d HOTEL; want December's copy, once", got)
+	}
+
+	// Back on November, then November deleted: still once.
+	saveStatement(t, session, map[string]any{
+		"account": card.ID, "from": "2026-11-01", "to": "2026-11-30", "source": "pdf", "transactions": []any{hotel},
+	})
+	if got := hotels(); got != 1 {
+		t.Errorf("with November and December both holding it: %d HOTEL; want 1", got)
+	}
+	callTool[map[string]bool](t, session, "money_delete_statement", map[string]any{"id": november.ID})
+	if got := hotels(); got != 1 {
+		t.Errorf("after deleting November: %d HOTEL; want December's copy, once", got)
+	}
+}
+
+func TestAnAbsurdAmountIsRefused(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	bank, _ := twoAccounts(t, session)
+
+	got := toolError(t, session, "money_save_statement", map[string]any{
+		"account": bank.ID, "from": "2026-10-01", "to": "2026-10-31", "source": "csv",
+		"transactions": []any{line("expense", "2026-10-03", 1e20, "MISREAD")},
+	})
+	if !strings.Contains(got, "too large") {
+		t.Errorf("money_save_statement = %q; want it refused as too large", got)
+	}
+}
