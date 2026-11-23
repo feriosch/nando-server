@@ -92,6 +92,7 @@ func newNandoWith(t *testing.T, change func(*money.Config)) *nando {
 	}
 	c.AddAssistant(m.Assistant())
 	c.AddToolProvider(m.ToolProvider())
+	c.AddNotificationProvider(m.NotificationProvider())
 	return &nando{
 		t:     t,
 		clock: clk,
@@ -227,4 +228,28 @@ func (n *nando) ownerSays(assistant string, updateID, messageID int64, text stri
 	if rec.Code != http.StatusOK {
 		n.t.Fatalf("POST /messenger/telegram/%s: status = %d, body %q", assistant, rec.Code, rec.Body)
 	}
+}
+
+// tickAt runs Core's tick, as Cloud Scheduler does, with the clock at now.
+func (n *nando) tickAt(now time.Time) {
+	n.t.Helper()
+	n.clock.Set(now)
+	req := httptest.NewRequest(http.MethodPost, "/internal/tick", nil)
+	req.Header.Set("Authorization", "Bearer scheduler-token")
+	rec := httptest.NewRecorder()
+	n.handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		n.t.Fatalf("tick at %s: status = %d, body %q", now, rec.Code, rec.Body)
+	}
+}
+
+// moneyMessages are the texts the Money bot sent the Owner so far.
+func (n *nando) moneyMessages() []string {
+	var got []string
+	for _, c := range n.telegram.CallsTo("sendMessage") {
+		if c.Token == moneyBotToken {
+			got = append(got, c.Params["text"].(string))
+		}
+	}
+	return got
 }

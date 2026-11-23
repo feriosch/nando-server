@@ -31,6 +31,8 @@ type Module struct {
 	subscriptions *service.SubscriptionsService
 	rates         *service.RatesService
 	totals        *service.TotalsService
+	// notifications is the Module's Notification provider.
+	notifications *service.NotificationsService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -70,7 +72,9 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 	if cfg.RatesURL == "" {
 		cfg.RatesURL = "https://api.frankfurter.dev"
 	}
-	accounts := service.NewAccounts(repository.NewAccounts(db), statements)
+	accountsRepo := repository.NewAccounts(db)
+	accounts := service.NewAccounts(accountsRepo, statements)
+	settings := service.NewSettings(repository.NewSettings(db), accountsRepo)
 	categories := service.NewCategories(repository.NewSubcategories(db), statements, merchantsRepo, subscriptionsRepo)
 	merchants := service.NewMerchants(merchantsRepo, categories)
 	statementsService := service.NewStatements(statements, accounts, categories, merchants, files, core)
@@ -78,7 +82,8 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 	return &Module{
 		rates:         rates,
 		totals:        service.NewTotals(statements, accounts, categories, rates, statementsService),
-		settings:      service.NewSettings(repository.NewSettings(db)),
+		settings:      settings,
+		notifications: service.NewNotifications(settings, accountsRepo, statementsService, repository.NewReviews(db)),
 		accounts:      accounts,
 		statements:    statementsService,
 		categories:    categories,
@@ -90,6 +95,12 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 // Routes adds the Module's routes to mux, all under /api/money/: the web
 // app's reads. The Money Assistant writes, through its Tools.
 func (m *Module) Routes(*http.ServeMux) {}
+
+// NotificationProvider is the Module's Notification provider, for Core to ask
+// at every tick: Statement Reminders and Monthly Review asks.
+func (m *Module) NotificationProvider() coremodel.NotificationProvider {
+	return m.notifications
+}
 
 // Assistant is the Module's Assistant, for Core to receive the Owner's
 // messages to it in the Messenger (ADR 0008, ADR 0014).

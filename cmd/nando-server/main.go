@@ -276,6 +276,7 @@ func run() error {
 		return err
 	}
 	nandoCore.AddToolProvider(moneyModule.ToolProvider())
+	nandoCore.AddNotificationProvider(moneyModule.NotificationProvider())
 	nandoCore.AddAssistant(moneyModule.Assistant())
 
 	switch args := os.Args[1:]; {

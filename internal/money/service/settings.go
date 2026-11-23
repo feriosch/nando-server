@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
@@ -16,11 +17,13 @@ import (
 // and changes them, through its Tools.
 type SettingsService struct {
 	settings model.SettingsRepository
+	// accounts checks the Accounts reminder groups name.
+	accounts model.AccountsRepository
 }
 
 // NewSettings returns the SettingsService.
-func NewSettings(settings model.SettingsRepository) *SettingsService {
-	return &SettingsService{settings: settings}
+func NewSettings(settings model.SettingsRepository, accounts model.AccountsRepository) *SettingsService {
+	return &SettingsService{settings: settings, accounts: accounts}
 }
 
 // savedOrDefault returns the saved settings, or the defaults if none were saved.
@@ -29,11 +32,22 @@ func (s *SettingsService) savedOrDefault(ctx context.Context) (model.Settings, e
 	if errors.Is(err, coreutils.ErrNotFound) {
 		return model.DefaultSettings(), nil
 	}
+	if err == nil && settings.ReminderTime == "" {
+		// Saved before Statement Reminders: none yet, at the default time.
+		settings.ReminderTime, settings.Reminders = model.DefaultSettings().ReminderTime, []model.ReminderGroup{}
+	}
 	return settings, err
 }
 
 func toSettingsJSON(settings model.Settings) model.SettingsJSON {
-	return model.SettingsJSON{AskAbove: map[string]int{"JPY": settings.AskAbove.JPY, "MXN": settings.AskAbove.MXN}}
+	groups := make([]model.ReminderGroupJSON, len(settings.Reminders))
+	for i, g := range settings.Reminders {
+		groups[i] = model.ReminderGroupJSON{Name: g.Name, Accounts: g.AccountIDs, Day: g.Day}
+	}
+	return model.SettingsJSON{
+		AskAbove:  map[string]int{"JPY": settings.AskAbove.JPY, "MXN": settings.AskAbove.MXN},
+		Reminders: &groups, ReminderTime: &settings.ReminderTime,
+	}
 }
 
 // Tools are what the SettingsService offers Connectors: reading and changing
@@ -42,7 +56,9 @@ func (s *SettingsService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "money_get_settings",
 		Description: "Money's settings: askAbove, per currency (JPY, MXN), the amount above which a Transaction you " +
-			"can't tell is asked about; below it, keep your best guess, Unconfirmed.",
+			"can't tell is asked about (below it, keep your best guess, Unconfirmed); reminders, the Statement " +
+			"Reminders, one per app the Owner opens {name, accounts, day of the month}; and reminderTime, when " +
+			"reminders and Monthly Review asks are sent.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		ReadOnly:    true,
 		Handle: func(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -52,11 +68,18 @@ func (s *SettingsService) Tools() []coremodel.Tool {
 	}, {
 		Name: "money_save_settings",
 		Description: "Changes Money's settings. Only the fields given change, within askAbove too: such as " +
-			"askAbove {JPY: 5000} alone. Answers the settings.",
+			"askAbove {JPY: 5000} alone. reminders, when given, replaces the whole list: each Account in at most one " +
+			"group, open, and each day 1 to 28. Answers the settings.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"askAbove":{"type":"object","properties":{` +
 			`"JPY":{"type":"integer","description":"Whole yen, above 0."},` +
-			`"MXN":{"type":"integer","description":"Whole pesos, above 0."}}}}}`),
+			`"MXN":{"type":"integer","description":"Whole pesos, above 0."}}},` +
+			`"reminders":{"type":"array","items":{"type":"object","properties":{` +
+			`"name":{"type":"string","description":"The app the Owner opens, such as a bank's."},` +
+			`"accounts":{"type":"array","items":{"type":"string"},"description":"The ids of the Accounts whose Statements it holds."},` +
+			`"day":{"type":"integer","description":"Day of the month, 1 to 28: the day after a card closes, or the 1st."}},` +
+			`"required":["name","accounts","day"]}},` +
+			`"reminderTime":{"type":"string","description":"HH:MM on the hour or half hour, in the Owner Time Zone."}}}`),
 		Handle: s.saveSettingsTool,
 	}}
 }
@@ -67,8 +90,8 @@ func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.R
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, utils.Refusal{Message: "send askAbove as an object of whole amounts by currency, such as {\"JPY\": 3000}"}
 	}
-	if len(args.AskAbove) == 0 {
-		return nil, utils.Refusal{Message: "give askAbove, with JPY, MXN or both"}
+	if len(args.AskAbove) == 0 && args.Reminders == nil && args.ReminderTime == nil {
+		return nil, utils.Refusal{Message: "give askAbove, reminders, reminderTime or several"}
 	}
 	settings, err := s.savedOrDefault(ctx)
 	if err != nil {
@@ -89,8 +112,55 @@ func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.R
 		}
 		*field = amount
 	}
+	if args.ReminderTime != nil {
+		if !coreutils.IsHalfHour(*args.ReminderTime) {
+			return nil, utils.Refusal{Message: "reminderTime must be HH:MM on the hour or half hour"}
+		}
+		settings.ReminderTime = *args.ReminderTime
+	}
+	if args.Reminders != nil {
+		groups, err := s.checkReminders(ctx, *args.Reminders)
+		if err != nil {
+			return nil, err
+		}
+		settings.Reminders = groups
+	}
 	if err := s.settings.Save(ctx, settings); err != nil {
 		return nil, err
 	}
 	return toSettingsJSON(settings), nil
+}
+
+// checkReminders is the reminder groups given, or a Refusal saying what is
+// wrong with them.
+func (s *SettingsService) checkReminders(ctx context.Context, given []model.ReminderGroupJSON) ([]model.ReminderGroup, error) {
+	groups := make([]model.ReminderGroup, len(given))
+	seen := map[string]string{}
+	for i, g := range given {
+		name := strings.TrimSpace(g.Name)
+		if name == "" {
+			return nil, utils.Refusal{Message: fmt.Sprintf("reminders[%d] needs a name", i)}
+		}
+		if g.Day < 1 || g.Day > 28 {
+			return nil, utils.Refusal{Message: fmt.Sprintf("%s's day must be 1 to 28, so that every month has it", name)}
+		}
+		for _, id := range g.Accounts {
+			account, err := s.accounts.Find(ctx, id)
+			if errors.Is(err, coreutils.ErrNotFound) {
+				return nil, utils.Refusal{Message: fmt.Sprintf("%s: there's no such Account %q", name, id)}
+			}
+			if err != nil {
+				return nil, err
+			}
+			if account.ClosedFrom != "" {
+				return nil, utils.Refusal{Message: fmt.Sprintf("%s: %s is closed", name, account.Name)}
+			}
+			if other, ok := seen[id]; ok {
+				return nil, utils.Refusal{Message: fmt.Sprintf("%s is in two reminders, %s and %s", account.Name, other, name)}
+			}
+			seen[id] = name
+		}
+		groups[i] = model.ReminderGroup{Name: name, AccountIDs: g.Accounts, Day: g.Day}
+	}
+	return groups, nil
 }
