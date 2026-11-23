@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
+
+	"go.mongodb.org/mongo-driver/v2/bson"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	coreutils "github.com/feriosch/nando-server/internal/core/utils"
@@ -23,11 +26,50 @@ type StatementsService struct {
 	accounts   *AccountsService
 	categories *CategoriesService
 	merchants  *MerchantsService
+	// files is where Statements' files are kept, nil to keep none.
+	files model.FileStore
+	core  coremodel.CoreService
 }
 
-// NewStatements returns the StatementsService.
-func NewStatements(statements model.StatementsRepository, accounts *AccountsService, categories *CategoriesService, merchants *MerchantsService) *StatementsService {
-	return &StatementsService{statements: statements, accounts: accounts, categories: categories, merchants: merchants}
+// NewStatements returns the StatementsService, keeping Statements' files in
+// files unless it is nil.
+func NewStatements(statements model.StatementsRepository, accounts *AccountsService, categories *CategoriesService, merchants *MerchantsService, files model.FileStore, core coremodel.CoreService) *StatementsService {
+	return &StatementsService{statements: statements, accounts: accounts, categories: categories, merchants: merchants, files: files, core: core}
+}
+
+// assistant is the Assistant whose bot the Owner sends Statements to.
+const assistant = "money"
+
+// keepFiles downloads each of statement's files from Telegram and keeps it in
+// the FileStore, recording the objects' names on it. It answers the file_ids
+// Telegram had dropped, which are left out, and a note when files aren't kept
+// at all. Any other failure is an error, and the Statement mustn't be saved.
+func (s *StatementsService) keepFiles(ctx context.Context, statement *model.Statement) (missing []string, note string, err error) {
+	statement.Files = []string{}
+	if len(statement.FileIDs) == 0 {
+		return nil, "", nil
+	}
+	if s.files == nil {
+		return nil, "files not kept: Nando has no Statements bucket here", nil
+	}
+	// A new folder for each save, as Nando may never overwrite a file.
+	folder := fmt.Sprintf("%s/%s_%s/%s", statement.AccountID, statement.From, statement.To, bson.NewObjectID().Hex())
+	for i, id := range statement.FileIDs {
+		data, err := s.core.MessengerFile(ctx, assistant, id)
+		if errors.Is(err, coremodel.ErrFileGone) {
+			missing = append(missing, id)
+			continue
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("couldn't get file %s from Telegram, so nothing was saved: %w", id, err)
+		}
+		name := fmt.Sprintf("%s/%d", folder, i+1)
+		if err := s.files.Put(ctx, name, data, http.DetectContentType(data)); err != nil {
+			return nil, "", fmt.Errorf("couldn't keep file %s in the Statements bucket, so nothing was saved: %w", id, err)
+		}
+		statement.Files = append(statement.Files, name)
+	}
+	return missing, "", nil
 }
 
 // lineJSON is one Transaction as money_save_statement is sent it.
@@ -83,12 +125,17 @@ type TransactionJSON struct {
 
 // StatementJSON is a Statement as the Tools answer it.
 type StatementJSON struct {
-	ID             string            `json:"id"`
-	Account        string            `json:"account"`
-	From           string            `json:"from"`
-	To             string            `json:"to"`
-	Source         string            `json:"source"`
-	FileIDs        []string          `json:"fileIds"`
+	ID      string   `json:"id"`
+	Account string   `json:"account"`
+	From    string   `json:"from"`
+	To      string   `json:"to"`
+	Source  string   `json:"source"`
+	FileIDs []string `json:"fileIds"`
+	// Files are the objects its files are kept as; MissingFiles the
+	// file_ids Telegram had dropped, and FilesNote why none were kept.
+	Files          []string          `json:"files"`
+	MissingFiles   []string          `json:"missingFiles,omitempty"`
+	FilesNote      string            `json:"filesNote,omitempty"`
 	Total          *float64          `json:"total"`
 	ClosingBalance *float64          `json:"closingBalance"`
 	Transactions   []TransactionJSON `json:"transactions,omitempty"`
@@ -133,6 +180,10 @@ func toStatementJSON(currency string, s model.Statement, essentials map[string]b
 	if j.FileIDs == nil {
 		j.FileIDs = []string{}
 	}
+	j.Files = s.Files
+	if j.Files == nil {
+		j.Files = []string{}
+	}
 	for _, t := range counted(s.Transactions) {
 		j.Transactions = append(j.Transactions, toTransactionJSON(currency, t, essentials))
 	}
@@ -175,6 +226,15 @@ func (s *StatementsService) Tools() []coremodel.Tool {
 			"of the Account already has it (same day, amount and raw text). Answers the Statement, with how many were late and skipped.",
 		InputSchema: json.RawMessage(statementSchema),
 		Handle:      s.saveStatementTool,
+	}, {
+		Name: "money_get_statement_file",
+		Description: "Reads back file n (1 for the first) of the Statement with id, as kept in the Statements bucket, " +
+			"so an old Statement can be read again without Telegram: like messenger_get_file, a PDF's pages (pages " +
+			"optional), a CSV's lines (lines optional), or a screenshot as an image.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"statement":{"type":"string"},"n":{"type":"integer"},` +
+			`"pages":{"type":"string"},"lines":{"type":"string"}},"required":["statement","n"]}`),
+		ReadOnly: true,
+		Handle:   s.getStatementFileTool,
 	}, {
 		Name:        "money_get_statement",
 		Description: "The Statement with id, with its Transactions.",
@@ -264,6 +324,34 @@ func (s *StatementsService) Tools() []coremodel.Tool {
 	}}
 }
 
+// getStatementFileTool reads one of a Statement's kept files back.
+func (s *StatementsService) getStatementFileTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		Statement string `json:"statement"`
+		N         int    `json:"n"`
+		Pages     string `json:"pages"`
+		Lines     string `json:"lines"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		return nil, err
+	}
+	statement, _, err := s.find(ctx, args.Statement)
+	if err != nil {
+		return nil, err
+	}
+	if args.N < 1 || args.N > len(statement.Files) {
+		return nil, utils.Refusal{Message: fmt.Sprintf("the Statement has %d files kept: n must be 1 to %d", len(statement.Files), len(statement.Files))}
+	}
+	if s.files == nil {
+		return nil, utils.Refusal{Message: "Nando has no Statements bucket here to read files from"}
+	}
+	data, err := s.files.Get(ctx, statement.Files[args.N-1])
+	if err != nil {
+		return nil, err
+	}
+	return s.core.ReadFile(ctx, data, args.Pages, args.Lines)
+}
+
 // find is the Statement with id and its Account, or a Refusal.
 func (s *StatementsService) find(ctx context.Context, id string) (model.Statement, model.Account, error) {
 	statement, err := s.statements.Find(ctx, id)
@@ -323,6 +411,10 @@ func (s *StatementsService) saveStatementTool(ctx context.Context, arguments jso
 			answer.Late++
 		}
 	}
+	missing, note, err := s.keepFiles(ctx, &statement)
+	if err != nil {
+		return nil, err
+	}
 	var old model.Statement
 	if replaced != "" {
 		if old, err = s.statements.Find(ctx, replaced); err != nil {
@@ -342,7 +434,7 @@ func (s *StatementsService) saveStatementTool(ctx context.Context, arguments jso
 	}
 	late, skipped := answer.Late, answer.Skipped
 	answer = toStatementJSON(account.Currency, saved, essentials)
-	answer.Late, answer.Skipped = late, skipped
+	answer.Late, answer.Skipped, answer.MissingFiles, answer.FilesNote = late, skipped, missing, note
 	return answer, nil
 }
 

@@ -367,7 +367,7 @@ type telegramClient struct {
 
 // errFileGone is a file Telegram doesn't have for the bot: an unknown
 // file_id, or one it no longer keeps.
-var errFileGone = errors.New("Telegram has no such file for this bot")
+var errFileGone = model.ErrFileGone
 
 // download downloads the file with fileID as the bot with token. The bot
 // token never appears in an error.

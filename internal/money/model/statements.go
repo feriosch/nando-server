@@ -18,6 +18,10 @@ type Statement struct {
 	Source Source `bson:"source"`
 	// FileIDs are the Telegram file_ids it was read from.
 	FileIDs []string `bson:"fileIds"`
+	// Files are the names of the objects its files are kept as in the
+	// FileStore, in the order of FileIDs, leaving out any Telegram had
+	// dropped.
+	Files []string `bson:"files"`
 	// Total is the total it states, such as a card's billed amount, and
 	// ClosingBalance its balance at To; each nil when it states none. In the
 	// Account's minor unit (yen, or centavos).

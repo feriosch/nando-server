@@ -15,6 +15,7 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	"github.com/feriosch/nando-server/internal/money/model"
 	"github.com/feriosch/nando-server/internal/money/repository"
 	"github.com/feriosch/nando-server/internal/money/service"
 )
@@ -35,11 +36,24 @@ type Config struct {
 	// StatementsBucket is the Cloud Storage bucket every Statement's file is
 	// kept in (ADR 0014); empty keeps no files, as locally.
 	StatementsBucket string
+	// Files, when not nil, is where Statements' files are kept instead of
+	// StatementsBucket, as tests' fake bucket.
+	Files FileStore
 }
+
+// FileStore is where every Statement's file is kept for good.
+type FileStore = model.FileStore
 
 // NewMoneyModule returns the Money Module reading and writing its own data
 // through db and asking Core for Core's data through core.
-func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService, _ Config) (*Module, error) {
+func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.CoreService, cfg Config) (*Module, error) {
+	files := cfg.Files
+	if files == nil && cfg.StatementsBucket != "" {
+		var err error
+		if files, err = repository.NewBucket(ctx, cfg.StatementsBucket); err != nil {
+			return nil, err
+		}
+	}
 	statements, err := repository.NewStatements(ctx, db)
 	if err != nil {
 		return nil, err
@@ -55,7 +69,7 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 	return &Module{
 		settings:      service.NewSettings(repository.NewSettings(db)),
 		accounts:      accounts,
-		statements:    service.NewStatements(statements, accounts, categories, merchants),
+		statements:    service.NewStatements(statements, accounts, categories, merchants, files, core),
 		categories:    categories,
 		merchants:     merchants,
 		subscriptions: service.NewSubscriptions(subscriptionsRepo, merchants, categories, core),

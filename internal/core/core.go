@@ -150,7 +150,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		mcp.AddToolProvider(c.messenger)
 		mcp.AddToolProvider(c.gmailFilings)
 	}
-	c.coreService = coreService{settings: c.settings, now: now}
+	c.coreService = coreService{settings: c.settings, messenger: c.messenger, now: now}
 	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, c.oauth, cfg.Domain, cfg.Origins, now)
 	if err != nil {
 		return nil, err
@@ -195,8 +195,9 @@ func (c *Core) Service() model.CoreService {
 // coreService is model.CoreService: what Modules may ask of Core, answered by
 // the services whose data it is.
 type coreService struct {
-	settings *service.SettingsService
-	now      func() time.Time
+	settings  *service.SettingsService
+	messenger *service.MessengerService
+	now       func() time.Time
 }
 
 func (s coreService) Now() time.Time {
@@ -209,6 +210,14 @@ func (s coreService) OwnerTimeZone(ctx context.Context) (*time.Location, error) 
 
 func (s coreService) Today(ctx context.Context) (model.Day, error) {
 	return s.settings.Today(ctx)
+}
+
+func (s coreService) MessengerFile(ctx context.Context, assistant, id string) ([]byte, error) {
+	return s.messenger.Download(ctx, assistant, id)
+}
+
+func (s coreService) ReadFile(ctx context.Context, data []byte, pages, lines string) (any, error) {
+	return s.messenger.ReadFile(ctx, data, pages, lines)
 }
 
 func (s coreService) HeightCm(ctx context.Context) (int, error) {

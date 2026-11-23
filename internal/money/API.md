@@ -62,6 +62,7 @@ A Statement is one Account and one period (`from`, `to`, Days as `YYYY-MM-DD`), 
 ```
 
 - `source`: `csv`, `pdf` or `screenshots`. `fileIds`: the Telegram files it was read from.
+- `files`: where each of those files is kept for good, in the private Statements bucket (ADR 0014), as `<account>/<from>_<to>/<save>/<n>`. Nando downloads each from Telegram as the Money bot and keeps it before the Statement is saved, so a Statement never points at a file that isn't there. A new folder each time it is sent: Nando only ever creates objects, never overwrites or deletes one.
 - `total` (such as a card's billed amount) and `closingBalance` (the balance at `to`), each `null` when it states none. A closing balance at a month's last Day is the Account's month-end balance.
 - Amounts are in the Account's currency: whole yen, or pesos to centavos. Nando keeps them in yen and centavos, so nothing is rounded. One above 1,000,000,000,000 is refused as misread.
 - A Transaction's `kind` is `expense`, `income` or `transfer`. Its `day` is the purchase date, which decides its month, whatever month it was billed in. Its `amount` is positive, but negative for a refund, an `expense` coming back. A `transfer` has a `direction`, `in` to or `out` of the Account, and its `otherAccount` when known: never counted as spending or income.
@@ -93,7 +94,8 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
 - **`money_save_settings`** (`askAbove`): changes only the currencies given, such as `{"askAbove": {"JPY": 5000}}`, and answers the settings. A currency other than JPY or MXN, an amount of 0 or less, or no `askAbove` is refused, and nothing changes.
 - **`money_save_account`** (`id` to change one, or `name`, `kind`, `currency` and `trackedFrom` for a new one; `institution`, `last4`, `note`, `closedFrom`, `holdsMonth` optional): answers the Account. Only the fields sent change.
 - **`money_list_accounts`**: every Account, open and closed, by name. Read-only.
-- **`money_save_statement`** (`account`, `from`, `to`, `source`, `fileIds`, `total`, `closingBalance`, `transactions`): saves the Statement as above, all at once or not at all. It answers the Statement, with `late`, how many Transactions were dated before the period, and `skipped`, how many of those another Statement already had.
+- **`money_save_statement`** (`account`, `from`, `to`, `source`, `fileIds`, `total`, `closingBalance`, `transactions`): saves the Statement as above, all at once or not at all. It answers the Statement, with `late`, how many Transactions were dated before the period, and `skipped`, how many of those another Statement already had; `missingFiles`, the files Telegram had dropped, which are left out; and `filesNote` when no files are kept, as without `MONEY_STATEMENTS_BUCKET`. If a file can't be kept for any other reason, nothing is saved, and the error says why.
+- **`money_get_statement_file`** (`statement`, `n`, `pages`, `lines`): reads back the Statement's file `n` (1 for the first) from the bucket, as `messenger_get_file` would: a PDF's pages, a CSV's lines, or a screenshot as an image. Read-only.
 - **`money_get_statement`** (`id`): the Statement with its Transactions. Read-only.
 - **`money_list_statements`** (`account`, `fromMonth` and `toMonth` optional): the Account's Statements that reach into those months, by period, without their Transactions. Read-only.
 - **`money_delete_statement`** (`id`): deletes the Statement and its Transactions. The Assistant asks the Owner first (ADR 0008).
