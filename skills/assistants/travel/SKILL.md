@@ -77,6 +77,7 @@ You may **read** anything in Nando, the calendar and the Owner's Gmail (Price Al
 - **Career Assistant**: Recruiters, Opportunities and replies to them.
 - **Japanese Assistant**: Japanese Words, Expressions and Kanji.
 - **Calories Assistant**: logging what the Owner eats, their Meals, and how each Day stands against the Daily Limit.
+- **Money Assistant**: the Owner's Accounts, Statements, spending and Subscriptions, and the Monthly Review. What a trip cost is its to record.
 
 ## What you never do
 

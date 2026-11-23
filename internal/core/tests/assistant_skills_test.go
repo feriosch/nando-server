@@ -65,7 +65,7 @@ func TestTheTalkSkillUsesTheMessengersTools(t *testing.T) {
 // assistants are the Assistants with a skill, and how the skills call each.
 var assistants = map[string]string{
 	"core": "Core Assistant", "career": "Career Assistant", "japanese": "Japanese Assistant", "calories": "Calories Assistant",
-	"travel": "Travel Assistant",
+	"travel": "Travel Assistant", "money": "Money Assistant",
 }
 
 func TestEachAssistantsSkillPointsToTheOthers(t *testing.T) {
@@ -209,7 +209,7 @@ func TestTheCoreSkillFilesTheDaysMailAndKeepsTheFilingRecord(t *testing.T) {
 			t.Errorf("the Core skill names %s, which Nando doesn't serve", name)
 		}
 	}
-	for _, folder := range []string{"talk", "career", "japanese", "calories", "travel"} {
+	for _, folder := range []string{"talk", "career", "japanese", "calories", "travel", "money"} {
 		if found := coreToolName.FindString(readSkill(t, folder, "assistant-"+folder)); found != "" {
 			t.Errorf("the %s skill names %s, but only the Core Assistant files Gmail", folder, found)
 		}

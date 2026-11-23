@@ -124,6 +124,7 @@ func (s *CategoriesService) Tools() []coremodel.Tool {
 		Description: "Moves every Transaction, Merchant and Subscription of Subcategory from into Subcategory into " +
 			"(and into's Category), then removes from. Ask the Owner first.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"from":{"type":"string"},"into":{"type":"string"}},"required":["from","into"]}`),
+		Destructive: true,
 		Handle:      s.mergeTool,
 	}}
 }
