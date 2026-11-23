@@ -86,7 +86,7 @@ A **Fare Check** is one pass in which the Travel Assistant searches for Fares: `
 }
 ```
 
-A **Fare** is one priced round trip found for a Watching Trip and one of its Parties. Fares are kept as long as their Trip.
+A **Fare** is one priced round trip found for a Watching Trip and one of its Parties. Fares are kept as long as their Trip. Each must fit its Trip when recorded (below). After the Trip changes, the Fares that no longer fit it stay stored, but `travel_fare_stats`, the Trip's page, the list of Trips and the Home Cards leave them out, until the Trip changes back.
 
 ```json
 {
@@ -114,6 +114,7 @@ A **Fare** is one priced round trip found for a Watching Trip and one of its Par
 
 - `source`: `kiwi`, `expedia`, `skiplagged`, `slicktrip`, `price_alert` or `other`.
 - `departDate`, `returnDate`: the departure must fall in one of the Trip's windows, the stay (`nights`, which Nando works out) in its range, and the whole trip clear of its `avoid` ranges.
+- `outbound`, `inbound`: when they list flights, out from one of the Trip's `origins` to one of its `destinations`, and back the other way.
 - `stops`: each way, at most the Trip's `maxStops`. `cabin`: the Trip's or a better one.
 - `separateTickets`: only on a Trip that welcomes them.
 - `bagsIncluded`: whether `total` includes the Trip's checked bags, which not every source prices.

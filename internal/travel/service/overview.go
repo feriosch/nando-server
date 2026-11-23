@@ -84,7 +84,7 @@ func boolOrder(a, b bool) int {
 
 // partySummary is a Party's line in the list of Trips.
 func (s *OverviewService) partySummary(ctx context.Context, trip model.Trip, party model.Party) (model.PartySummaryJSON, error) {
-	stats, err := s.stats.stats(ctx, trip.ID, party.Key)
+	stats, err := s.stats.stats(ctx, trip, party.Key)
 	if err != nil {
 		return model.PartySummaryJSON{}, err
 	}
@@ -144,7 +144,7 @@ func (s *OverviewService) tripPage(w http.ResponseWriter, r *http.Request) {
 // partyPage is a Party on a Trip's page.
 func (s *OverviewService) partyPage(ctx context.Context, trip model.Trip, party model.Party) (model.PartyPageJSON, error) {
 	// One read of the Fares for the stats and the history, so both agree.
-	fares, loc, now, err := s.stats.faresNow(ctx, trip.ID, party.Key)
+	fares, loc, now, err := s.stats.faresNow(ctx, trip, party.Key)
 	if err != nil {
 		return model.PartyPageJSON{}, err
 	}
@@ -191,7 +191,7 @@ func (s *OverviewService) cards(w http.ResponseWriter, r *http.Request) {
 	for i, trip := range trips {
 		card := model.HomeCardJSON{TripID: trip.ID, Name: trip.Name}
 		for _, party := range trip.Parties {
-			stats, err := s.stats.stats(ctx, trip.ID, party.Key)
+			stats, err := s.stats.stats(ctx, trip, party.Key)
 			if err != nil {
 				coreutils.ServerError(w, err)
 				return
