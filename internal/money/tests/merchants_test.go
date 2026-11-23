@@ -84,3 +84,35 @@ func TestAMergeMovesEverythingOfOneSubcategoryIntoAnother(t *testing.T) {
 		}
 	}
 }
+
+func TestASubcategoryMergesOnlyIntoOneOfTheSameKind(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	bonus := saveSubcategory(t, session, map[string]any{"category": "salary", "name": "Bonus", "essential": true})
+	family := saveSubcategory(t, session, map[string]any{"category": "gifts", "name": "Family", "essential": false})
+
+	if msg := toolError(t, session, "money_merge_subcategories", map[string]any{"from": bonus.ID, "into": family.ID}); !strings.Contains(msg, "income") {
+		t.Errorf("merging income into an expense: %q; want it refused", msg)
+	}
+}
+
+func TestAMerchantsCategoryChangedAloneClearsItsSubcategory(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	fashion := saveSubcategory(t, session, map[string]any{"category": "shopping", "name": "Fashion", "essential": false})
+	shop := callTool[merchantJSON](t, session, "money_save_merchant", map[string]any{"name": "Shop", "category": "shopping", "subcategory": fashion.ID})
+	streaming := callTool[merchantJSON](t, session, "money_save_merchant", map[string]any{"name": "Streaming", "category": "subscriptions"})
+	sub := callTool[subscriptionJSON](t, session, "money_save_subscription", map[string]any{
+		"merchant": streaming.ID, "amount": 990, "currency": "JPY", "every": "monthly", "lastCharged": "2026-11-01",
+		"category": "shopping", "subcategory": fashion.ID, "essential": false,
+	})
+
+	moved := callTool[merchantJSON](t, session, "money_save_merchant", map[string]any{"id": shop.ID, "category": "beauty"})
+	if moved.Category != "beauty" || moved.Subcategory != "" {
+		t.Errorf("Merchant moved to Beauty: %+v; want its Subcategory cleared", moved)
+	}
+	movedSub := callTool[subscriptionJSON](t, session, "money_save_subscription", map[string]any{"id": sub.ID, "category": "subscriptions"})
+	if movedSub.Category != "subscriptions" || movedSub.Subcategory != "" {
+		t.Errorf("Subscription moved: %+v; want its Subcategory cleared", movedSub)
+	}
+}
