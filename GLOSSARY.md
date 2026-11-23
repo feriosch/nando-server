@@ -45,7 +45,7 @@ Whether Nando shows its light or dark colours: Light, Dark, or System (following
 _Avoid_: Dark mode, color scheme, theme
 
 **Editable Window**:
-Today plus the previous 7 Days. Only Days inside it can be changed; older Days are read-only.
+Today plus the previous 7 Days. Only Days inside it can be changed; older Days are read-only. Money has none: its Statements can change for any month (ADR 0014).
 _Avoid_: Grace period, edit range
 
 ## Calories
@@ -267,6 +267,70 @@ _Avoid_: Budget, goal, limit, threshold
 **Weekly Travel Summary**:
 The Travel Assistant's message at the end of the Weekly Fare Check on how each Watching Trip stands: the best Fares for each Party, their trend, the cheapest stretches of its windows, and any Target Fare it suggests.
 _Avoid_: Report, digest (that is Gmail's), newsletter
+
+## Money
+
+The Module that keeps the Owner's money across Japan and Mexico: what they spend, earn and hold, Transaction by Transaction, so the Money Assistant can find trends and spending the Owner could do without. The banks offer no API to one person, so the Owner sends each Statement in the Money chat and Claude reads it (ADR 0014).
+
+**Account**:
+One place the Owner's money sits or is spent from, in one currency: a bank account, a credit card, a savings pot or an investment account. Accounts are the Owner's data, held only in Nando's database, never listed in the code.
+_Avoid_: Wallet, source, bank (for a card)
+
+**Statement**:
+One record of an Account for one period that the Owner sent, as a CSV, a PDF or screenshots, with the total or closing balance it states. Nando keeps its Transactions and a copy of its file. Sending a Statement for the same Account and period again replaces it, so nothing is counted twice.
+_Avoid_: Upload, import, file, bill
+
+**Transaction**:
+One line of a Statement: an **Expense**, an **Income** or a **Transfer**, in its original currency, counted in the month of its purchase date, whatever month it was billed in.
+_Avoid_: Movement, entry, charge, record
+
+**Transfer**:
+A Transaction that moves money between two of the Owner's own Accounts, such as a bank paying a card's bill or money put into savings. It never counts as spending or income. Taking cash out or topping up an e-money app is not a Transfer, since neither is an Account: it is an Expense.
+_Avoid_: Payment (for a card's bill), movement
+
+**Category**:
+Where an Expense or Income belongs, from one fixed list, so that months always compare. A Refund lowers spending in the Category it came back to rather than counting as Income.
+_Avoid_: Tag, label, type, bucket
+
+**Subcategory**:
+A finer place inside a Category, such as Fashion or Furniture inside Shopping. Unlike Categories, Subcategories grow as needed: Claude creates one when nothing fits and says so, and the Owner can rename or merge them.
+_Avoid_: Tag, sub-tag, child category
+
+**Essential**:
+Spending the Owner needs, as opposed to **Optional** spending they choose. Each Subcategory is one or the other, and a single Transaction can say otherwise. Optional spending is where unnecessary expenses are looked for.
+_Avoid_: Need/want, necessary, mandatory, discretionary
+
+**Merchant**:
+Who a Transaction was with, cleaned up from a Statement's raw text (`ｾﾌﾞﾝ-ｲﾚﾌﾞﾝ…` is 7-Eleven), with the Subcategory its Transactions usually take. It learns from the Owner's corrections. A Merchant that sells everything, such as an online store, has no usual Subcategory, and its Transactions are looked up in the Owner's receipts or asked about.
+_Avoid_: Store, shop, vendor, payee
+
+**Unconfirmed**:
+A Transaction saved with Claude's best guess at its Merchant, Subcategory or kind while the Owner's answer is awaited. Nothing waits on it: the Statement is saved whole, and the guess becomes final once the Owner answers.
+_Avoid_: Pending (that is a card's own word), draft, uncategorized
+
+**Subscription**:
+A charge that repeats, monthly or yearly, at one Merchant, such as streaming or an app. Claude keeps the list from the Transactions and the Owner's receipts, and points out new ones, price changes and ones the Owner may no longer use.
+_Avoid_: Recurring charge, plan, membership
+
+**Return**:
+How much a savings or investment Account grew in a month: its balance, less last month's, less the money Transferred in. It is neither Income nor saving.
+_Avoid_: Interest (that is a bank account's Income), profit, yield, gains
+
+**Rate**:
+The one exchange rate between yen and pesos that Nando uses for a month: the month's average for Transactions, and the month's last day for balances. Nando fetches it from the European Central Bank's published rates and never changes it afterwards. Every amount keeps its own currency; Rates only turn totals into yen.
+_Avoid_: Exchange, FX, conversion
+
+**Complete**:
+A month for which every Account has a Statement covering its last day. A Transaction that appears late, on the next Statement, still joins its own month.
+_Avoid_: Closed, finished, done, reconciled
+
+**Statement Reminder**:
+A Money Notification asking for the Statements of one app the Owner opens, such as one bank's app that holds both an account and a card, on its day in Money's settings. It is sent only while those Statements are missing, and again 3 days later if they still are.
+_Avoid_: Checklist, to-do, nag
+
+**Monthly Review**:
+The Money Assistant's message when a month becomes Complete: spending against last month and the 3-month average, Essential against Optional, the Categories that moved most, Subscriptions, anything worth a look, net worth and the saving rate, and what is still Unconfirmed.
+_Avoid_: Report, digest (that is Gmail's), summary, statement (that is an Account's)
 
 ## Identity
 
