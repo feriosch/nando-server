@@ -161,9 +161,10 @@ func (c *converter) yen(ctx context.Context, currency string, minor int64, month
 type figures struct {
 	spending, income              int64
 	essential, optional, unmarked int64
-	byCategory                    map[string]int64
-	bySubcategory                 map[string]map[string]int64
-	unconfirmed                   UnconfirmedJSON
+	// byCategory is spending by Category key, and incomeByCategory income.
+	byCategory, incomeByCategory map[string]int64
+	bySubcategory                map[string]map[string]int64
+	unconfirmed                  UnconfirmedJSON
 	// netIn is, by Account, the money Transferred into it, less out of it, in
 	// its own currency: from its own Transfers if it has any, else from
 	// those of other Accounts that name it.
@@ -176,7 +177,7 @@ func (s *TotalsService) figures(ctx context.Context, month string, currencies ma
 	if err != nil {
 		return figures{}, err
 	}
-	f := figures{byCategory: map[string]int64{}, bySubcategory: map[string]map[string]int64{}, netIn: map[string]int64{}}
+	f := figures{byCategory: map[string]int64{}, incomeByCategory: map[string]int64{}, bySubcategory: map[string]map[string]int64{}, netIn: map[string]int64{}}
 	own, counterpart := map[string]int64{}, map[string]int64{}
 	hasOwn := map[string]bool{}
 	for _, t := range found {
@@ -206,7 +207,7 @@ func (s *TotalsService) figures(ctx context.Context, month string, currencies ma
 		}
 		if t.Kind == model.Income {
 			f.income += yen
-			f.byCategory[t.Category] += yen
+			f.incomeByCategory[t.Category] += yen
 			continue
 		}
 		f.spending += yen
