@@ -249,11 +249,11 @@ Google's judgement of a Fare's price for its route and dates: low, typical or hi
 _Avoid_: Rating, score, price level, insight
 
 **Price Alert**:
-An email from a fare site or an airline about prices, such as Google Flights tracking or an airline's sale. The Core Assistant files it under `Travel Log/Alerts` in its Gmail Filing, and the next Daily Fare Check reads it. Nando keeps the Fares it yields, never the email.
+An email from a fare site or an airline about prices, such as Google Flights tracking or an airline's sale. The Core Assistant files it under `Travel Log/Alerts` in its Gmail Filing, and the next Fare Check reads it. Nando keeps the Fares it yields, never the email.
 _Avoid_: Fare Alert (that is Nando's own message), deal email, newsletter
 
 **Fare Check**:
-One pass in which the Travel Assistant searches for Fares and records them. The **Daily Fare Check**, after the Gmail Digest, reads the new Price Alerts and searches again only where something moved. The **Weekly Fare Check**, on Sunday unless Travel's settings name another weekday, searches every Watching Trip's whole window for each Party, and ends with the Weekly Travel Summary.
+One pass in which the Travel Assistant searches for Fares and records them. The **Daily Fare Check**, after the Gmail Digest, reads the new Price Alerts and searches again only where something moved. The **Weekly Fare Check**, on Sunday unless Travel's settings name another weekday, searches every Watching Trip's whole window for each Party, and ends with the Weekly Travel Summary. The Owner can also ask for one at any time, for the Trips they name or every Watching Trip.
 _Avoid_: Search, scan, scrape, poll, sync
 
 **Fare Alert**:
