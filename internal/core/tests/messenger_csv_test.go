@@ -3,6 +3,7 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -198,5 +199,42 @@ func TestALargeCSVIsAnsweredButNotKept(t *testing.T) {
 	want := "That file is too large: I can read PDFs and CSV files of up to 10 MB, and images of up to 5 MB."
 	if len(sent) != 1 || sent[0].Params["text"] != want {
 		t.Errorf("sendMessage calls = %+v; want %q", sent, want)
+	}
+}
+
+func TestAPDFWithBytesBeforeItsSignatureIsStillAPDF(t *testing.T) {
+	n, telegram, _ := messengerNandoWithTrigger(t)
+	r, id := sendPDF(t, n, telegram, "job-description-with-leading-newline.pdf")
+
+	got := fileAnswer(t, r.getFile("career", id, ""))
+
+	if got.PageCount != 2 || len(got.Pages) != 2 || got.Pages[0].Text != "Senior Go Engineer at Company Y\nTokyo, hybrid, 3 office days" {
+		t.Errorf("messenger_get_file = %+v; want it read as the PDF it is", got)
+	}
+}
+
+func TestAUTF16CSVIsReadAsItsText(t *testing.T) {
+	n, telegram, _ := messengerNandoWithTrigger(t)
+	r, id := sendCSV(t, n, telegram, "statement-utf16.csv")
+
+	got := csvAnswer(t, r.getFile("career", id, ""))
+
+	if got.Encoding != "utf-16" || got.LineCount != 3 || got.Text != statementText {
+		t.Errorf("messenger_get_file = %+v; want its 3 lines, from UTF-16", got)
+	}
+}
+
+func TestACSVOfLongLinesIsReadInSmallerParts(t *testing.T) {
+	n, telegram, _ := messengerNandoWithTrigger(t)
+	r, id := sendCSV(t, n, telegram, "wide.csv") // 300 lines of about 1 KB
+
+	first := csvAnswer(t, r.getFile("career", id, ""))
+	if first.LineCount != 300 || first.FromLine != 1 || first.ToLine >= 300 || len(first.Text) > 100_000 {
+		t.Fatalf("read lines %d-%d of %d, %d bytes; want fewer than 300 lines, at most 100,000 bytes",
+			first.FromLine, first.ToLine, first.LineCount, len(first.Text))
+	}
+	next := csvAnswer(t, r.getCSVLines(id, fmt.Sprintf("%d-300", first.ToLine+1)))
+	if next.FromLine != first.ToLine+1 || !strings.HasPrefix(next.Text, fmt.Sprintf("%d,", first.ToLine+1)) {
+		t.Errorf("the next part starts at line %d with %.10q; want line %d", next.FromLine, next.Text, first.ToLine+1)
 	}
 }
