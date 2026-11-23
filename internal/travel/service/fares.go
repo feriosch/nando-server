@@ -308,12 +308,16 @@ func fitsTrip(fare model.Fare, trip model.Trip) string {
 }
 
 // flies says why leg doesn't fly from one of from to one of to, or "" when it
-// does, or has no flights to tell by (some sources give none).
+// does, or has no flights or airport codes to tell by (some sources give
+// none).
 func flies(leg model.Leg, from, to []string, way string) string {
 	if len(leg.Flights) == 0 {
 		return ""
 	}
 	first, last := leg.Flights[0].From, leg.Flights[len(leg.Flights)-1].To
+	if first == "" || last == "" {
+		return ""
+	}
 	if !slices.Contains(from, first) || !slices.Contains(to, last) {
 		return fmt.Sprintf("it flies %s from %s to %s, not between the Trip's %s and %s",
 			way, first, last, strings.Join(from, "/"), strings.Join(to, "/"))
@@ -393,6 +397,15 @@ func (s *FaresService) recordAlert(ctx context.Context, arguments json.RawMessag
 	}
 	if err != nil {
 		return nil, err
+	}
+	// A Fare the Trip no longer fits, such as one on dates since avoided, is
+	// not worth telling the Owner about.
+	trip, err := s.trips.Find(ctx, fare.TripID)
+	if err != nil {
+		return nil, err
+	}
+	if reason := fitsTrip(fare, trip); reason != "" {
+		return nil, errors.New("the Fare no longer fits its Trip: " + reason)
 	}
 	alert := model.FareAlert{
 		FareID: fare.ID, TripID: fare.TripID, Party: fare.Party,

@@ -252,7 +252,7 @@ Each Tool answers JSON. A Tool refuses what it can't do with a message saying wh
 | `travel_record_fares` | `checkId`, `fares` | Records each Fare sent (without the fields Nando sets) in that unfinished Fare Check, or refuses it with why. Answers `{recorded: [{index, id}], refused: [{index, reason}]}`, by place in the list sent |
 | `travel_finish_fare_check` | `id`; `sources`, `summary`, `errors` | Finishes the Fare Check, once. Answers it |
 | `travel_get_price_verdict` | `tripId`, `party`, `departDate`, `returnDate` | Answers today's Price Verdict on those dates, fetching it from SerpApi when there is none yet |
-| `travel_record_fare_alert` | `fareId`, `reasons`; `urgent` | Records a Fare Alert the Travel Assistant just sent about that Fare. Answers it |
+| `travel_record_fare_alert` | `fareId`, `reasons`; `urgent` | Records a Fare Alert the Travel Assistant just sent about that Fare, refusing one for a Fare that no longer fits its Trip. Answers it |
 | `travel_set_target_fare` | `tripId`, `party`, `perPerson` (or `null`) | Sets that Party's Target Fare from today, once the Owner agreed it, or clears it. Answers the Trip |
 | `travel_set_trip_status` | `id`, `status` | Sets the Trip to `watching`, `booked` or `dropped`, from today, changing nothing else. A Trip is watched again only while one of its windows isn't over. The Travel Assistant asks the Owner before dropping one. Answers the Trip |
 

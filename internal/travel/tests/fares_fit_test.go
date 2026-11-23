@@ -77,3 +77,28 @@ func TestFaresOutsideTheTripsNightsWindowsOrAirportsAreNotCounted(t *testing.T) 
 		t.Errorf("recording a Fare to BBB for a Trip to CCC = %+v, want it refused", got)
 	}
 }
+
+func TestAFareWithoutAirportCodesStillFitsItsTrip(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	trip := newTrip(t, phone, nil)
+	noCodes := map[string]any{"flights": []map[string]any{{"carrier": "YY", "number": "YY9", "from": "", "to": "", "departs": "", "arrives": ""}}, "stops": 0, "durationMinutes": 480}
+
+	got, _ := record(t, phone, "asked", fare(trip, "owner", "2027-05-12", "2027-05-19", 100000, map[string]any{
+		"source": "expedia", "outbound": noCodes, "inbound": noCodes, "bookingUrl": "",
+	}))
+
+	if len(got.Recorded) != 1 {
+		t.Errorf("recording a Fare whose source gave no airport codes = %+v, want it recorded", got)
+	}
+}
+
+func TestNoFareAlertForAFareThatNoLongerFitsItsTrip(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	trip := newTrip(t, phone, nil)
+	got, _ := record(t, phone, "daily", fare(trip, "owner", "2027-05-12", "2027-05-19", 100000, nil))
+	callTool[tripJSON](t, phone.tools(), "travel_save_trip", map[string]any{
+		"id": trip.ID, "avoid": []map[string]any{{"from": "2027-05-15", "to": "2027-05-16", "reason": "a wedding"}},
+	})
+
+	toolError(t, phone.tools(), "travel_record_fare_alert", map[string]any{"fareId": got.Recorded[0].ID, "reasons": []string{"lowest_seen"}})
+}
