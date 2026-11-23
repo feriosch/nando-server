@@ -148,6 +148,8 @@ In the Connector's settings in claude.ai, set the destructive Tools to ask every
 
 - Japanese: `japanese_delete_word`, `japanese_merge_words` and `japanese_change_group`;
 - Career: `career_delete_step` and `career_delete_opportunity`;
-- Calories: `calories_delete_entry`, `calories_archive_meal` and `calories_delete_weigh_in`.
+- Calories: `calories_delete_entry`, `calories_archive_meal` and `calories_delete_weigh_in`;
+- Travel: `travel_delete_trip`;
+- Money: `money_delete_statement` and `money_merge_subcategories`.
 
 A Connector is listed in Nando's Settings, where removing it cuts it off at once.
