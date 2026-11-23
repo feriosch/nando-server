@@ -196,6 +196,7 @@ func (s *StatementsService) Tools() []coremodel.Tool {
 		Description: "Deletes the Statement with id and all its Transactions. Ask the Owner first, and act on their yes " +
 			"in a later message.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
+		Destructive: true,
 		Handle: func(ctx context.Context, arguments json.RawMessage) (any, error) {
 			var args struct {
 				ID string `json:"id"`
