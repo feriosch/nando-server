@@ -22,7 +22,9 @@ import (
 // Module is the Money Module. Its only access to data is its own database
 // and Core's service.
 type Module struct {
-	settings *service.SettingsService
+	settings   *service.SettingsService
+	accounts   *service.AccountsService
+	statements *service.StatementsService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -34,9 +36,16 @@ type Config struct {
 
 // NewMoneyModule returns the Money Module reading and writing its own data
 // through db and asking Core for Core's data through core.
-func NewMoneyModule(_ context.Context, db *mongo.Database, _ coremodel.CoreService, _ Config) (*Module, error) {
+func NewMoneyModule(ctx context.Context, db *mongo.Database, _ coremodel.CoreService, _ Config) (*Module, error) {
+	statements, err := repository.NewStatements(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	accounts := service.NewAccounts(repository.NewAccounts(db), statements)
 	return &Module{
-		settings: service.NewSettings(repository.NewSettings(db)),
+		settings:   service.NewSettings(repository.NewSettings(db)),
+		accounts:   accounts,
+		statements: service.NewStatements(statements, accounts),
 	}, nil
 }
 
@@ -62,9 +71,9 @@ type toolProvider struct{ m *Module }
 // ToolsDescription says what the Module's Tools let a Connector do, for the
 // consent page.
 func (p toolProvider) ToolsDescription() string {
-	return "read and change your Money settings"
+	return "read and change your Money settings and Accounts, and save, read and delete your Statements and their Transactions"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.settings.Tools())
+	return slices.Concat(p.m.settings.Tools(), p.m.accounts.Tools(), p.m.statements.Tools())
 }
