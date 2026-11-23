@@ -48,7 +48,12 @@ func (s *OverviewService) card(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	month := ""
-	for m, n := utils.AddMonths(utils.MonthOf(string(today)), -1), 0; n < cardMonths && tracked(accounts, m); m, n = utils.AddMonths(m, -1), n+1 {
+	for m, n := utils.AddMonths(utils.MonthOf(string(today)), -1), 0; n < cardMonths; m, n = utils.AddMonths(m, -1), n+1 {
+		// A month no Account is tracked in is not part of the history, and
+		// would read as Complete; skip it, past any gap between Accounts.
+		if !tracked(accounts, m) {
+			continue
+		}
 		complete, err := s.statements.Month(ctx, m)
 		if err != nil {
 			coreutils.ServerError(w, err)
@@ -77,7 +82,7 @@ func (s *OverviewService) card(w http.ResponseWriter, r *http.Request) {
 	card := model.CardJSON{Month: month, Unconfirmed: len(waiting)}
 	card.Spending.Total, card.Spending.Average3 = totals.Spending.Total, totals.Spending.Average3
 	card.Spending.Essential, card.Spending.Optional, card.Spending.Unmarked = totals.Spending.Essential, totals.Spending.Optional, totals.Spending.Unmarked
-	card.NetWorth.Total, card.NetWorth.Previous = totals.NetWorth.Total, totals.NetWorth.Previous
+	card.NetWorth.Total, card.NetWorth.Previous, card.NetWorth.Missing = totals.NetWorth.Total, totals.NetWorth.Previous, totals.NetWorth.Missing
 	coreutils.WriteJSON(w, http.StatusOK, card)
 }
 

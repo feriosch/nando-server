@@ -105,7 +105,7 @@ func TestTheWebAppReadsMoneysSettingsWithAccountNames(t *testing.T) {
 	got := get[readSettingsJSON](phone, "/api/money/settings", http.StatusOK)
 
 	if got.ReminderTime != "09:00" || got.AskAbove["JPY"] != 3000 || len(got.Reminders) != 1 ||
-		got.Reminders[0].Name != "Bank app" || got.Reminders[0].Accounts[0] != "Bank" {
+		got.Reminders[0].Name != "Bank app" || len(got.Reminders[0].Accounts) != 1 || got.Reminders[0].Accounts[0] != "Bank" {
 		t.Errorf("settings = %+v; want the reminder with its Account's name", got)
 	}
 }
@@ -116,4 +116,43 @@ func TestMoneysRoutesNeedASession(t *testing.T) {
 
 	stranger.must(http.MethodGet, "/api/money/card", nil, http.StatusUnauthorized)
 	stranger.must(http.MethodGet, "/api/money/settings", nil, http.StatusUnauthorized)
+}
+
+func TestTheHomeCardLooksPastMonthsNoAccountWasTrackedIn(t *testing.T) {
+	_, phone := signedInBrowser(t) // today is 23 November 2026
+	session := phone.tools()
+	old := saveAccount(t, session, map[string]any{"name": "Old bank", "kind": "bank", "currency": "JPY", "trackedFrom": "2026-05", "closedFrom": "2026-06"})
+	saveAccount(t, session, map[string]any{"name": "New bank", "kind": "bank", "currency": "JPY", "trackedFrom": "2026-08"})
+	saveStatement(t, session, map[string]any{"account": old.ID, "from": "2026-05-01", "to": "2026-05-31", "source": "csv", "closingBalance": 1000})
+
+	got := get[*struct {
+		Month string `json:"month"`
+	}](phone, "/api/money/card", http.StatusOK)
+
+	if got == nil || got.Month != "2026-05" {
+		t.Errorf("card = %+v; want May, past June and July, when no Account was tracked", got)
+	}
+}
+
+func TestTheHomeCardNamesTheAccountsLeftOutOfNetWorth(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	bank := saveAccount(t, session, map[string]any{"name": "Bank", "kind": "bank", "currency": "JPY", "trackedFrom": "2026-10"})
+	other := saveAccount(t, session, map[string]any{"name": "Other bank", "kind": "bank", "currency": "JPY", "trackedFrom": "2026-10"})
+	saveStatement(t, session, map[string]any{"account": bank.ID, "from": "2026-10-01", "to": "2026-10-31", "source": "csv", "closingBalance": 5000})
+	// Complete, but its Statement ends after the month: no October balance.
+	saveStatement(t, session, map[string]any{"account": other.ID, "from": "2026-10-15", "to": "2026-11-14", "source": "csv", "closingBalance": 9000})
+
+	got := get[*struct {
+		NetWorth struct {
+			Total   int64 `json:"total"`
+			Missing []struct {
+				ID string `json:"id"`
+			} `json:"missing"`
+		} `json:"netWorth"`
+	}](phone, "/api/money/card", http.StatusOK)
+
+	if got == nil || got.NetWorth.Total != 5000 || len(got.NetWorth.Missing) != 1 || got.NetWorth.Missing[0].ID != other.ID {
+		t.Errorf("card = %+v; want 5,000, naming the other bank as left out", got)
+	}
 }
