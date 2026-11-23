@@ -43,7 +43,7 @@ The Owner keeps money in Japan and Mexico: a bank account in each, a savings pot
   - a CSV where the bank or card offers one;
   - a PDF where it offers only that;
   - screenshots for an app that offers neither.
-  - The Messenger learns to read **CSV files**, in Core, as it learned PDFs (#135). Japanese banks write CSVs in Shift_JIS, so Nando turns them into UTF-8 text for the run.
+  - The Messenger learns to read **CSV files**, in Core, as it learned PDFs (#135). This amends ADR 0008, which answered every file but photos and PDFs with a fixed line. Japanese banks write CSVs in Shift_JIS, so Nando turns them into UTF-8 text for the run.
   - Which Account takes which format, and its billing cycle, is learned from its first Statement and kept with the Account, never in the code.
 - **Every Statement's file is kept** in a private Cloud Storage bucket in the project.
   - A Money Tool takes the Telegram `file_id`; Nando downloads the file and stores it with its own service account. Claude never holds cloud credentials.

@@ -329,7 +329,7 @@ A Money Notification asking for the Statements of one app the Owner opens, such 
 _Avoid_: Checklist, to-do, nag
 
 **Monthly Review**:
-The Money Assistant's message when a month becomes Complete: spending against last month and the 3-month average, Essential against Optional, the Categories that moved most, Subscriptions, anything worth a look, net worth and the saving rate, and what is still Unconfirmed.
+The Money Assistant's message when a month becomes Complete: spending against last month and the 3-month average, Essential against Optional, the Categories that moved most, Subscriptions, anything worth a look, net worth, Return and the saving rate, and what is still Unconfirmed.
 _Avoid_: Report, digest (that is Gmail's), summary, statement (that is an Account's)
 
 ## Identity
