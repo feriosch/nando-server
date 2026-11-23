@@ -149,7 +149,8 @@ func (s *MerchantsService) saveMerchantTool(ctx context.Context, arguments json.
 		}
 	}
 	if args.Category != nil {
-		m.Category = *args.Category
+		// A new Category clears the Subcategory, unless one is given too.
+		m.Category, m.SubcategoryID = *args.Category, ""
 	}
 	if args.Subcategory != nil {
 		m.SubcategoryID = *args.Subcategory

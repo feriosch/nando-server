@@ -223,6 +223,12 @@ func (s *CategoriesService) mergeTool(ctx context.Context, arguments json.RawMes
 	if err != nil {
 		return nil, err
 	}
+	fromCategory, _ := model.CategoryOf(from.Category)
+	intoCategory, _ := model.CategoryOf(into.Category)
+	if fromCategory.Kind != intoCategory.Kind {
+		return nil, utils.Refusal{Message: fmt.Sprintf("%s is for %s and %s for %s: a merge keeps each Transaction's kind",
+			from.Name, fromCategory.Kind, into.Name, intoCategory.Kind)}
+	}
 	for _, m := range s.movers {
 		if err := m.MoveSubcategory(ctx, from.ID, into.ID, into.Category); err != nil {
 			return nil, err

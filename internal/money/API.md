@@ -106,8 +106,8 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
   - `teachMerchant` also has its Merchant learn its raw text and usually take its Category and Subcategory: for a correction that should stick. Without it, an exception stays one-off.
 - **`money_list_categories`**: every Category, in order, with its Subcategories. Read-only.
 - **`money_save_subcategory`** (`id` to change one, or `category`, `name` and `essential` for a new one): answers it.
-- **`money_merge_subcategories`** (`from`, `into`): moves every Transaction, Merchant and Subscription of `from` into `into`, and into its Category, then removes `from`. The Assistant asks the Owner first.
-- **`money_save_merchant`** (`id` to change one, or `name` for a new one; `rawTexts` added, `category`, `subcategory`): answers it.
+- **`money_merge_subcategories`** (`from`, `into`): moves every Transaction, Merchant and Subscription of `from` into `into`, and into its Category, then removes `from`. Both must be in Categories of the same kind, so income never becomes spending. The Assistant asks the Owner first.
+- **`money_save_merchant`** (`id` to change one, or `name` for a new one; `rawTexts` added, `category`, `subcategory`): answers it. As for Subscriptions and Transactions, a `category` given without a `subcategory` clears the Subcategory.
 - **`money_find_merchant`** (`rawText`): the Merchant seen as it exactly, or else named it in any case; a Tool error when there is none. Read-only.
 - **`money_list_merchants`**: every Merchant, by name. Read-only.
 - **`money_save_subscription`** (`id` to change one, or `merchant`, `amount`, `currency`, `every`, `lastCharged` and `essential` for a new one; `category`, `subcategory`, `active`): answers it, with `late`.

@@ -178,7 +178,8 @@ func (s *SubscriptionsService) saveSubscriptionTool(ctx context.Context, argumen
 		sub.LastCharged = *args.LastCharged
 	}
 	if args.Category != nil {
-		sub.Category = *args.Category
+		// A new Category clears the Subcategory, unless one is given too.
+		sub.Category, sub.SubcategoryID = *args.Category, ""
 	}
 	if args.Subcategory != nil {
 		sub.SubcategoryID = *args.Subcategory
