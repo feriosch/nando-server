@@ -30,3 +30,15 @@ func LastDay(month string) string {
 	first, _ := time.Parse(MonthLayout, month)
 	return first.AddDate(0, 1, -1).Format(DayLayout)
 }
+
+// AddDays is the Day n Days after day (before, for a negative n).
+func AddDays(day string, n int) string {
+	d, _ := time.Parse(DayLayout, day)
+	return d.AddDate(0, 0, n).Format(DayLayout)
+}
+
+// AddMonths is the month n months after month (before, for a negative n).
+func AddMonths(month string, n int) string {
+	m, _ := time.Parse(MonthLayout, month)
+	return m.AddDate(0, n, 0).Format(MonthLayout)
+}

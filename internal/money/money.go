@@ -29,6 +29,8 @@ type Module struct {
 	categories    *service.CategoriesService
 	merchants     *service.MerchantsService
 	subscriptions *service.SubscriptionsService
+	rates         *service.RatesService
+	totals        *service.TotalsService
 }
 
 // Config is what the Module needs besides its database and Core.
@@ -36,6 +38,8 @@ type Config struct {
 	// StatementsBucket is the Cloud Storage bucket every Statement's file is
 	// kept in (ADR 0014); empty keeps no files, as locally.
 	StatementsBucket string
+	// RatesURL is Frankfurter's API; empty means https://api.frankfurter.dev.
+	RatesURL string
 	// Files, when not nil, is where Statements' files are kept instead of
 	// StatementsBucket, as tests' fake bucket.
 	Files FileStore
@@ -63,13 +67,20 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 		return nil, err
 	}
 	subscriptionsRepo := repository.NewSubscriptions(db)
+	if cfg.RatesURL == "" {
+		cfg.RatesURL = "https://api.frankfurter.dev"
+	}
 	accounts := service.NewAccounts(repository.NewAccounts(db), statements)
 	categories := service.NewCategories(repository.NewSubcategories(db), statements, merchantsRepo, subscriptionsRepo)
 	merchants := service.NewMerchants(merchantsRepo, categories)
+	statementsService := service.NewStatements(statements, accounts, categories, merchants, files, core)
+	rates := service.NewRates(repository.NewRates(db), core, cfg.RatesURL)
 	return &Module{
+		rates:         rates,
+		totals:        service.NewTotals(statements, accounts, categories, rates, statementsService),
 		settings:      service.NewSettings(repository.NewSettings(db)),
 		accounts:      accounts,
-		statements:    service.NewStatements(statements, accounts, categories, merchants, files, core),
+		statements:    statementsService,
 		categories:    categories,
 		merchants:     merchants,
 		subscriptions: service.NewSubscriptions(subscriptionsRepo, merchants, categories, core),
@@ -98,10 +109,10 @@ type toolProvider struct{ m *Module }
 // ToolsDescription says what the Module's Tools let a Connector do, for the
 // consent page.
 func (p toolProvider) ToolsDescription() string {
-	return "read and change your Money settings and Accounts, save, read and delete your Statements and their Transactions, and keep what each Transaction is: its Category and Subcategory, its Merchant, and your Subscriptions"
+	return "read and change your Money settings and Accounts, save, read and delete your Statements and their Transactions, keep what each Transaction is: its Category and Subcategory, its Merchant, and your Subscriptions, and work out each month's totals in yen at the European Central Bank's rates"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {
 	return slices.Concat(p.m.settings.Tools(), p.m.accounts.Tools(), p.m.statements.Tools(), p.m.categories.Tools(),
-		p.m.merchants.Tools(), p.m.subscriptions.Tools())
+		p.m.merchants.Tools(), p.m.subscriptions.Tools(), p.m.rates.Tools(), p.m.totals.Tools())
 }

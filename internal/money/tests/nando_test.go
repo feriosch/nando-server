@@ -48,6 +48,8 @@ type nando struct {
 	core     *core.Core
 	handler  http.Handler
 	telegram *testtelegram.Telegram
+	// rates is the fake Frankfurter the Module fetches Rates from.
+	rates *fakeFrankfurter
 }
 
 func newNando(t *testing.T) *nando {
@@ -79,7 +81,8 @@ func newNandoWith(t *testing.T, change func(*money.Config)) *nando {
 	if err != nil {
 		t.Fatalf("core.New: %v", err)
 	}
-	cfg := money.Config{}
+	rates := newFakeFrankfurter(t)
+	cfg := money.Config{RatesURL: rates.URL}
 	if change != nil {
 		change(&cfg)
 	}
@@ -99,6 +102,7 @@ func newNandoWith(t *testing.T, change func(*money.Config)) *nando {
 			Modules:        []server.Module{m},
 		}),
 		telegram: telegram,
+		rates:    rates,
 	}
 }
 
