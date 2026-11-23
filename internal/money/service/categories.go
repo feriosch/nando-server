@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
@@ -58,6 +59,29 @@ func (s *CategoriesService) essentials(ctx context.Context) (map[string]bool, er
 		m[sub.ID] = sub.Essential
 	}
 	return m, nil
+}
+
+// subcategoryNames is every Subcategory's name, by its ID.
+func (s *CategoriesService) subcategoryNames(ctx context.Context) (map[string]string, error) {
+	list, err := s.subcategories.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m := map[string]string{}
+	for _, sub := range list {
+		m[sub.ID] = sub.Name
+	}
+	return m, nil
+}
+
+// sortSubcategoryTotals orders totals largest first, then by name.
+func sortSubcategoryTotals(totals []SubcategoryTotalJSON) {
+	sort.Slice(totals, func(i, j int) bool {
+		if totals[i].Total != totals[j].Total {
+			return totals[i].Total > totals[j].Total
+		}
+		return totals[i].Name < totals[j].Name
+	})
 }
 
 // checkPlace is what is wrong with putting a Transaction or Merchant of kind
