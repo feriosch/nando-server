@@ -61,7 +61,7 @@ func (s *StatementsService) keepFiles(ctx context.Context, statement *model.Stat
 			continue
 		}
 		if err != nil {
-			return nil, "", fmt.Errorf("couldn't get file %s from Telegram just now, try once more: %w", id, err)
+			return nil, "", fmt.Errorf("couldn't get file %s from Telegram, so nothing was saved: %w", id, err)
 		}
 		name := fmt.Sprintf("%s/%d", folder, i+1)
 		if err := s.files.Put(ctx, name, data, http.DetectContentType(data)); err != nil {
