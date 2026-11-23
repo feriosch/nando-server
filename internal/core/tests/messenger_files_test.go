@@ -84,8 +84,8 @@ func TestALargePDFOrAnotherKindOfFileIsAnsweredButNotKept(t *testing.T) {
 		texts = append(texts, c.Params["text"].(string))
 	}
 	want := []string{
-		"That file is too large: I can read PDFs of up to 10 MB and images of up to 5 MB.",
-		"I can read text, photos and PDFs, but not other files, stickers or voice notes yet.",
+		"That file is too large: I can read PDFs and CSV files of up to 10 MB, and images of up to 5 MB.",
+		"I can read text, photos, PDFs and CSV files, but not other files, stickers or voice notes yet.",
 	}
 	if !slices.Equal(texts, want) {
 		t.Errorf("the bot said %q; want %q", texts, want)
@@ -276,8 +276,8 @@ func TestOnlyImagesClaudeCanSeeAreKeptFromFiles(t *testing.T) {
 		texts = append(texts, c.Params["text"].(string))
 	}
 	want := []string{
-		"I can read text, photos and PDFs, but not other files, stickers or voice notes yet.",
-		"That file is too large: I can read PDFs of up to 10 MB and images of up to 5 MB.",
+		"I can read text, photos, PDFs and CSV files, but not other files, stickers or voice notes yet.",
+		"That file is too large: I can read PDFs and CSV files of up to 10 MB, and images of up to 5 MB.",
 	}
 	if !slices.Equal(texts, want) {
 		t.Errorf("the bot said %q; want %q", texts, want)

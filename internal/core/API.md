@@ -331,11 +331,12 @@ A photo is kept like text, with its caption, if any, as its text ([#127](https:/
 
 A file of up to 10 MB is kept too, its caption as its text ([#135](https://github.com/feriosch/nando-server/issues/135)), again only by its `file_id`:
 - an image sent as a file, of up to 5 MB and in a type Claude can see (JPEG, PNG, GIF or WebP), is kept as a photo, at its full size;
-- a PDF (`application/pdf`, or a name ending in `.pdf`) is kept under the message's files, with its name and size.
+- a PDF (`application/pdf`, or a name ending in `.pdf`) is kept under the message's files, with its name and size;
+- so is a CSV (`text/csv`, `text/comma-separated-values`, or a name ending in `.csv`, as banks' downloads come with other types), for the Money Assistant's Statements ([#206](https://github.com/feriosch/nando-server/issues/206)). A spreadsheet (`.xls`, `.xlsx`) isn't one.
 
 Otherwise, nothing is kept, caption and all, and the bot answers instead:
-- a larger PDF or image: "That file is too large: I can read PDFs of up to 10 MB and images of up to 5 MB.";
-- anything else without text, such as a sticker, a voice note, a Word file or a HEIC photo: "I can read text, photos and PDFs, but not other files, stickers or voice notes yet."
+- a larger PDF, CSV or image: "That file is too large: I can read PDFs and CSV files of up to 10 MB, and images of up to 5 MB.";
+- anything else without text, such as a sticker, a voice note, a Word file or a HEIC photo: "I can read text, photos, PDFs and CSV files, but not other files, stickers or voice notes yet."
 
 Anything else waits in the Assistant's open Talk, which is opened if there is none. The bot reacts to it with 👀 and shows the typing status. If Telegram refuses either, that is logged and the message is still kept. Then Nando wakes that Assistant's runs (below).
 
@@ -358,18 +359,20 @@ Served to every Connector while any bot has a token (ADR 0004). Each one shows t
   - `assistant`, and `skill` (`skills/assistants/<assistant>/SKILL.md`);
   - `summary`;
   - `notes`: the Notes carried over from the Talk this one replaced, oldest first, at most 10;
-  - `messages` (`from`: `owner`, `assistant`, or `nando` for a Notification that asks for work; `at`, `text`; `note` on a reply whose run left one; `waiting` on those waiting, `failed` on those no run answered, `photos`, each photo's `id`, and `files`, each PDF's `id` and `name`, on those with them);
+  - `messages` (`from`: `owner`, `assistant`, or `nando` for a Notification that asks for work; `at`, `text`; `note` on a reply whose run left one; `waiting` on those waiting, `failed` on those no run answered, `photos`, each photo's `id`, and `files`, each PDF's or CSV's `id` and `name`, on those with them);
   - `otherAssistants`, those with a bot.
 
   Without `assistant`, it takes the Talk whose oldest waiting message is oldest; with it, only that Assistant's. `{}` means nothing waits, and with `assistant` it records that the run stopped. A claim that lapses leaves the Talk claimable again, until its third.
 - **`messenger_reply`** (`assistant`, `text`, `note` optional): sends `text` as plain text, split at the last line break that fits Telegram's 4096 characters. It answers the messages waiting when the Talk was claimed, removes their 👀, and releases the claim. Messages that came since keep waiting. It answers `{"answered": n}`.
   - `note` is a **Note** ([ADR 0009](../../docs/adr/0009-gmail-for-the-core-assistant.md)): what a later run needs and the Owner shouldn't read, such as a draft's ID. Nando keeps it in the Talk, on the reply's first message, and never sends it to Telegram. Later claims show it. It may be at most 1000 characters; a longer one is a Tool error, and nothing is sent.
 - **`messenger_get_photo`** (`assistant`, `id`): downloads the photo with `id`, from the claim's `photos`, from Telegram as that Assistant's bot, and answers it as an image (`image/jpeg`). It is read-only. A photo Telegram doesn't have, or no longer keeps, is a Tool error saying to ask the Owner for it again; any other failure, such as a timeout, says to try once more. Neither includes the bot token. Nando downloads up to 5 MB.
-- **`messenger_get_file`** (`assistant`, `id`, `pages` optional, such as `3` or `11-20`): downloads the PDF with `id`, from the claim's `files`, from Telegram as that Assistant's bot, and reads it with poppler's `pdfinfo`, `pdftotext` and `pdftoppm`. Each runs as its own process, for at most 30 seconds. It is read-only.
+- **`messenger_get_file`** (`assistant`, `id`, `pages` optional, such as `3` or `11-20`, `lines` optional, such as `301-600`): downloads the file with `id`, from the claim's `files`, from Telegram as that Assistant's bot. A file with a PDF's signature (`%PDF-`) in its first 1024 bytes is a PDF, and anything else a CSV. It is read-only.
+  - A PDF is read with poppler's `pdfinfo`, `pdftotext` and `pdftoppm`. Each runs as its own process, for at most 30 seconds.
   - It answers `pageCount` and `pages`, the pages read (the first 10 when `pages` isn't given, and never more than 10), each with its `page` number and `text`.
   - A page with no text, such as a scanned one, is marked `image: true` and follows the answer as a JPEG of up to 1280 px, in page order. When none of the pages read has text, as in a scan, the answer also says `scanned: true`.
   - A PDF that takes poppler over 30 seconds is an error that says to read fewer pages.
-  - Pages outside the PDF, a broken PDF, or a file Telegram no longer has are Tool errors, which never include the bot token.
+  - A CSV answers `encoding` (`utf-16` when it starts with a UTF-16 BOM, else `utf-8` when it is valid UTF-8, else `shift_jis`, as Japanese banks write their CSVs: Nando decodes Windows-31J), `lineCount`, `fromLine`, `toLine` and `text`, the lines read as UTF-8, joined by `\n`, without a BOM or `\r`: the first 300 when `lines` isn't given, and never more than 300 or 100,000 bytes, whichever comes first (`toLine` says where it stopped; at least one line is always answered).
+  - Pages outside the PDF, lines outside the CSV, a broken PDF, a file that is neither UTF-8 nor Shift_JIS text, or a file Telegram no longer has are Tool errors, which never include the bot token.
 - **`messenger_new_talk`** (`assistant`, `summary` optional): closes the open Talk and opens one starting from `summary`. Waiting messages and the run's claim move to it, and so do the 10 latest Notes, those the old Talk carried and those of its replies, oldest first (ADR 0009), with or without a `summary`. The bot says "Started a new chat.", or "Started a new chat (kept a short summary)." with a summary. It answers `{"moved": n}`.
 
 Core's database holds:

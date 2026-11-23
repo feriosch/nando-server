@@ -257,7 +257,7 @@ func TestAStickerOrFileIsAnsweredButNotKept(t *testing.T) {
 		t.Fatalf("sendMessage calls = %+v; want one per file or sticker", sent)
 	}
 	for _, c := range sent {
-		if c.Token != careerBotToken || c.Params["chat_id"] != float64(ownerTelegramID) || c.Params["text"] != "I can read text, photos and PDFs, but not other files, stickers or voice notes yet." {
+		if c.Token != careerBotToken || c.Params["chat_id"] != float64(ownerTelegramID) || c.Params["text"] != "I can read text, photos, PDFs and CSV files, but not other files, stickers or voice notes yet." {
 			t.Errorf("sendMessage = %+v; want the Career bot telling the Owner it reads only text", c)
 		}
 	}
