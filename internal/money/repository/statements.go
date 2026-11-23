@@ -118,6 +118,20 @@ func (r statements) Transactions(ctx context.Context, f model.TransactionFilter)
 	if f.Kind != "" {
 		lines = append(lines, bson.E{Key: "transaction.kind", Value: f.Kind})
 	}
+	for key, value := range map[string]string{
+		"transaction.category": f.Category, "transaction.subcategoryId": f.SubcategoryID, "transaction.merchantId": f.MerchantID,
+	} {
+		if value != "" {
+			lines = append(lines, bson.E{Key: key, Value: value})
+		}
+	}
+	if f.Unconfirmed != nil {
+		if *f.Unconfirmed {
+			lines = append(lines, bson.E{Key: "transaction.unconfirmed", Value: true})
+		} else {
+			lines = append(lines, bson.E{Key: "transaction.unconfirmed", Value: bson.D{{Key: "$ne", Value: true}}})
+		}
+	}
 	if f.Text != "" {
 		word := bson.Regex{Pattern: regexp.QuoteMeta(f.Text), Options: "i"}
 		lines = append(lines, bson.E{Key: "$or", Value: bson.A{
@@ -174,6 +188,20 @@ func (r statements) Count(ctx context.Context, id string) error {
 	_, err := r.collection.UpdateOne(ctx, bson.D{{Key: "transactions.id", Value: id}},
 		bson.D{{Key: "$unset", Value: bson.D{{Key: "transactions.$.duplicate", Value: ""}}}})
 	return err
+}
+
+func (r statements) MoveSubcategory(ctx context.Context, from, into, intoCategory string) error {
+	_, err := r.collection.UpdateMany(ctx, bson.D{{Key: "transactions.subcategoryId", Value: from}},
+		bson.D{{Key: "$set", Value: bson.D{
+			{Key: "transactions.$[t].subcategoryId", Value: into}, {Key: "transactions.$[t].category", Value: intoCategory},
+		}}},
+		options.UpdateMany().SetArrayFilters([]any{bson.D{{Key: "t.subcategoryId", Value: from}}}))
+	return err
+}
+
+// errorsIsNoDocuments is whether err is the driver's "no documents".
+func errorsIsNoDocuments(err error) bool {
+	return errors.Is(err, mongo.ErrNoDocuments)
 }
 
 func (r statements) FindTransaction(ctx context.Context, id string) (model.FoundTransaction, error) {

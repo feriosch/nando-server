@@ -21,11 +21,13 @@ import (
 type StatementsService struct {
 	statements model.StatementsRepository
 	accounts   *AccountsService
+	categories *CategoriesService
+	merchants  *MerchantsService
 }
 
 // NewStatements returns the StatementsService.
-func NewStatements(statements model.StatementsRepository, accounts *AccountsService) *StatementsService {
-	return &StatementsService{statements: statements, accounts: accounts}
+func NewStatements(statements model.StatementsRepository, accounts *AccountsService, categories *CategoriesService, merchants *MerchantsService) *StatementsService {
+	return &StatementsService{statements: statements, accounts: accounts, categories: categories, merchants: merchants}
 }
 
 // lineJSON is one Transaction as money_save_statement is sent it.
@@ -37,6 +39,11 @@ type lineJSON struct {
 	RawText      string  `json:"rawText"`
 	Note         string  `json:"note"`
 	OtherAccount string  `json:"otherAccount"`
+	Category     string  `json:"category"`
+	Subcategory  string  `json:"subcategory"`
+	Merchant     string  `json:"merchant"`
+	Essential    *bool   `json:"essential"`
+	Unconfirmed  bool    `json:"unconfirmed"`
 }
 
 // statementArgs is what money_save_statement is sent.
@@ -61,8 +68,17 @@ type TransactionJSON struct {
 	RawText      string  `json:"rawText"`
 	Note         string  `json:"note"`
 	OtherAccount string  `json:"otherAccount,omitempty"`
-	Statement    string  `json:"statement,omitempty"`
-	Account      string  `json:"account,omitempty"`
+	Category     string  `json:"category,omitempty"`
+	Subcategory  string  `json:"subcategory,omitempty"`
+	Merchant     string  `json:"merchant,omitempty"`
+	// EssentialOverride is set when this Transaction is Essential or
+	// Optional apart from its Subcategory, and Essential is what it counts
+	// as: its override, else its Subcategory's mark, else null, unmarked.
+	EssentialOverride *bool  `json:"essentialOverride,omitempty"`
+	Essential         *bool  `json:"essential"`
+	Unconfirmed       bool   `json:"unconfirmed,omitempty"`
+	Statement         string `json:"statement,omitempty"`
+	Account           string `json:"account,omitempty"`
 }
 
 // StatementJSON is a Statement as the Tools answer it.
@@ -83,11 +99,20 @@ type StatementJSON struct {
 	Skipped int `json:"skipped,omitempty"`
 }
 
-func toTransactionJSON(currency string, t model.Transaction) TransactionJSON {
-	return TransactionJSON{
+// toTransactionJSON is t, in an Account in currency, with essentials, every
+// Subcategory's Essential mark by its ID.
+func toTransactionJSON(currency string, t model.Transaction, essentials map[string]bool) TransactionJSON {
+	j := TransactionJSON{
 		ID: t.ID, Kind: string(t.Kind), Day: t.Day, Amount: utils.FromMinor(currency, t.Amount), Direction: t.Direction,
-		RawText: t.RawText, Note: t.Note, OtherAccount: t.OtherAccountID,
+		RawText: t.RawText, Note: t.Note, OtherAccount: t.OtherAccountID, Category: t.Category, Subcategory: t.SubcategoryID,
+		Merchant: t.MerchantID, EssentialOverride: t.Essential, Unconfirmed: t.Unconfirmed,
 	}
+	if t.Essential != nil {
+		j.Essential = t.Essential
+	} else if mark, ok := essentials[t.SubcategoryID]; ok {
+		j.Essential = &mark
+	}
+	return j
 }
 
 // fromMinorPtr is amount, in currency's minor unit, as the Tools answer it,
@@ -100,7 +125,7 @@ func fromMinorPtr(currency string, amount *int64) *float64 {
 	return &v
 }
 
-func toStatementJSON(currency string, s model.Statement) StatementJSON {
+func toStatementJSON(currency string, s model.Statement, essentials map[string]bool) StatementJSON {
 	j := StatementJSON{
 		ID: s.ID, Account: s.AccountID, From: s.From, To: s.To, Source: string(s.Source), FileIDs: s.FileIDs,
 		Total: fromMinorPtr(currency, s.Total), ClosingBalance: fromMinorPtr(currency, s.ClosingBalance),
@@ -109,7 +134,7 @@ func toStatementJSON(currency string, s model.Statement) StatementJSON {
 		j.FileIDs = []string{}
 	}
 	for _, t := range counted(s.Transactions) {
-		j.Transactions = append(j.Transactions, toTransactionJSON(currency, t))
+		j.Transactions = append(j.Transactions, toTransactionJSON(currency, t, essentials))
 	}
 	return j
 }
@@ -130,7 +155,12 @@ const statementSchema = `{"type":"object","properties":{` +
 	`"direction":{"type":"string","enum":["in","out"],"description":"For a transfer only: whether the money came into this Account or went out of it."},` +
 	`"rawText":{"type":"string","description":"The Statement's text for it, exactly as written."},` +
 	`"note":{"type":"string","description":"What was bought, if known."},` +
-	`"otherAccount":{"type":"string","description":"For a transfer, the Owner's other Account's id, when known."}},` +
+	`"otherAccount":{"type":"string","description":"For a transfer, the Owner's other Account's id, when known."},` +
+	`"category":{"type":"string","description":"For an expense or income, its Category's key, of its kind."},` +
+	`"subcategory":{"type":"string","description":"Its Subcategory's id, in that Category."},` +
+	`"merchant":{"type":"string","description":"Its Merchant's id."},` +
+	`"essential":{"type":"boolean","description":"Only when this one is Essential or Optional apart from its Subcategory."},` +
+	`"unconfirmed":{"type":"boolean","description":"True while what it is is your best guess, awaiting the Owner."}},` +
 	`"required":["kind","day","amount","rawText"]}}},` +
 	`"required":["account","from","to","source"]}`
 
@@ -161,7 +191,11 @@ func (s *StatementsService) Tools() []coremodel.Tool {
 			if err != nil {
 				return nil, err
 			}
-			return toStatementJSON(account.Currency, statement), nil
+			essentials, err := s.categories.essentials(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return toStatementJSON(account.Currency, statement, essentials), nil
 		},
 	}, {
 		Name: "money_list_statements",
@@ -198,20 +232,26 @@ func (s *StatementsService) Tools() []coremodel.Tool {
 	}, {
 		Name: "money_list_transactions",
 		Description: "Transactions, by Day, with their Statement and Account: of one account, in the months from " +
-			"fromMonth to toMonth (YYYY-MM), of one kind, or whose raw text or note contains text, in any case. " +
-			"At most limit (200 if not given, at most 1000).",
+			"fromMonth to toMonth (YYYY-MM), of one kind, category, subcategory or merchant, unconfirmed or not, or " +
+			"whose raw text or note contains text, in any case. At most limit (200 if not given, at most 1000).",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"account":{"type":"string"},` +
 			`"fromMonth":{"type":"string"},"toMonth":{"type":"string"},` +
 			`"kind":{"type":"string","enum":["expense","income","transfer"]},"text":{"type":"string"},` +
-			`"limit":{"type":"integer"}}}`),
+			`"category":{"type":"string"},"subcategory":{"type":"string"},"merchant":{"type":"string"},` +
+			`"unconfirmed":{"type":"boolean"},"limit":{"type":"integer"}}}`),
 		ReadOnly: true,
 		Handle:   s.listTransactionsTool,
 	}, {
 		Name: "money_update_transaction",
-		Description: "Changes the fields given of the Transaction with id: its note, or, for a transfer, the " +
-			"otherAccount (empty for none). Answers it.",
+		Description: "Changes the fields given of the Transaction with id: its note; for a transfer, the " +
+			"otherAccount (empty for none); for an expense or income, its category (which clears its subcategory " +
+			"unless one is given too), subcategory, merchant, essential (null to follow its Subcategory again) and " +
+			"unconfirmed. With teachMerchant, its Merchant also learns its raw text and to usually take its category " +
+			"and subcategory: do it for a correction that should stick, not a one-off. Answers it.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"note":{"type":"string"},` +
-			`"otherAccount":{"type":"string"}},"required":["id"]}`),
+			`"otherAccount":{"type":"string"},"category":{"type":"string"},"subcategory":{"type":"string"},` +
+			`"merchant":{"type":"string"},"essential":{"type":["boolean","null"]},"unconfirmed":{"type":"boolean"},` +
+			`"teachMerchant":{"type":"boolean"}},"required":["id"]}`),
 		Handle: s.updateTransactionTool,
 	}, {
 		Name: "money_get_month",
@@ -296,8 +336,12 @@ func (s *StatementsService) saveStatementTool(ctx context.Context, arguments jso
 	if err := s.countDuplicatesOf(ctx, account.ID, saved.ID, gone(old.Transactions, saved.Transactions)); err != nil {
 		return nil, err
 	}
+	essentials, err := s.categories.essentials(ctx)
+	if err != nil {
+		return nil, err
+	}
 	late, skipped := answer.Late, answer.Skipped
-	answer = toStatementJSON(account.Currency, saved)
+	answer = toStatementJSON(account.Currency, saved, essentials)
 	answer.Late, answer.Skipped = late, skipped
 	return answer, nil
 }
@@ -432,8 +476,22 @@ func (s *StatementsService) checkLine(ctx context.Context, account model.Account
 		if line.Direction != "" || line.OtherAccount != "" {
 			return t, errors.New("direction and otherAccount are for a transfer only")
 		}
+		if err := s.categories.checkPlace(ctx, t.Kind, line.Category, line.Subcategory); err != nil {
+			return t, err
+		}
+		if line.Merchant != "" {
+			if _, err := s.merchants.find(ctx, line.Merchant); err != nil {
+				return t, err
+			}
+		}
+		t.Category, t.SubcategoryID, t.MerchantID = line.Category, line.Subcategory, line.Merchant
+		t.Essential, t.Unconfirmed = line.Essential, line.Unconfirmed
 		return t, nil
 	}
+	if line.Category != "" || line.Subcategory != "" || line.Merchant != "" || line.Essential != nil {
+		return t, errors.New("a transfer has no category, subcategory, merchant or essential: it is neither spending nor income")
+	}
+	t.Unconfirmed = line.Unconfirmed
 	if line.Direction != "in" && line.Direction != "out" {
 		return t, errors.New("a transfer needs direction, in or out of this Account")
 	}
@@ -481,7 +539,7 @@ func (s *StatementsService) listStatementsTool(ctx context.Context, arguments js
 	}
 	answer := make([]StatementJSON, len(list))
 	for i, statement := range list {
-		answer[i] = toStatementJSON(account.Currency, statement)
+		answer[i] = toStatementJSON(account.Currency, statement, nil)
 	}
 	return answer, nil
 }
@@ -513,12 +571,16 @@ const (
 // listTransactionsTool lists the Transactions asked.
 func (s *StatementsService) listTransactionsTool(ctx context.Context, arguments json.RawMessage) (any, error) {
 	var args struct {
-		Account   string `json:"account"`
-		FromMonth string `json:"fromMonth"`
-		ToMonth   string `json:"toMonth"`
-		Kind      string `json:"kind"`
-		Text      string `json:"text"`
-		Limit     int    `json:"limit"`
+		Account     string `json:"account"`
+		FromMonth   string `json:"fromMonth"`
+		ToMonth     string `json:"toMonth"`
+		Kind        string `json:"kind"`
+		Text        string `json:"text"`
+		Category    string `json:"category"`
+		Subcategory string `json:"subcategory"`
+		Merchant    string `json:"merchant"`
+		Unconfirmed *bool  `json:"unconfirmed"`
+		Limit       int    `json:"limit"`
 	}
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, err
@@ -534,7 +596,8 @@ func (s *StatementsService) listTransactionsTool(ctx context.Context, arguments 
 	}
 	found, err := s.statements.Transactions(ctx, model.TransactionFilter{
 		AccountID: args.Account, FromMonth: args.FromMonth, ToMonth: args.ToMonth, Kind: model.TransactionKind(args.Kind),
-		Text: strings.TrimSpace(args.Text), Limit: min(args.Limit, maxTransactionsLimit),
+		Text: strings.TrimSpace(args.Text), Category: args.Category, SubcategoryID: args.Subcategory, MerchantID: args.Merchant,
+		Unconfirmed: args.Unconfirmed, Limit: min(args.Limit, maxTransactionsLimit),
 	})
 	if err != nil {
 		return nil, err
@@ -543,9 +606,13 @@ func (s *StatementsService) listTransactionsTool(ctx context.Context, arguments 
 	if err != nil {
 		return nil, err
 	}
+	essentials, err := s.categories.essentials(ctx)
+	if err != nil {
+		return nil, err
+	}
 	answer := make([]TransactionJSON, len(found))
 	for i, f := range found {
-		answer[i] = toTransactionJSON(currencies[f.AccountID], f.Transaction)
+		answer[i] = toTransactionJSON(currencies[f.AccountID], f.Transaction, essentials)
 		answer[i].Statement, answer[i].Account = f.StatementID, f.AccountID
 	}
 	return answer, nil
@@ -567,12 +634,20 @@ func (s *StatementsService) currencies(ctx context.Context) (map[string]string, 
 // updateTransactionTool changes the fields given of one Transaction.
 func (s *StatementsService) updateTransactionTool(ctx context.Context, arguments json.RawMessage) (any, error) {
 	var args struct {
-		ID           string  `json:"id"`
-		Note         *string `json:"note"`
-		OtherAccount *string `json:"otherAccount"`
+		ID           string          `json:"id"`
+		Note         *string         `json:"note"`
+		OtherAccount *string         `json:"otherAccount"`
+		Category     *string         `json:"category"`
+		Subcategory  *string         `json:"subcategory"`
+		Merchant     *string         `json:"merchant"`
+		Essential    json.RawMessage `json:"essential"`
+		Unconfirmed  *bool           `json:"unconfirmed"`
+		// TeachMerchant also has its Merchant usually take its Category and
+		// Subcategory, and know its raw text.
+		TeachMerchant bool `json:"teachMerchant"`
 	}
 	if err := json.Unmarshal(arguments, &args); err != nil {
-		return nil, err
+		return nil, utils.Refusal{Message: "send essential as true, false or null, unconfirmed and teachMerchant as true or false, and the rest as strings"}
 	}
 	found, err := s.statements.FindTransaction(ctx, args.ID)
 	if errors.Is(err, coreutils.ErrNotFound) {
@@ -591,10 +666,24 @@ func (s *StatementsService) updateTransactionTool(ctx context.Context, arguments
 		}
 		if *args.OtherAccount != "" {
 			if err := s.checkOtherAccount(ctx, found.AccountID, *args.OtherAccount); err != nil {
-				return nil, err
+				return nil, utils.Refusal{Message: err.Error()}
 			}
 		}
 		t.OtherAccountID = *args.OtherAccount
+	}
+	if err := s.changeWhatItIs(ctx, &t, args.Category, args.Subcategory, args.Merchant, args.Essential); err != nil {
+		return nil, utils.Refusal{Message: err.Error()}
+	}
+	if args.Unconfirmed != nil {
+		t.Unconfirmed = *args.Unconfirmed
+	}
+	if args.TeachMerchant {
+		if t.MerchantID == "" {
+			return nil, utils.Refusal{Message: "teachMerchant needs the Transaction's merchant"}
+		}
+		if err := s.merchants.teach(ctx, t.MerchantID, t.RawText, t.Category, t.SubcategoryID); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.statements.UpdateTransaction(ctx, t); err != nil {
 		return nil, err
@@ -603,9 +692,54 @@ func (s *StatementsService) updateTransactionTool(ctx context.Context, arguments
 	if err != nil {
 		return nil, err
 	}
-	answer := toTransactionJSON(account.Currency, t)
+	essentials, err := s.categories.essentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+	answer := toTransactionJSON(account.Currency, t, essentials)
 	answer.Statement, answer.Account = found.StatementID, found.AccountID
 	return answer, nil
+}
+
+// changeWhatItIs sets on t the Category, Subcategory, Merchant and Essential
+// override given (a JSON null essential clears the override), or says what
+// is wrong with them. A Category given without a Subcategory clears it.
+func (s *StatementsService) changeWhatItIs(ctx context.Context, t *model.Transaction, category, subcategory, merchant *string, essential json.RawMessage) error {
+	if category == nil && subcategory == nil && merchant == nil && essential == nil {
+		return nil
+	}
+	if t.Kind == model.Transfer {
+		return errors.New("a transfer has no category, subcategory, merchant or essential: it is neither spending nor income")
+	}
+	if category != nil {
+		t.Category, t.SubcategoryID = *category, ""
+	}
+	if subcategory != nil {
+		t.SubcategoryID = *subcategory
+	}
+	if err := s.categories.checkPlace(ctx, t.Kind, t.Category, t.SubcategoryID); err != nil {
+		return err
+	}
+	if merchant != nil {
+		if *merchant != "" {
+			if _, err := s.merchants.find(ctx, *merchant); err != nil {
+				return err
+			}
+		}
+		t.MerchantID = *merchant
+	}
+	if essential != nil {
+		if string(essential) == "null" {
+			t.Essential = nil
+		} else {
+			var mark bool
+			if err := json.Unmarshal(essential, &mark); err != nil {
+				return errors.New("essential must be true, false or null")
+			}
+			t.Essential = &mark
+		}
+	}
+	return nil
 }
 
 // MonthJSON is whether a month is Complete, as money_get_month answers it.

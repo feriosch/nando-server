@@ -70,6 +70,19 @@ A Statement is one Account and one period (`from`, `to`, Days as `YYYY-MM-DD`), 
 - **A late Transaction**, dated before the period (it posted on a later bill), joins its own month. One another Statement of the Account already counts (the same day, amount and raw text) isn't counted twice: it is kept as a duplicate, left out of every answer, and counts instead if the other copy goes, with its Statement deleted or sent again without it, so no Transaction is lost. A Transaction dated after the period is refused.
 - Money has **no Editable Window**: any period can be saved, replaced or deleted (ADR 0014).
 
+## What a Transaction is
+
+- **Categories** are a fixed list in the code (ADR 0014), each with a `key`, the `name` the Owner reads and its `kind`. For expenses: Rent (`rent`), Water, Gas & Electricity (`utilities`), Phone & Internet (`phone_internet`), Groceries (`groceries`), Eating Out (`eating_out`), Convenience Store (`convenience_store`), Public Transport (`public_transport`), Travel (`travel`), Subscriptions (`subscriptions`), Shopping (`shopping`), Personal Care (`personal_care`), Beauty (`beauty`), Health (`health`), Entertainment (`entertainment`), Education (`education`), Gifts (`gifts`), Fees & Interest (`fees_interest`), Cash & PayPay (unitemized) (`cash_paypay`) and Other (`other`). For income: Salary (`salary`), Interest (`interest`) and Other income (`other_income`).
+- A **Subcategory** (`id`, `category`, `name`, `essential`) is a finer place inside one Category, with a name unique there in any case. It is Essential or Optional, and it can be renamed or merged, never moved.
+- On each `expense` or `income`, as `money_save_statement` and `money_update_transaction` take them:
+  - `category` must be a Category of its kind, and `subcategory`, if any, a Subcategory in it;
+  - `merchant` is its Merchant;
+  - `essential` is set only when this one Transaction differs from its Subcategory, and `unconfirmed` marks Claude's best guess awaiting the Owner.
+  - A `transfer` has none of these, only `unconfirmed`.
+  - Answers carry `essentialOverride`, and `essential`, what the Transaction counts as: its override, else its Subcategory's mark, else `null`, unmarked, so a missing mark shows rather than being guessed.
+- A **Merchant** (`id`, `name`, `rawTexts`, `category`, `subcategory`) is who a Transaction was with, cleaned up from the raw texts it has been seen as, with what its Transactions usually are. One that sells everything has neither.
+- A **Subscription** (`id`, `merchant`, `amount`, `currency`, `every`: `monthly` or `yearly`, `lastCharged`, `category`, `subcategory`, `essential`, `active`) is a charge that repeats. It is `late` when active and more than a week past its expected charge (a month or a year after `lastCharged`), so the Review can ask whether it was cancelled.
+
 ## Months
 
 A month is **Complete** when every Account tracked in it (from `trackedFrom`, until `closedFrom`) that holds it has Statements reaching its last Day: one covers that Day, or, for a `savings` or `investment` Account, one states a balance on or after it.
@@ -84,12 +97,23 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
 - **`money_get_statement`** (`id`): the Statement with its Transactions. Read-only.
 - **`money_list_statements`** (`account`, `fromMonth` and `toMonth` optional): the Account's Statements that reach into those months, by period, without their Transactions. Read-only.
 - **`money_delete_statement`** (`id`): deletes the Statement and its Transactions. The Assistant asks the Owner first (ADR 0008).
-- **`money_list_transactions`** (`account`, `fromMonth`, `toMonth`, `kind`, `text`, `limit`, all optional): Transactions by Day, each with its `statement` and `account`. `text` matches the raw text or note, in any case. At most `limit`, 200 unless given, and never more than 1000. Read-only.
-- **`money_update_transaction`** (`id`, `note`, `otherAccount`): changes the fields given, and answers the Transaction. `otherAccount` is for a `transfer` only, and empty clears it.
+- **`money_list_transactions`** (`account`, `fromMonth`, `toMonth`, `kind`, `category`, `subcategory`, `merchant`, `unconfirmed`, `text`, `limit`, all optional): Transactions by Day, each with its `statement` and `account`. `text` matches the raw text or note, in any case. At most `limit`, 200 unless given, and never more than 1000. Read-only.
+- **`money_update_transaction`** (`id`, `note`, `otherAccount`, `category`, `subcategory`, `merchant`, `essential`, `unconfirmed`, `teachMerchant`): changes the fields given, and answers the Transaction.
+  - `otherAccount` is for a `transfer` only, and empty clears it.
+  - A `category` given without a `subcategory` clears the Subcategory. A `null` `essential` has it follow its Subcategory again.
+  - `teachMerchant` also has its Merchant learn its raw text and usually take its Category and Subcategory: for a correction that should stick. Without it, an exception stays one-off.
+- **`money_list_categories`**: every Category, in order, with its Subcategories. Read-only.
+- **`money_save_subcategory`** (`id` to change one, or `category`, `name` and `essential` for a new one): answers it.
+- **`money_merge_subcategories`** (`from`, `into`): moves every Transaction, Merchant and Subscription of `from` into `into`, and into its Category, then removes `from`. Both must be in Categories of the same kind, so income never becomes spending. The Assistant asks the Owner first.
+- **`money_save_merchant`** (`id` to change one, or `name` for a new one; `rawTexts` added, `category`, `subcategory`): answers it. As for Subscriptions and Transactions, a `category` given without a `subcategory` clears the Subcategory.
+- **`money_find_merchant`** (`rawText`): the Merchant seen as it exactly, or else named it in any case; a Tool error when there is none. Read-only.
+- **`money_list_merchants`**: every Merchant, by name. Read-only.
+- **`money_save_subscription`** (`id` to change one, or `merchant`, `amount`, `currency`, `every`, `lastCharged` and `essential` for a new one; `category`, `subcategory`, `active`): answers it, with `late`.
+- **`money_list_subscriptions`**: every Subscription, active ones first, then by last charge, each with `late`. Read-only.
 - **`money_get_month`** (`month`): `complete`, and `missing`, the Accounts the month still waits for, and `late`, those that don't hold the month and haven't reached its end, each with its `id` and `name`. Read-only.
 
 Something sent wrong is a Tool error saying what, and nothing changes.
 
 ## Database
 
-The `money` database holds `settings`, one document; `accounts`; and `statements`, each with its Transactions, with a unique index on Account and period and an index on its Transactions' IDs.
+The `money` database holds `settings`, one document; `accounts`; `statements`, each with its Transactions, with a unique index on Account and period and an index on its Transactions' IDs; `subcategories`; `merchants`, with an index on their raw texts; and `subscriptions`.
