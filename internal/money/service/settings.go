@@ -136,11 +136,18 @@ func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.R
 func (s *SettingsService) checkReminders(ctx context.Context, given []model.ReminderGroupJSON) ([]model.ReminderGroup, error) {
 	groups := make([]model.ReminderGroup, len(given))
 	seen := map[string]string{}
+	names := map[string]bool{}
 	for i, g := range given {
 		name := strings.TrimSpace(g.Name)
 		if name == "" {
 			return nil, utils.Refusal{Message: fmt.Sprintf("reminders[%d] needs a name", i)}
 		}
+		// A reminder's Notification is named after it, so two of one name
+		// would let only one through.
+		if names[strings.ToLower(name)] {
+			return nil, utils.Refusal{Message: fmt.Sprintf("%q is used twice: give each reminder its own name", name)}
+		}
+		names[strings.ToLower(name)] = true
 		if g.Day < 1 || g.Day > 28 {
 			return nil, utils.Refusal{Message: fmt.Sprintf("%s's day must be 1 to 28, so that every month has it", name)}
 		}

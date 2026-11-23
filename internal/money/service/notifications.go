@@ -68,11 +68,13 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 		}
 	}
 	for m := from; m < thisMonth; m = utils.AddMonths(m, 1) {
-		asked, err := s.reviews.Asked(ctx, m)
+		// Asked before today: done. Asked today: asked again, in case the
+		// tick is being retried, as Core sends each Notification ID once.
+		askedOn, err := s.reviews.Asked(ctx, m)
 		if err != nil {
 			return nil, err
 		}
-		if asked {
+		if askedOn != "" && askedOn != today {
 			continue
 		}
 		month, err := s.statements.Month(ctx, m)
@@ -82,13 +84,13 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 		if !month.Complete || !tracked(accounts, m) {
 			continue
 		}
-		if err := s.reviews.Record(ctx, m); err != nil {
+		if err := s.reviews.Record(ctx, m, today); err != nil {
 			return nil, err
 		}
 		due = append(due, coremodel.Notification{
 			ID:    coremodel.NotificationID(notificationArea, "monthly-review", coremodel.Day(m+"-01")),
 			Title: "📊 Monthly Review",
-			Body:  fmt.Sprintf("Every Statement of %s is in: write its Monthly Review.", monthName(m)),
+			Body:  fmt.Sprintf("%s is Complete: write its Monthly Review.", monthName(m)),
 			Asks:  true,
 		})
 	}
