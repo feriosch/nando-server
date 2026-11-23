@@ -20,6 +20,7 @@ type Databases struct {
 	Japanese *mongo.Database `container:"name"`
 	Career   *mongo.Database `container:"name"`
 	Travel   *mongo.Database `container:"name"`
+	Money    *mongo.Database `container:"name"`
 }
 
 // RegisterDatabases connects to the MongoDB at uri and binds singletons in c:
@@ -42,7 +43,7 @@ func RegisterDatabases(ctx context.Context, c container.Container, uri string) e
 		return err
 	}
 
-	for name, database := range map[string]string{"Core": "core", "Calories": "calories", "Japanese": "japanese", "Career": "career", "Travel": "travel"} {
+	for name, database := range map[string]string{"Core": "core", "Calories": "calories", "Japanese": "japanese", "Career": "career", "Travel": "travel", "Money": "money"} {
 		err := c.NamedSingleton(name, func(client *mongo.Client) *mongo.Database {
 			return client.Database(database)
 		})

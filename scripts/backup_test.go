@@ -28,7 +28,7 @@ import (
 const uriInContainer = "mongodb://localhost:27017"
 
 // nandoDatabases are the databases backup.sh dumps: Core and every Module.
-var nandoDatabases = []string{"core", "calories", "japanese", "career", "travel"}
+var nandoDatabases = []string{"core", "calories", "japanese", "career", "travel", "money"}
 
 // restoreMarker precedes the README's restore block.
 const restoreMarker = "<!-- restore: scripts/backup_test.go runs the block below -->"

@@ -1,12 +1,12 @@
 #!/bin/sh
-# Writes a backup of Nando's databases (core, calories, japanese, career and travel) at
+# Writes a backup of Nando's databases (core, calories, japanese, career, travel and money) at
 # $MONGO_URI to the path given: a tar of mongodump's folder, one gzipped BSON
 # file per collection. Restore: see README's Backups section.
 set -eu
 out="$(mktemp -d)"
 trap 'rm -rf "$out"' EXIT
 # Core and every Module (internal/server/databases.go): add a new Module here.
-for db in core calories japanese career travel; do
+for db in core calories japanese career travel money; do
 	mongodump --uri "$MONGO_URI" --db "$db" --gzip --out "$out"
 done
 tar -cf "$1" -C "$out" .
