@@ -111,7 +111,7 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
 
 ## Routes
 
-- **`GET /api/money/card`**: the Home Card, for the latest Complete month, never the one under way, since Statements arrive after a month ends. It has `month`; `spending` (`total`, `average3` of up to 3 months before, `essential`, `optional`, `unmarked`); `netWorth` (`total`, and `previous`, the month before's); and `unconfirmed`, how many Transactions of any month are still Unconfirmed. It is `null` before any month is Complete, looking back at most 36 months.
+- **`GET /api/money/card`**: the Home Card, for the latest Complete month, never the one under way, since Statements arrive after a month ends. It has `month`; `spending` (`total`, `average3` of up to 3 months before, `essential`, `optional`, `unmarked`); `netWorth` (`total`; `previous`, the month before's; and `missing`, each `id` and `name` of the Accounts with no balance near the month's end, left out of `total`); and `unconfirmed`, how many Transactions of any month are still Unconfirmed. It is `null` before any month is Complete, looking back at most 36 months.
 - **`GET /api/money/settings`**: the settings, for the Settings Section, read-only. It has `askAbove`, `reminderTime`, and each reminder's `name`, `day` and Accounts by name.
 
 ## Tools

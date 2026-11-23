@@ -109,6 +109,9 @@ type CardJSON struct {
 	NetWorth struct {
 		Total    int64  `json:"total"`
 		Previous *int64 `json:"previous"`
+		// Missing names the Accounts with no balance near the month's end,
+		// left out of Total.
+		Missing []AccountRefJSON `json:"missing"`
 	} `json:"netWorth"`
 	// Unconfirmed counts the Transactions of every month still Unconfirmed.
 	Unconfirmed int `json:"unconfirmed"`
