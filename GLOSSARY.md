@@ -321,7 +321,7 @@ The one exchange rate between yen and pesos that Nando uses for a month: the mon
 _Avoid_: Exchange, FX, conversion
 
 **Complete**:
-A month for which every Account has a Statement covering its last day. A Transaction that appears late, on the next Statement, still joins its own month.
+A month for which every Account has a Statement covering its last day, except an Account set not to hold the month back, such as a card that only pays the rent and closes mid-month. A Transaction that appears late, on the next Statement, still joins its own month.
 _Avoid_: Closed, finished, done, reconciled
 
 **Statement Reminder**:

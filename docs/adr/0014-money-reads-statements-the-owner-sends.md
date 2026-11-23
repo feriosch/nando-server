@@ -16,6 +16,7 @@ The Owner keeps money in Japan and Mexico: a bank account in each, a savings pot
   - A savings or investment Account's growth is its **Return**: its balance, less last month's, less what was Transferred in. It is neither Income nor saving, so the saving rate counts only what the Owner saved.
 - **A Transaction counts in the month of its purchase date**, not the month it was billed. The cards close on different days, and spending trends are about when the Owner chose to spend.
   - A month is **Complete** once every Account has a Statement covering its last day.
+  - **An Account can be set not to hold a month back.** This is for the card that only pays the rent: it closes on the 27th, so the Statement covering a month's last days comes almost a month later. Its charge is the same every month, so waiting for it would delay every Monthly Review by about two weeks for nothing.
   - A Transaction that appears late, on the next Statement, joins its own month, and the next Monthly Review says so.
 - **A Statement is one Account and one period.**
   - Nando keeps the total or closing balance the Statement states, to check its Transactions against.
