@@ -52,6 +52,12 @@ type nando struct {
 
 func newNando(t *testing.T) *nando {
 	t.Helper()
+	return newNandoWith(t, nil)
+}
+
+// newNandoWith is newNando with Money's Config changed by change, if not nil.
+func newNandoWith(t *testing.T, change func(*money.Config)) *nando {
+	t.Helper()
 	client, err := mongo.Connect(options.Client().ApplyURI(testmongo.URI(t)))
 	if err != nil {
 		t.Fatalf("connect MongoDB: %v", err)
@@ -73,7 +79,11 @@ func newNando(t *testing.T) *nando {
 	if err != nil {
 		t.Fatalf("core.New: %v", err)
 	}
-	m, err := money.NewMoneyModule(context.Background(), client.Database("money"), c.Service(), money.Config{})
+	cfg := money.Config{}
+	if change != nil {
+		change(&cfg)
+	}
+	m, err := money.NewMoneyModule(context.Background(), client.Database("money"), c.Service(), cfg)
 	if err != nil {
 		t.Fatalf("NewMoneyModule: %v", err)
 	}
@@ -103,7 +113,13 @@ type browser struct {
 // enrolled a Passkey and has a Session, its clock set to today.
 func signedInBrowser(t *testing.T) (*nando, *browser) {
 	t.Helper()
-	n := newNando(t)
+	return signedInBrowserWith(t, nil)
+}
+
+// signedInBrowserWith is signedInBrowser over newNandoWith(t, change).
+func signedInBrowserWith(t *testing.T, change func(*money.Config)) (*nando, *browser) {
+	t.Helper()
+	n := newNandoWith(t, change)
 	phone := &browser{nando: n, passkey: testpasskey.New()}
 	code, err := n.core.IssueEnrollmentCode(context.Background())
 	if err != nil {

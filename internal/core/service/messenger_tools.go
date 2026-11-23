@@ -201,6 +201,35 @@ func (s *MessengerService) file(ctx context.Context, assistant, id, pages, lines
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get the file from Telegram just now, try once more (%w)", err)
 	}
+	return readFile(ctx, data, pages, lines)
+}
+
+// Download downloads the file or photo with id that the Owner sent
+// assistant's bot, from Telegram, for a Module: model.ErrFileGone when
+// Telegram doesn't have it.
+func (s *MessengerService) Download(ctx context.Context, assistant, id string) ([]byte, error) {
+	token, ok := s.bot(assistant)
+	if !ok {
+		return nil, fmt.Errorf("there is no Assistant %q with a bot", assistant)
+	}
+	if strings.TrimSpace(id) == "" {
+		return nil, errors.New("id is empty")
+	}
+	return s.telegram.download(ctx, token, id)
+}
+
+// ReadFile answers data as messenger_get_file does, for a Module: an image
+// for an image, else a PDF's pages or a CSV's lines.
+func (s *MessengerService) ReadFile(ctx context.Context, data []byte, pages, lines string) (any, error) {
+	if mimeType := http.DetectContentType(data); strings.HasPrefix(mimeType, "image/") {
+		return model.Image{MIMEType: mimeType, Data: data}, nil
+	}
+	return readFile(ctx, data, pages, lines)
+}
+
+// readFile answers data, a PDF or a CSV, as messenger_get_file does: the
+// pages of a PDF, or the lines of a CSV.
+func readFile(ctx context.Context, data []byte, pages, lines string) (any, error) {
 	if !isPDF(data) {
 		return readCSV(data, lines)
 	}
