@@ -44,13 +44,13 @@ type MessengerConfig struct {
 const updateMemory = 7 * 24 * time.Hour
 
 // cantRead is what a bot answers a message it can't read: a sticker, a
-// voice note or a file other than a PDF or an image. Its caption, if any,
+// voice note or a file other than a PDF, a CSV or an image. Its caption, if any,
 // is dropped with it.
-const cantRead = "I can read text, photos and PDFs, but not other files, stickers or voice notes yet."
+const cantRead = "I can read text, photos, PDFs and CSV files, but not other files, stickers or voice notes yet."
 
-// tooLarge is what a bot answers a PDF over maxFileBytes, or an image file
-// over maxImageBytes.
-const tooLarge = "That file is too large: I can read PDFs of up to 10 MB and images of up to 5 MB."
+// tooLarge is what a bot answers a PDF or CSV over maxFileBytes, or an
+// image file over maxImageBytes.
+const tooLarge = "That file is too large: I can read PDFs and CSV files of up to 10 MB, and images of up to 5 MB."
 
 // MessengerService receives the Owner's messages from Telegram and keeps them
 // in Talks.
@@ -206,8 +206,9 @@ func (u update) content() (text string, photos []model.Photo, files []model.File
 	// poppler then decides whether it really is one.
 	isImage := seeableImages[d.MIMEType]
 	isPDF := d.MIMEType == "application/pdf" || strings.HasSuffix(strings.ToLower(d.FileName), ".pdf")
+	isCSV := csvTypes[d.MIMEType] || strings.HasSuffix(strings.ToLower(d.FileName), ".csv")
 	switch {
-	case !isImage && !isPDF:
+	case !isImage && !isPDF && !isCSV:
 		return "", nil, nil, cantRead
 	case isImage && d.FileSize > maxImageBytes, d.FileSize > maxFileBytes:
 		return "", nil, nil, tooLarge
@@ -230,6 +231,11 @@ const maxImageBytes = 5 << 20
 // seeableImages are the image types Claude can see. Others, such as the HEIC
 // of an iPhone photo shared as a file, are refused like any file.
 var seeableImages = map[string]bool{"image/jpeg": true, "image/png": true, "image/gif": true, "image/webp": true}
+
+// csvTypes are the types a CSV comes as. A CSV sent with another type, such
+// as application/octet-stream or the Excel type Windows gives it (which a
+// binary .xls has too), is known by its .csv name, as a PDF is.
+var csvTypes = map[string]bool{"text/csv": true, "text/comma-separated-values": true}
 
 // maxPhotoSide is the longest side, in pixels, of the photo size Nando keeps:
 // enough to read a sign or a screenshot, at about 1,500 tokens.
