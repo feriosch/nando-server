@@ -86,7 +86,7 @@ A **Fare Check** is one pass in which the Travel Assistant searches for Fares: `
 }
 ```
 
-A **Fare** is one priced round trip found for a Watching Trip and one of its Parties. Fares are kept as long as their Trip.
+A **Fare** is one priced round trip found for a Watching Trip and one of its Parties. Fares are kept as long as their Trip. Each must fit its Trip when recorded (below). After the Trip changes, the Fares that no longer fit it stay stored, but `travel_fare_stats`, the Trip's page, the list of Trips and the Home Cards leave them out, until the Trip changes back.
 
 ```json
 {
@@ -114,6 +114,7 @@ A **Fare** is one priced round trip found for a Watching Trip and one of its Par
 
 - `source`: `kiwi`, `expedia`, `skiplagged`, `slicktrip`, `price_alert` or `other`.
 - `departDate`, `returnDate`: the departure must fall in one of the Trip's windows, the stay (`nights`, which Nando works out) in its range, and the whole trip clear of its `avoid` ranges.
+- `outbound`, `inbound`: when they list flights, out from one of the Trip's `origins` to one of its `destinations`, and back the other way.
 - `stops`: each way, at most the Trip's `maxStops`. `cabin`: the Trip's or a better one.
 - `separateTickets`: only on a Trip that welcomes them.
 - `bagsIncluded`: whether `total` includes the Trip's checked bags, which not every source prices.
@@ -251,7 +252,7 @@ Each Tool answers JSON. A Tool refuses what it can't do with a message saying wh
 | `travel_record_fares` | `checkId`, `fares` | Records each Fare sent (without the fields Nando sets) in that unfinished Fare Check, or refuses it with why. Answers `{recorded: [{index, id}], refused: [{index, reason}]}`, by place in the list sent |
 | `travel_finish_fare_check` | `id`; `sources`, `summary`, `errors` | Finishes the Fare Check, once. Answers it |
 | `travel_get_price_verdict` | `tripId`, `party`, `departDate`, `returnDate` | Answers today's Price Verdict on those dates, fetching it from SerpApi when there is none yet |
-| `travel_record_fare_alert` | `fareId`, `reasons`; `urgent` | Records a Fare Alert the Travel Assistant just sent about that Fare. Answers it |
+| `travel_record_fare_alert` | `fareId`, `reasons`; `urgent` | Records a Fare Alert the Travel Assistant just sent about that Fare, refusing one for a Fare that no longer fits its Trip. Answers it |
 | `travel_set_target_fare` | `tripId`, `party`, `perPerson` (or `null`) | Sets that Party's Target Fare from today, once the Owner agreed it, or clears it. Answers the Trip |
 | `travel_set_trip_status` | `id`, `status` | Sets the Trip to `watching`, `booked` or `dropped`, from today, changing nothing else. A Trip is watched again only while one of its windows isn't over. The Travel Assistant asks the Owner before dropping one. Answers the Trip |
 

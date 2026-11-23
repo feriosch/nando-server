@@ -235,30 +235,8 @@ func fareFrom(j model.FareJSON, trip model.Trip, found bool) (model.Fare, string
 		return model.Fare{}, err.Error()
 	}
 	depart, back := coremodel.Day(j.DepartDate), coremodel.Day(j.ReturnDate)
-	nights := nightsBetween(depart, back)
-	if nights < trip.Nights.Min || nights > trip.Nights.Max {
-		return model.Fare{}, fmt.Sprintf("%d nights is outside the Trip's %d to %d", nights, trip.Nights.Min, trip.Nights.Max)
-	}
-	if !slices.ContainsFunc(trip.Windows, func(w model.Window) bool { return w.From <= depart && depart <= w.To }) {
-		return model.Fare{}, "it departs on " + j.DepartDate + ", outside every window of the Trip"
-	}
-	for _, a := range trip.Avoid {
-		if a.From <= back && depart <= a.To {
-			return model.Fare{}, fmt.Sprintf("it touches %s to %s, which the Trip avoids", a.From, a.To)
-		}
-	}
-	if j.SeparateTickets && !trip.SeparateTickets {
-		return model.Fare{}, "the Trip doesn't welcome Fares on Separate Tickets"
-	}
-	if j.Outbound.Stops > trip.MaxStops || j.Inbound.Stops > trip.MaxStops {
-		return model.Fare{}, fmt.Sprintf("it makes more stops each way than the Trip's %d", trip.MaxStops)
-	}
-	cabin := slices.Index(cabins, model.Cabin(j.Cabin))
-	if cabin < 0 {
+	if !slices.Contains(cabins, model.Cabin(j.Cabin)) {
 		return model.Fare{}, "cabin must be economy, premium_economy, business or first"
-	}
-	if cabin < slices.Index(cabins, trip.Cabin) {
-		return model.Fare{}, "it is in " + j.Cabin + ", below the Trip's " + string(trip.Cabin)
 	}
 	if j.Total <= 0 {
 		return model.Fare{}, "total must be the Fare's price in JPY for the whole Party, more than 0"
@@ -278,7 +256,7 @@ func fareFrom(j model.FareJSON, trip model.Trip, found bool) (model.Fare, string
 	adults := trip.Parties[i].Adults
 	fare := model.Fare{
 		TripID: trip.ID, Party: party, Source: model.FareSource(j.Source),
-		DepartDate: depart, ReturnDate: back, Nights: nights,
+		DepartDate: depart, ReturnDate: back, Nights: nightsBetween(depart, back),
 		Outbound: legFrom(j.Outbound), Inbound: legFrom(j.Inbound),
 		SeparateTickets: j.SeparateTickets, Cabin: model.Cabin(j.Cabin), BagsIncluded: j.BagsIncluded,
 		Currency: "JPY", Total: j.Total, PerPerson: (j.Total + adults/2) / adults,
@@ -287,7 +265,64 @@ func fareFrom(j model.FareJSON, trip model.Trip, found bool) (model.Fare, string
 	if j.LeaveNeeded != nil {
 		fare.LeaveNeeded = &model.LeaveNeeded{Days: j.LeaveNeeded.Days, WithRemoteDays: j.LeaveNeeded.WithRemoteDays}
 	}
-	return fare, ""
+	return fare, fitsTrip(fare, trip)
+}
+
+// fitsTrip says why fare doesn't fit trip as it is now, or "" when it does:
+// one of its Parties, a departure in one of its windows, nights in its range,
+// clear of its avoid ranges, flying from and to its airports, its stops and
+// cabin or better, and Separate Tickets only when welcome. Recording refuses
+// a Fare that doesn't fit, and the stats leave out one that no longer does,
+// after the Trip changed.
+func fitsTrip(fare model.Fare, trip model.Trip) string {
+	if !slices.ContainsFunc(trip.Parties, func(p model.Party) bool { return p.Key == fare.Party }) {
+		return fmt.Sprintf("the Trip has no Party %q", fare.Party)
+	}
+	if fare.Nights < trip.Nights.Min || fare.Nights > trip.Nights.Max {
+		return fmt.Sprintf("%d nights is outside the Trip's %d to %d", fare.Nights, trip.Nights.Min, trip.Nights.Max)
+	}
+	if !slices.ContainsFunc(trip.Windows, func(w model.Window) bool { return w.From <= fare.DepartDate && fare.DepartDate <= w.To }) {
+		return "it departs on " + string(fare.DepartDate) + ", outside every window of the Trip"
+	}
+	for _, a := range trip.Avoid {
+		if a.From <= fare.ReturnDate && fare.DepartDate <= a.To {
+			return fmt.Sprintf("it touches %s to %s, which the Trip avoids", a.From, a.To)
+		}
+	}
+	if reason := flies(fare.Outbound, trip.Origins, trip.Destinations, "out"); reason != "" {
+		return reason
+	}
+	if reason := flies(fare.Inbound, trip.Destinations, trip.Origins, "back"); reason != "" {
+		return reason
+	}
+	if fare.SeparateTickets && !trip.SeparateTickets {
+		return "the Trip doesn't welcome Fares on Separate Tickets"
+	}
+	if fare.Outbound.Stops > trip.MaxStops || fare.Inbound.Stops > trip.MaxStops {
+		return fmt.Sprintf("it makes more stops each way than the Trip's %d", trip.MaxStops)
+	}
+	if slices.Index(cabins, fare.Cabin) < slices.Index(cabins, trip.Cabin) {
+		return "it is in " + string(fare.Cabin) + ", below the Trip's " + string(trip.Cabin)
+	}
+	return ""
+}
+
+// flies says why leg doesn't fly from one of from to one of to, or "" when it
+// does, or has no flights or airport codes to tell by (some sources give
+// none).
+func flies(leg model.Leg, from, to []string, way string) string {
+	if len(leg.Flights) == 0 {
+		return ""
+	}
+	first, last := leg.Flights[0].From, leg.Flights[len(leg.Flights)-1].To
+	if first == "" || last == "" {
+		return ""
+	}
+	if !slices.Contains(from, first) || !slices.Contains(to, last) {
+		return fmt.Sprintf("it flies %s from %s to %s, not between the Trip's %s and %s",
+			way, first, last, strings.Join(from, "/"), strings.Join(to, "/"))
+	}
+	return ""
 }
 
 // cabins are the cabins, cheapest first.
@@ -328,7 +363,7 @@ func (s *FaresService) fareStats(ctx context.Context, arguments json.RawMessage)
 	if !slices.ContainsFunc(trip.Parties, func(p model.Party) bool { return p.Key == party }) {
 		return nil, fmt.Errorf("the Trip has no Party %q", args.Party)
 	}
-	stats, err := s.stats(ctx, trip.ID, party)
+	stats, err := s.stats(ctx, trip, party)
 	if i := slices.IndexFunc(trip.TargetFares, func(t model.TargetFare) bool { return t.Party == party }); i >= 0 {
 		stats.TargetFare = &trip.TargetFares[i].PerPerson
 	}
@@ -362,6 +397,15 @@ func (s *FaresService) recordAlert(ctx context.Context, arguments json.RawMessag
 	}
 	if err != nil {
 		return nil, err
+	}
+	// A Fare the Trip no longer fits, such as one on dates since avoided, is
+	// not worth telling the Owner about.
+	trip, err := s.trips.Find(ctx, fare.TripID)
+	if err != nil {
+		return nil, err
+	}
+	if reason := fitsTrip(fare, trip); reason != "" {
+		return nil, errors.New("the Fare no longer fits its Trip: " + reason)
 	}
 	alert := model.FareAlert{
 		FareID: fare.ID, TripID: fare.TripID, Party: fare.Party,
@@ -434,21 +478,24 @@ const (
 
 // stats is what a Trip's Party's Fares say. Weeks run Monday to Sunday in the
 // Owner Time Zone.
-func (s *FaresService) stats(ctx context.Context, tripID string, party model.PartyKey) (model.FareStatsJSON, error) {
-	fares, loc, now, err := s.faresNow(ctx, tripID, party)
+func (s *FaresService) stats(ctx context.Context, trip model.Trip, party model.PartyKey) (model.FareStatsJSON, error) {
+	fares, loc, now, err := s.faresNow(ctx, trip, party)
 	if err != nil {
 		return model.FareStatsJSON{ByWeek: []model.WeekFareJSON{}, Top: []model.FareJSON{}}, err
 	}
 	return statsOf(fares, loc, now), nil
 }
 
-// faresNow is every Fare of a Trip's Party, cheapest per person first, with
-// the Owner Time Zone and the time now, which is all statsOf needs.
-func (s *FaresService) faresNow(ctx context.Context, tripID string, party model.PartyKey) ([]model.Fare, *time.Location, time.Time, error) {
-	fares, err := s.fares.List(ctx, tripID, party, time.Time{})
+// faresNow is every Fare of a Trip's Party that fits the Trip as it is now,
+// cheapest per person first, with the Owner Time Zone and the time now, which
+// is all statsOf needs. A Fare that no longer fits stays stored, in case the
+// Trip changes back.
+func (s *FaresService) faresNow(ctx context.Context, trip model.Trip, party model.PartyKey) ([]model.Fare, *time.Location, time.Time, error) {
+	fares, err := s.fares.List(ctx, trip.ID, party, time.Time{})
 	if err != nil {
 		return nil, nil, time.Time{}, err
 	}
+	fares = slices.DeleteFunc(fares, func(f model.Fare) bool { return fitsTrip(f, trip) != "" })
 	loc, err := s.core.OwnerTimeZone(ctx)
 	if err != nil {
 		return nil, nil, time.Time{}, err
