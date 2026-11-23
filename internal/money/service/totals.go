@@ -66,9 +66,10 @@ func (c *converter) yen(ctx context.Context, currency string, minor int64, month
 type figures struct {
 	spending, income              int64
 	essential, optional, unmarked int64
-	byCategory                    map[string]int64
-	bySubcategory                 map[string]map[string]int64
-	unconfirmed                   model.UnconfirmedJSON
+	// byCategory is spending by Category key, and incomeByCategory income.
+	byCategory, incomeByCategory map[string]int64
+	bySubcategory                map[string]map[string]int64
+	unconfirmed                  model.UnconfirmedJSON
 	// netIn is, by Account, the money Transferred into it, less out of it, in
 	// its own currency: from its own Transfers if it has any, else from
 	// those of other Accounts that name it.
@@ -81,7 +82,7 @@ func (s *TotalsService) figures(ctx context.Context, month string, currencies ma
 	if err != nil {
 		return figures{}, err
 	}
-	f := figures{byCategory: map[string]int64{}, bySubcategory: map[string]map[string]int64{}, netIn: map[string]int64{}}
+	f := figures{byCategory: map[string]int64{}, incomeByCategory: map[string]int64{}, bySubcategory: map[string]map[string]int64{}, netIn: map[string]int64{}}
 	own, counterpart := map[string]int64{}, map[string]int64{}
 	hasOwn := map[string]bool{}
 	for _, t := range found {
@@ -111,7 +112,7 @@ func (s *TotalsService) figures(ctx context.Context, month string, currencies ma
 		}
 		if t.Kind == model.Income {
 			f.income += yen
-			f.byCategory[t.Category] += yen
+			f.incomeByCategory[t.Category] += yen
 			continue
 		}
 		f.spending += yen
@@ -163,8 +164,11 @@ func tracked(accounts []model.Account, month string) bool {
 
 // balance is account's month-end balance in month, in its minor unit, and
 // whether it has one: the balance of its Statement ending nearest the
-// month's last Day, within balanceWithin Days. A card's is what it owes,
-// below 0, from its stated total when no balance is given.
+// month's last Day, within balanceWithin Days. A bank's or card's must end on
+// or before that Day, or its balance has the next month's movements in it; a
+// savings or investment balance, read from a screenshot, may be a few Days
+// later. A card's is what it owes, below 0, from its stated total when no
+// balance is given.
 func (s *TotalsService) balance(ctx context.Context, account model.Account, month string) (int64, bool, error) {
 	last := utils.LastDay(month)
 	near, err := s.statements.ForAccount(ctx, account.ID, utils.AddDays(last, -balanceWithin), utils.AddDays(last, balanceWithin))
@@ -181,7 +185,8 @@ func (s *TotalsService) balance(ctx context.Context, account model.Account, mont
 			continue
 		}
 		distance := dayDistance(st.To, last)
-		if distance > balanceWithin || distance >= bestDistance {
+		balanceOnly := account.Kind == model.KindSavings || account.Kind == model.KindInvestment
+		if distance > balanceWithin || distance >= bestDistance || (st.To > last && !balanceOnly) {
 			continue
 		}
 		best, found, bestDistance = *amount, true, distance
@@ -278,16 +283,20 @@ func (s *TotalsService) MonthTotals(ctx context.Context, month string) (model.Mo
 	}
 	answer.Spending.Previous, answer.Spending.Average3 = compare(before, func(f figures) int64 { return f.spending })
 	answer.Income = model.IncomeJSON{Total: this.income, ByCategory: []model.CategoryTotalJSON{}}
-	for _, c := range append(model.Categories, model.Category{Key: "", Name: "Uncategorized"}) {
+	for _, c := range model.Categories {
+		if total, ok := this.incomeByCategory[c.Key]; ok {
+			answer.Income.ByCategory = append(answer.Income.ByCategory, model.CategoryTotalJSON{Category: c.Key, Name: c.Name, Total: total})
+		}
+	}
+	if total, ok := this.incomeByCategory[""]; ok {
+		answer.Income.ByCategory = append(answer.Income.ByCategory, model.CategoryTotalJSON{Category: "", Name: "Uncategorized", Total: total})
+	}
+	for _, c := range append(model.Categories, model.Category{Key: "", Name: "Uncategorized", Kind: model.Expense}) {
 		total, ok := this.byCategory[c.Key]
-		if !ok {
+		if !ok || c.Kind != model.Expense {
 			continue
 		}
 		ct := model.CategoryTotalJSON{Category: c.Key, Name: c.Name, Total: total}
-		if c.Kind == model.Income {
-			answer.Income.ByCategory = append(answer.Income.ByCategory, ct)
-			continue
-		}
 		ct.Previous, ct.Average3 = compare(before, func(f figures) int64 { return f.byCategory[c.Key] })
 		for sub, subTotal := range this.bySubcategory[c.Key] {
 			ct.Subcategories = append(ct.Subcategories, model.SubcategoryTotalJSON{Subcategory: sub, Name: names[sub], Total: subTotal})
