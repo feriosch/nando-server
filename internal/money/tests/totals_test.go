@@ -213,3 +213,43 @@ func TestSpendingComparesWithTheMonthBeforeAndTheThreeBefore(t *testing.T) {
 		t.Errorf("money_get_totals = %+v; want August to October", months)
 	}
 }
+
+func TestIncomeNeverCountsAsSpendingByCategory(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	bank := saveAccount(t, session, map[string]any{"name": "Bank", "kind": "bank", "currency": "JPY", "trackedFrom": "2026-10"})
+	saveStatement(t, session, map[string]any{
+		"account": bank.ID, "from": "2026-10-01", "to": "2026-10-31", "source": "csv",
+		"transactions": []any{
+			map[string]any{"kind": "income", "day": "2026-10-25", "amount": 300000, "rawText": "PAY", "category": "salary"},
+			map[string]any{"kind": "income", "day": "2026-10-26", "amount": 5000, "rawText": "SOMETHING IN"},
+			map[string]any{"kind": "expense", "day": "2026-10-27", "amount": 700, "rawText": "SOMETHING OUT"},
+		},
+	})
+
+	got := callTool[totalsJSON](t, session, "money_get_month_totals", map[string]any{"month": "2026-10"})
+	for _, c := range got.Spending.ByCategory {
+		if c.Category == "" && c.Total != 700 {
+			t.Errorf("spending's uncategorized = %d; want 700, without the income", c.Total)
+		}
+	}
+	months := callTool[[]struct {
+		ByCategory map[string]int64 `json:"byCategory"`
+	}](t, session, "money_get_totals", map[string]any{"fromMonth": "2026-10", "toMonth": "2026-10"})
+	if _, ok := months[0].ByCategory["salary"]; ok || months[0].ByCategory[""] != 700 {
+		t.Errorf("money_get_totals spending by Category = %v; want no income in it", months[0].ByCategory)
+	}
+}
+
+func TestABanksMonthEndBalanceNeverComesFromTheMonthAfter(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	bank := saveAccount(t, session, map[string]any{"name": "Bank", "kind": "bank", "currency": "JPY", "trackedFrom": "2026-10"})
+	saveStatement(t, session, map[string]any{"account": bank.ID, "from": "2026-11-01", "to": "2026-11-07", "source": "csv", "closingBalance": 50000})
+
+	got := callTool[totalsJSON](t, session, "money_get_month_totals", map[string]any{"month": "2026-10"})
+
+	if len(got.NetWorth.Accounts) != 0 || got.NetWorth.Total != 0 {
+		t.Errorf("October's net worth = %+v; want no balance, not November's", got.NetWorth)
+	}
+}

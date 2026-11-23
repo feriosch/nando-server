@@ -104,7 +104,7 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
 - A month's **totals** are in yen, each amount turned at that month's Rate (only when a peso amount needs it):
   - **spending**: the expenses, refunds lowering their Category, by Category and Subcategory, and Essential against Optional against unmarked. Each total is compared with the month before and the average of up to 3 months before, counting only months in which an Account is tracked.
   - **income**: by Category. Transfers are in neither.
-  - **net worth**: each Account's month-end balance, the closing balance of its Statement ending nearest the month's last Day, within 10 Days either side. A card's is what it owes, below 0, from its stated total when it states no balance. `missing` names the Accounts with none, and `previous` is the month before's net worth.
+  - **net worth**: each Account's month-end balance, the closing balance of its Statement ending nearest the month's last Day, within 10 Days: on or before it for a bank or card, whose later balance has the next month's movements in it, and on either side for a savings or investment Account's screenshot. A card's is what it owes, below 0, from its stated total when it states no balance. `missing` names the Accounts with none, and `previous` is the month before's net worth.
   - **returns**: for each savings and investment Account with a balance this month and last, its growth less what was Transferred in that month. Those are its own Transfers if it has any, else other Accounts' that name it.
   - **savingRate**: (income − spending) ÷ income, to 4 decimals, without Return; `null` with no income.
   - **unconfirmed**: how many Transactions are Unconfirmed, and their amounts in yen.
@@ -135,7 +135,7 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
 - **`money_list_subscriptions`**: every Subscription, active ones first, then by last charge, each with `late`. Read-only.
 - **`money_get_rate`** (`month`): the month's Rate, as above. Read-only.
 - **`money_get_month_totals`** (`month`): the month's totals, as above, with `complete`, `missing` (the Accounts it still waits for) and the `rate` used. Read-only.
-- **`money_get_totals`** (`fromMonth`, `toMonth`, at most 36 months): each month's `spending` and `income` in yen, and spending `byCategory` key. Read-only.
+- **`money_get_totals`** (`fromMonth`, `toMonth`, at most 36 months): each month's `spending` and `income` in yen, and spending `byCategory` key (never income, `""` for what has no Category). Read-only.
 - **`money_get_month`** (`month`): `complete`, and `missing`, the Accounts the month still waits for, and `late`, those that don't hold the month and haven't reached its end, each with its `id` and `name`. Read-only.
 
 Something sent wrong is a Tool error saying what, and nothing changes.
