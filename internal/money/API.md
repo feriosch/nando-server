@@ -16,11 +16,80 @@ One document:
 
 - `askAbove`: per currency, the whole amount above which a Transaction Claude can't tell is asked about. Below it, Claude's best guess is kept, Unconfirmed (ADR 0014). ¥3,000 and MX$300 until changed. Each must be above 0, and only the Owner's currencies, JPY and MXN, are taken.
 
+## Accounts
+
+An Account is one place the Owner's money sits or is spent from, in one currency:
+
+```json
+{
+  "id": "6750…",
+  "name": "Card",
+  "kind": "card",
+  "currency": "MXN",
+  "institution": "Bank A",
+  "last4": "1234",
+  "note": "PDF statements, closes at month end",
+  "trackedFrom": "2026-01",
+  "closedFrom": "",
+  "holdsMonth": true
+}
+```
+
+- `kind`: `bank`, `card`, `savings` or `investment`. `currency`: `JPY` or `MXN`, which can't change once the Account has Statements.
+- `last4`: exactly 4 digits or empty. Never a full card or account number (ADR 0014).
+- `trackedFrom` and `closedFrom`: the first month tracked, and the first month no longer tracked (empty while open), as `YYYY-MM`. An Account is never deleted, only closed.
+- `holdsMonth`: whether a month waits for its Statements to be Complete. True unless it is a card whose charge never changes and that closes mid-month, such as one that only pays the rent.
+
+## Statements and Transactions
+
+A Statement is one Account and one period (`from`, `to`, Days as `YYYY-MM-DD`), with its Transactions in it:
+
+```json
+{
+  "id": "6751…",
+  "account": "6750…",
+  "from": "2026-10-01",
+  "to": "2026-10-31",
+  "source": "pdf",
+  "fileIds": ["…"],
+  "total": 1234.5,
+  "closingBalance": null,
+  "transactions": [
+    {"id": "6752…", "kind": "expense", "day": "2026-10-03", "amount": 199.9, "rawText": "SHOP TEST", "note": ""},
+    {"id": "6753…", "kind": "transfer", "day": "2026-10-27", "amount": 80000, "direction": "out", "rawText": "CARD", "note": "", "otherAccount": "6754…"}
+  ]
+}
+```
+
+- `source`: `csv`, `pdf` or `screenshots`. `fileIds`: the Telegram files it was read from.
+- `total` (such as a card's billed amount) and `closingBalance` (the balance at `to`), each `null` when it states none. A closing balance at a month's last Day is the Account's month-end balance.
+- Amounts are in the Account's currency: whole yen, or pesos to centavos. Nando keeps them in yen and centavos, so nothing is rounded.
+- A Transaction's `kind` is `expense`, `income` or `transfer`. Its `day` is the purchase date, which decides its month, whatever month it was billed in. Its `amount` is positive, but negative for a refund, an `expense` coming back. A `transfer` has a `direction`, `in` to or `out` of the Account, and its `otherAccount` when known: never counted as spending or income.
+- **Sending it again replaces it**: the same Account and period replaces the earlier Statement and all its Transactions, in one write.
+- **Statements of one Account never overlap**: a period that overlaps another, without being the same, is refused, naming the other, so the Assistant asks the Owner which to keep.
+- **A late Transaction**, dated before the period (it posted on a later bill), joins its own month. One already on another Statement of the Account (the same day, amount and raw text) isn't added twice. A Transaction dated after the period is refused.
+- Money has **no Editable Window**: any period can be saved, replaced or deleted (ADR 0014).
+
+## Months
+
+A month is **Complete** when every Account tracked in it (from `trackedFrom`, until `closedFrom`) that holds it has Statements reaching its last Day: one covers that Day, or, for a `savings` or `investment` Account, one states a balance on or after it.
+
 ## Tools
 
 - **`money_get_settings`**: the settings, as above. Read-only.
 - **`money_save_settings`** (`askAbove`): changes only the currencies given, such as `{"askAbove": {"JPY": 5000}}`, and answers the settings. A currency other than JPY or MXN, an amount of 0 or less, or no `askAbove` is refused, and nothing changes.
+- **`money_save_account`** (`id` to change one, or `name`, `kind`, `currency` and `trackedFrom` for a new one; `institution`, `last4`, `note`, `closedFrom`, `holdsMonth` optional): answers the Account. Only the fields sent change.
+- **`money_list_accounts`**: every Account, open and closed, by name. Read-only.
+- **`money_save_statement`** (`account`, `from`, `to`, `source`, `fileIds`, `total`, `closingBalance`, `transactions`): saves the Statement as above, all at once or not at all. It answers the Statement, with `late`, how many Transactions were dated before the period, and `skipped`, how many of those another Statement already had.
+- **`money_get_statement`** (`id`): the Statement with its Transactions. Read-only.
+- **`money_list_statements`** (`account`, `fromMonth` and `toMonth` optional): the Account's Statements that reach into those months, by period, without their Transactions. Read-only.
+- **`money_delete_statement`** (`id`): deletes the Statement and its Transactions. The Assistant asks the Owner first (ADR 0008).
+- **`money_list_transactions`** (`account`, `fromMonth`, `toMonth`, `kind`, `text`, `limit`, all optional): Transactions by Day, each with its `statement` and `account`. `text` matches the raw text or note, in any case. At most `limit`, 200 unless given, and never more than 1000. Read-only.
+- **`money_update_transaction`** (`id`, `note`, `otherAccount`): changes the fields given, and answers the Transaction. `otherAccount` is for a `transfer` only, and empty clears it.
+- **`money_get_month`** (`month`): `complete`, and `missing`, the Accounts the month still waits for, and `late`, those that don't hold the month and haven't reached its end, each with its `id` and `name`. Read-only.
+
+Something sent wrong is a Tool error saying what, and nothing changes.
 
 ## Database
 
-The `money` database holds `settings`, one document.
+The `money` database holds `settings`, one document; `accounts`; and `statements`, each with its Transactions, with a unique index on Account and period and an index on its Transactions' IDs.
