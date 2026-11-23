@@ -25,6 +25,7 @@ import (
 	"github.com/feriosch/nando-server/internal/career"
 	"github.com/feriosch/nando-server/internal/core"
 	"github.com/feriosch/nando-server/internal/japanese"
+	"github.com/feriosch/nando-server/internal/money"
 	"github.com/feriosch/nando-server/internal/server"
 	"github.com/feriosch/nando-server/internal/travel"
 )
@@ -105,7 +106,7 @@ func loadConfig() (config, error) {
 
 // assistants is every Assistant's name: the Core Assistant's and each
 // Module's.
-var assistants = []string{"core", "japanese", "career", "calories", "travel"}
+var assistants = []string{"core", "japanese", "career", "calories", "travel", "money"}
 
 // loadMessenger reads the Messenger's settings into m.
 func loadMessenger(m *core.MessengerConfig) error {
@@ -267,6 +268,15 @@ func run() error {
 	nandoCore.AddToolProvider(travelModule.ToolProvider())
 	nandoCore.AddNotificationProvider(travelModule.NotificationProvider())
 	nandoCore.AddAssistant(travelModule.Assistant())
+	moneyModule, err := money.NewMoneyModule(connectCtx, dbs.Money, nandoCore.Service(), money.Config{
+		// Without it, Statements are kept without their files, as locally (ADR 0014).
+		StatementsBucket: strings.TrimSpace(os.Getenv("MONEY_STATEMENTS_BUCKET")),
+	})
+	if err != nil {
+		return err
+	}
+	nandoCore.AddToolProvider(moneyModule.ToolProvider())
+	nandoCore.AddAssistant(moneyModule.Assistant())
 
 	switch args := os.Args[1:]; {
 	case len(args) == 1 && args[0] == "enroll":
@@ -296,7 +306,7 @@ func run() error {
 		Handler: server.New(server.Config{
 			AllowedOrigins: cfg.allowedOrigins,
 			Core:           nandoCore,
-			Modules:        []server.Module{caloriesModule, japaneseModule, careerModule, travelModule},
+			Modules:        []server.Module{caloriesModule, japaneseModule, careerModule, travelModule, moneyModule},
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
