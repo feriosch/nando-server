@@ -91,3 +91,22 @@ func TestTheTravelAssistantRunsFareChecksAndNeverBooks(t *testing.T) {
 		}
 	}
 }
+
+// TestTheTravelAssistantsRulesAreTheOnesItsFirstFareCheckSettled checks the
+// skill holds what #180's first Fare Check showed was missing (#199).
+func TestTheTravelAssistantsRulesAreTheOnesItsFirstFareCheckSettled(t *testing.T) {
+	text := readAssistantSkill(t)
+	for _, want := range []string{
+		"land back home", // Leave Needed counts to the Day the Companion lands
+		"`days − min(remoteDaysAbroad, extra nights)`", // the remote-days rule
+		"recurring yearly observance",                  // which doesn't block dates
+		"free or transparent",                          // nor does an event marked so
+		"7 days of Fares",                              // before lowest_seen
+		"## Asked checks",                              // what an asked check covers
+		"leave bags out",                               // Google's verdicts and SlickTrip's prices
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the Travel Assistant's skill never says %s", want)
+		}
+	}
+}
