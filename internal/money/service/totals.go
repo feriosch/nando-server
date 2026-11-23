@@ -34,107 +34,12 @@ const balanceWithin = 10
 // maxTotalsMonths is the most months money_get_totals answers at once.
 const maxTotalsMonths = 36
 
-// CategoryTotalJSON is a Category's total in yen, with its Subcategories'
-// and, for spending, the month before's and the average of the 3 before.
-type CategoryTotalJSON struct {
-	Category      string                 `json:"category"`
-	Name          string                 `json:"name"`
-	Total         int64                  `json:"total"`
-	Previous      *int64                 `json:"previous,omitempty"`
-	Average3      *int64                 `json:"average3,omitempty"`
-	Subcategories []SubcategoryTotalJSON `json:"bySubcategory,omitempty"`
-}
-
-// SubcategoryTotalJSON is a Subcategory's total in yen; an empty
-// subcategory is what has none.
-type SubcategoryTotalJSON struct {
-	Subcategory string `json:"subcategory"`
-	Name        string `json:"name"`
-	Total       int64  `json:"total"`
-}
-
-// SpendingJSON is a month's spending in yen.
-type SpendingJSON struct {
-	Total      int64               `json:"total"`
-	Previous   *int64              `json:"previous"`
-	Average3   *int64              `json:"average3"`
-	Essential  int64               `json:"essential"`
-	Optional   int64               `json:"optional"`
-	Unmarked   int64               `json:"unmarked"`
-	ByCategory []CategoryTotalJSON `json:"byCategory"`
-}
-
-// IncomeJSON is a month's income in yen.
-type IncomeJSON struct {
-	Total      int64               `json:"total"`
-	ByCategory []CategoryTotalJSON `json:"byCategory"`
-}
-
-// BalanceJSON is an Account's month-end balance: in its own currency, and
-// in yen at the month-end Rate. A card's is what it owes, below 0.
-type BalanceJSON struct {
-	Account  string  `json:"account"`
-	Name     string  `json:"name"`
-	Currency string  `json:"currency"`
-	Balance  float64 `json:"balance"`
-	Yen      int64   `json:"yen"`
-}
-
-// NetWorthJSON is the Accounts' month-end balances in yen, and their total
-// against the month before's; Missing names the Accounts with no balance
-// near the month's end.
-type NetWorthJSON struct {
-	Total    int64            `json:"total"`
-	Previous *int64           `json:"previous"`
-	Accounts []BalanceJSON    `json:"accounts"`
-	Missing  []AccountRefJSON `json:"missing"`
-}
-
-// ReturnJSON is how much a savings or investment Account grew in a month,
-// less what was Transferred in, in yen.
-type ReturnJSON struct {
-	Account string `json:"account"`
-	Name    string `json:"name"`
-	Yen     int64  `json:"yen"`
-}
-
-// UnconfirmedJSON counts a month's Unconfirmed Transactions, and their
-// amounts in yen.
-type UnconfirmedJSON struct {
-	Count int   `json:"count"`
-	Yen   int64 `json:"yen"`
-}
-
-// MonthTotalsJSON is what money_get_month_totals answers.
-type MonthTotalsJSON struct {
-	Month    string           `json:"month"`
-	Complete bool             `json:"complete"`
-	Missing  []AccountRefJSON `json:"missing"`
-	// Rate is the month's Rate, when a peso amount was turned into yen.
-	Rate        *RateJSON       `json:"rate"`
-	Spending    SpendingJSON    `json:"spending"`
-	Income      IncomeJSON      `json:"income"`
-	NetWorth    NetWorthJSON    `json:"netWorth"`
-	Returns     []ReturnJSON    `json:"returns"`
-	SavingRate  *float64        `json:"savingRate"`
-	Unconfirmed UnconfirmedJSON `json:"unconfirmed"`
-}
-
-// MonthSumJSON is one month's spending and income in yen, as
-// money_get_totals answers it.
-type MonthSumJSON struct {
-	Month      string           `json:"month"`
-	Spending   int64            `json:"spending"`
-	Income     int64            `json:"income"`
-	ByCategory map[string]int64 `json:"byCategory"`
-}
-
 // converter turns amounts into yen at one month's Rate, fetching it only
 // when a peso amount needs it.
 type converter struct {
 	month string
 	rates *RatesService
-	rate  *RateJSON
+	rate  *model.RateJSON
 }
 
 // yen is minor, in currency's minor unit, in yen: at the month's average,
@@ -164,7 +69,7 @@ type figures struct {
 	// byCategory is spending by Category key, and incomeByCategory income.
 	byCategory, incomeByCategory map[string]int64
 	bySubcategory                map[string]map[string]int64
-	unconfirmed                  UnconfirmedJSON
+	unconfirmed                  model.UnconfirmedJSON
 	// netIn is, by Account, the money Transferred into it, less out of it, in
 	// its own currency: from its own Transfers if it has any, else from
 	// those of other Accounts that name it.
@@ -304,8 +209,8 @@ func dayDistance(a, b string) int {
 
 // netWorth is month's net worth, the Accounts' balances, and whether any had
 // one.
-func (s *TotalsService) netWorth(ctx context.Context, accounts []model.Account, month string, conv *converter) (NetWorthJSON, map[string]int64, bool, error) {
-	nw := NetWorthJSON{Accounts: []BalanceJSON{}, Missing: []AccountRefJSON{}}
+func (s *TotalsService) netWorth(ctx context.Context, accounts []model.Account, month string, conv *converter) (model.NetWorthJSON, map[string]int64, bool, error) {
+	nw := model.NetWorthJSON{Accounts: []model.BalanceJSON{}, Missing: []model.AccountRefJSON{}}
 	balances := map[string]int64{}
 	for _, a := range accounts {
 		if !a.TracksIn(month) {
@@ -316,7 +221,7 @@ func (s *TotalsService) netWorth(ctx context.Context, accounts []model.Account, 
 			return nw, nil, false, err
 		}
 		if !ok {
-			nw.Missing = append(nw.Missing, AccountRefJSON{ID: a.ID, Name: a.Name})
+			nw.Missing = append(nw.Missing, model.AccountRefJSON{ID: a.ID, Name: a.Name})
 			continue
 		}
 		yen, err := conv.yen(ctx, a.Currency, minor, true)
@@ -325,16 +230,16 @@ func (s *TotalsService) netWorth(ctx context.Context, accounts []model.Account, 
 		}
 		balances[a.ID] = minor
 		nw.Total += yen
-		nw.Accounts = append(nw.Accounts, BalanceJSON{Account: a.ID, Name: a.Name, Currency: a.Currency, Balance: utils.FromMinor(a.Currency, minor), Yen: yen})
+		nw.Accounts = append(nw.Accounts, model.BalanceJSON{Account: a.ID, Name: a.Name, Currency: a.Currency, Balance: utils.FromMinor(a.Currency, minor), Yen: yen})
 	}
 	return nw, balances, len(balances) > 0, nil
 }
 
 // MonthTotals works out month's totals in yen.
-func (s *TotalsService) MonthTotals(ctx context.Context, month string) (MonthTotalsJSON, error) {
+func (s *TotalsService) MonthTotals(ctx context.Context, month string) (model.MonthTotalsJSON, error) {
 	accounts, err := s.accounts.accounts.List(ctx)
 	if err != nil {
-		return MonthTotalsJSON{}, err
+		return model.MonthTotalsJSON{}, err
 	}
 	currencies := map[string]string{}
 	for _, a := range accounts {
@@ -342,16 +247,16 @@ func (s *TotalsService) MonthTotals(ctx context.Context, month string) (MonthTot
 	}
 	essentials, err := s.categories.essentials(ctx)
 	if err != nil {
-		return MonthTotalsJSON{}, err
+		return model.MonthTotalsJSON{}, err
 	}
 	names, err := s.categories.subcategoryNames(ctx)
 	if err != nil {
-		return MonthTotalsJSON{}, err
+		return model.MonthTotalsJSON{}, err
 	}
 	conv := &converter{month: month, rates: s.rates}
 	this, err := s.figures(ctx, month, currencies, essentials, conv)
 	if err != nil {
-		return MonthTotalsJSON{}, err
+		return model.MonthTotalsJSON{}, err
 	}
 	// The months before, for comparing: those that are part of the history.
 	var before []figures
@@ -362,52 +267,52 @@ func (s *TotalsService) MonthTotals(ctx context.Context, month string) (MonthTot
 		}
 		f, err := s.figures(ctx, m, currencies, essentials, &converter{month: m, rates: s.rates})
 		if err != nil {
-			return MonthTotalsJSON{}, err
+			return model.MonthTotalsJSON{}, err
 		}
 		before = append(before, f)
 	}
-	answer := MonthTotalsJSON{Month: month, Returns: []ReturnJSON{}}
+	answer := model.MonthTotalsJSON{Month: month, Returns: []model.ReturnJSON{}}
 	complete, err := s.statementsSvc.Month(ctx, month)
 	if err != nil {
-		return MonthTotalsJSON{}, err
+		return model.MonthTotalsJSON{}, err
 	}
 	answer.Complete, answer.Missing = complete.Complete, complete.Missing
-	answer.Spending = SpendingJSON{
+	answer.Spending = model.SpendingJSON{
 		Total: this.spending, Essential: this.essential, Optional: this.optional, Unmarked: this.unmarked,
-		ByCategory: []CategoryTotalJSON{},
+		ByCategory: []model.CategoryTotalJSON{},
 	}
 	answer.Spending.Previous, answer.Spending.Average3 = compare(before, func(f figures) int64 { return f.spending })
-	answer.Income = IncomeJSON{Total: this.income, ByCategory: []CategoryTotalJSON{}}
+	answer.Income = model.IncomeJSON{Total: this.income, ByCategory: []model.CategoryTotalJSON{}}
 	for _, c := range model.Categories {
 		if total, ok := this.incomeByCategory[c.Key]; ok {
-			answer.Income.ByCategory = append(answer.Income.ByCategory, CategoryTotalJSON{Category: c.Key, Name: c.Name, Total: total})
+			answer.Income.ByCategory = append(answer.Income.ByCategory, model.CategoryTotalJSON{Category: c.Key, Name: c.Name, Total: total})
 		}
 	}
 	if total, ok := this.incomeByCategory[""]; ok {
-		answer.Income.ByCategory = append(answer.Income.ByCategory, CategoryTotalJSON{Category: "", Name: "Uncategorized", Total: total})
+		answer.Income.ByCategory = append(answer.Income.ByCategory, model.CategoryTotalJSON{Category: "", Name: "Uncategorized", Total: total})
 	}
 	for _, c := range append(model.Categories, model.Category{Key: "", Name: "Uncategorized", Kind: model.Expense}) {
 		total, ok := this.byCategory[c.Key]
 		if !ok || c.Kind != model.Expense {
 			continue
 		}
-		ct := CategoryTotalJSON{Category: c.Key, Name: c.Name, Total: total}
+		ct := model.CategoryTotalJSON{Category: c.Key, Name: c.Name, Total: total}
 		ct.Previous, ct.Average3 = compare(before, func(f figures) int64 { return f.byCategory[c.Key] })
 		for sub, subTotal := range this.bySubcategory[c.Key] {
-			ct.Subcategories = append(ct.Subcategories, SubcategoryTotalJSON{Subcategory: sub, Name: names[sub], Total: subTotal})
+			ct.Subcategories = append(ct.Subcategories, model.SubcategoryTotalJSON{Subcategory: sub, Name: names[sub], Total: subTotal})
 		}
 		sortSubcategoryTotals(ct.Subcategories)
 		answer.Spending.ByCategory = append(answer.Spending.ByCategory, ct)
 	}
 	nw, balances, _, err := s.netWorth(ctx, accounts, month, conv)
 	if err != nil {
-		return MonthTotalsJSON{}, err
+		return model.MonthTotalsJSON{}, err
 	}
 	previousMonth := utils.AddMonths(month, -1)
 	prevConv := &converter{month: previousMonth, rates: s.rates}
 	prev, prevBalances, any, err := s.netWorth(ctx, accounts, previousMonth, prevConv)
 	if err != nil {
-		return MonthTotalsJSON{}, err
+		return model.MonthTotalsJSON{}, err
 	}
 	if any {
 		nw.Previous = &prev.Total
@@ -424,9 +329,9 @@ func (s *TotalsService) MonthTotals(ctx context.Context, month string) (MonthTot
 		}
 		yen, err := conv.yen(ctx, a.Currency, now-then-this.netIn[a.ID], true)
 		if err != nil {
-			return MonthTotalsJSON{}, err
+			return model.MonthTotalsJSON{}, err
 		}
-		answer.Returns = append(answer.Returns, ReturnJSON{Account: a.ID, Name: a.Name, Yen: yen})
+		answer.Returns = append(answer.Returns, model.ReturnJSON{Account: a.ID, Name: a.Name, Yen: yen})
 	}
 	if this.income > 0 {
 		rate := math.Round(float64(this.income-this.spending)/float64(this.income)*10000) / 10000
@@ -454,7 +359,7 @@ func compare(before []figures, value func(figures) int64) (previous, average3 *i
 
 // Totals works out each month's spending and income from fromMonth to
 // toMonth.
-func (s *TotalsService) Totals(ctx context.Context, fromMonth, toMonth string) ([]MonthSumJSON, error) {
+func (s *TotalsService) Totals(ctx context.Context, fromMonth, toMonth string) ([]model.MonthSumJSON, error) {
 	accounts, err := s.accounts.accounts.List(ctx)
 	if err != nil {
 		return nil, err
@@ -467,13 +372,13 @@ func (s *TotalsService) Totals(ctx context.Context, fromMonth, toMonth string) (
 	if err != nil {
 		return nil, err
 	}
-	list := []MonthSumJSON{}
+	list := []model.MonthSumJSON{}
 	for m := fromMonth; m <= toMonth; m = utils.AddMonths(m, 1) {
 		f, err := s.figures(ctx, m, currencies, essentials, &converter{month: m, rates: s.rates})
 		if err != nil {
 			return nil, err
 		}
-		list = append(list, MonthSumJSON{Month: m, Spending: f.spending, Income: f.income, ByCategory: f.byCategory})
+		list = append(list, model.MonthSumJSON{Month: m, Spending: f.spending, Income: f.income, ByCategory: f.byCategory})
 	}
 	return list, nil
 }

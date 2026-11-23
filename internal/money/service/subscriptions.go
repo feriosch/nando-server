@@ -36,23 +36,6 @@ const lateAfter = 7 * 24 * time.Hour
 // everies are how often a Subscription can charge.
 var everies = []string{"monthly", "yearly"}
 
-// SubscriptionJSON is a Subscription as the Tools answer it.
-type SubscriptionJSON struct {
-	ID          string  `json:"id"`
-	Merchant    string  `json:"merchant"`
-	Amount      float64 `json:"amount"`
-	Currency    string  `json:"currency"`
-	Every       string  `json:"every"`
-	LastCharged string  `json:"lastCharged"`
-	Category    string  `json:"category"`
-	Subcategory string  `json:"subcategory"`
-	Essential   bool    `json:"essential"`
-	Active      bool    `json:"active"`
-	// Late is whether it is active and its expected charge is more than a
-	// week past.
-	Late bool `json:"late"`
-}
-
 // isLate is whether s is active and more than a week past its expected
 // charge on today.
 func isLate(s model.Subscription, today string) bool {
@@ -68,8 +51,8 @@ func isLate(s model.Subscription, today string) bool {
 	return now.Sub(next) > lateAfter
 }
 
-func toSubscriptionJSON(s model.Subscription, today string) SubscriptionJSON {
-	return SubscriptionJSON{
+func toSubscriptionJSON(s model.Subscription, today string) model.SubscriptionJSON {
+	return model.SubscriptionJSON{
 		ID: s.ID, Merchant: s.MerchantID, Amount: utils.FromMinor(s.Currency, s.Amount), Currency: s.Currency,
 		Every: s.Every, LastCharged: s.LastCharged, Category: s.Category, Subcategory: s.SubcategoryID,
 		Essential: s.Essential, Active: s.Active, Late: isLate(s, today),
@@ -102,7 +85,7 @@ func (s *SubscriptionsService) Tools() []coremodel.Tool {
 			if err != nil {
 				return nil, err
 			}
-			answer := make([]SubscriptionJSON, len(list))
+			answer := make([]model.SubscriptionJSON, len(list))
 			for i, sub := range list {
 				answer[i] = toSubscriptionJSON(sub, string(today))
 			}

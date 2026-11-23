@@ -79,3 +79,19 @@ type MovesSubcategories interface {
 	// intoCategory, instead.
 	MoveSubcategory(ctx context.Context, from, into, intoCategory string) error
 }
+
+// SubcategoryJSON is a Subcategory as the Tools answer it.
+type SubcategoryJSON struct {
+	ID        string `json:"id"`
+	Category  string `json:"category"`
+	Name      string `json:"name"`
+	Essential bool   `json:"essential"`
+}
+
+// CategoryJSON is a Category with its Subcategories, as the Tools answer it.
+type CategoryJSON struct {
+	Key           string            `json:"key"`
+	Name          string            `json:"name"`
+	Kind          string            `json:"kind"`
+	Subcategories []SubcategoryJSON `json:"subcategories"`
+}

@@ -33,41 +33,31 @@ func NewRates(rates model.RatesRepository, core coremodel.CoreService, url strin
 	return &RatesService{rates: rates, core: core, url: url, http: &http.Client{Timeout: 20 * time.Second}}
 }
 
-// RateJSON is a month's Rate, pesos in yen, as the Tools answer it.
-type RateJSON struct {
-	Month    string  `json:"month"`
-	Average  float64 `json:"average"`
-	MonthEnd float64 `json:"monthEnd"`
-	// Provisional is true for a month that hasn't ended: the rates so far,
-	// fetched again until it ends.
-	Provisional bool `json:"provisional,omitempty"`
-}
-
 // Rate is month's Rate: the stored one, or else fetched, and stored once the
 // month has ended.
-func (s *RatesService) Rate(ctx context.Context, month string) (RateJSON, error) {
+func (s *RatesService) Rate(ctx context.Context, month string) (model.RateJSON, error) {
 	rate, err := s.rates.Find(ctx, month)
 	if err == nil {
-		return RateJSON{Month: rate.Month, Average: rate.Average, MonthEnd: rate.MonthEnd}, nil
+		return model.RateJSON{Month: rate.Month, Average: rate.Average, MonthEnd: rate.MonthEnd}, nil
 	}
 	if !errors.Is(err, coreutils.ErrNotFound) {
-		return RateJSON{}, err
+		return model.RateJSON{}, err
 	}
 	today, err := s.core.Today(ctx)
 	if err != nil {
-		return RateJSON{}, err
+		return model.RateJSON{}, err
 	}
 	ended := string(today) > utils.LastDay(month)
 	rate, err = s.fetch(ctx, month)
 	if err != nil {
-		return RateJSON{}, fmt.Errorf("couldn't fetch %s's Rate from Frankfurter just now, try once more: %w", month, err)
+		return model.RateJSON{}, fmt.Errorf("couldn't fetch %s's Rate from Frankfurter just now, try once more: %w", month, err)
 	}
 	if ended {
 		if err := s.rates.Insert(ctx, rate); err != nil {
-			return RateJSON{}, err
+			return model.RateJSON{}, err
 		}
 	}
-	return RateJSON{Month: month, Average: rate.Average, MonthEnd: rate.MonthEnd, Provisional: !ended}, nil
+	return model.RateJSON{Month: month, Average: rate.Average, MonthEnd: rate.MonthEnd, Provisional: !ended}, nil
 }
 
 // fetch asks Frankfurter for month's daily rates of a peso in yen, and works

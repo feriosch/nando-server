@@ -253,3 +253,8 @@ func (n *nando) moneyMessages() []string {
 	}
 	return got
 }
+
+// jsonUnmarshal is json.Unmarshal, for helpers in files that don't import it.
+func jsonUnmarshal(data []byte, v any) error {
+	return json.Unmarshal(data, v)
+}

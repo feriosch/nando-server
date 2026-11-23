@@ -31,6 +31,7 @@ type Module struct {
 	subscriptions *service.SubscriptionsService
 	rates         *service.RatesService
 	totals        *service.TotalsService
+	overview      *service.OverviewService
 	// notifications is the Module's Notification provider.
 	notifications *service.NotificationsService
 }
@@ -79,9 +80,11 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 	merchants := service.NewMerchants(merchantsRepo, categories)
 	statementsService := service.NewStatements(statements, accounts, categories, merchants, files, core)
 	rates := service.NewRates(repository.NewRates(db), core, cfg.RatesURL)
+	totals := service.NewTotals(statements, accounts, categories, rates, statementsService)
 	return &Module{
 		rates:         rates,
-		totals:        service.NewTotals(statements, accounts, categories, rates, statementsService),
+		totals:        totals,
+		overview:      service.NewOverview(totals, statementsService, accountsRepo, settings, core),
 		settings:      settings,
 		notifications: service.NewNotifications(settings, accountsRepo, statementsService, repository.NewReviews(db)),
 		accounts:      accounts,
@@ -94,7 +97,9 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 
 // Routes adds the Module's routes to mux, all under /api/money/: the web
 // app's reads. The Money Assistant writes, through its Tools.
-func (m *Module) Routes(*http.ServeMux) {}
+func (m *Module) Routes(mux *http.ServeMux) {
+	m.overview.Routes(mux)
+}
 
 // NotificationProvider is the Module's Notification provider, for Core to ask
 // at every tick: Statement Reminders and Monthly Review asks.
