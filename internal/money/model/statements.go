@@ -51,6 +51,19 @@ type Transaction struct {
 	// OtherAccountID is, for a Transfer, the Owner's other Account, when
 	// known.
 	OtherAccountID string `bson:"otherAccountId,omitempty"`
+	// Category is the key of the Category an Expense or Income belongs to,
+	// empty until Claude says; a Transfer has none.
+	Category string `bson:"category,omitempty"`
+	// SubcategoryID and MerchantID are its Subcategory and Merchant, when
+	// known.
+	SubcategoryID string `bson:"subcategoryId,omitempty"`
+	MerchantID    string `bson:"merchantId,omitempty"`
+	// Essential is set when this one Transaction is Essential or Optional
+	// apart from its Subcategory, nil when it follows it.
+	Essential *bool `bson:"essential,omitempty"`
+	// Unconfirmed marks Claude's best guess while the Owner's answer is
+	// awaited.
+	Unconfirmed bool `bson:"unconfirmed,omitempty"`
 	// Duplicate marks a late line another Statement of the Account already
 	// counts. It is kept, but left out of every read, so that it can count
 	// instead if that copy goes, with its Statement deleted or sent again
@@ -84,8 +97,11 @@ type TransactionFilter struct {
 	FromMonth, ToMonth string
 	Kind               TransactionKind
 	// Text is a word the raw text or note contains, in any case.
-	Text  string
-	Limit int
+	Text                                string
+	Category, SubcategoryID, MerchantID string
+	// Unconfirmed, when not nil, picks only those that are, or aren't.
+	Unconfirmed *bool
+	Limit       int
 }
 
 // FoundTransaction is a Transaction with the Statement and Account it is in.
@@ -97,6 +113,7 @@ type FoundTransaction struct {
 
 // StatementsRepository reads and writes the statements collection.
 type StatementsRepository interface {
+	MovesSubcategories
 	// Save inserts statement, giving it and its Transactions IDs, or
 	// replaces the Account's Statement for the same period, in one write.
 	Save(ctx context.Context, statement Statement) (Statement, error)
