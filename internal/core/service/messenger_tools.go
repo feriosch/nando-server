@@ -90,24 +90,28 @@ func (s *MessengerService) Tools() []model.Tool {
 		},
 		{
 			Name: "messenger_get_file",
-			Description: "Reads a PDF the Owner sent the Assistant, by the id messenger_claim_talk listed in a message's " +
-				"files: its page count and, for the pages asked (the first 10 if not said, never more than 10 at a time), " +
-				"their text, or, for a scan with no text, the pages as images.",
+			Description: "Reads a PDF or a CSV the Owner sent the Assistant, by the id messenger_claim_talk listed in a message's " +
+				"files. A PDF: its page count and, for the pages asked (the first 10 if not said, never more than 10 at a time), " +
+				"their text, or, for a scan with no text, the pages as images. A CSV: its line count, the encoding it was in " +
+				"(utf-8, or shift_jis as Japanese banks write), and the lines asked as UTF-8 text (the first 300 if not said, " +
+				"never more than 300 at a time).",
 			InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 				`"assistant":{"type":"string","description":"The Assistant the run is."},` +
 				`"id":{"type":"string","description":"The file's id, from messenger_claim_talk."},` +
-				`"pages":{"type":"string","description":"The pages to read, such as 3 or 11-20; at most 10."}},"required":["assistant","id"]}`),
+				`"pages":{"type":"string","description":"For a PDF, the pages to read, such as 3 or 11-20; at most 10."},` +
+				`"lines":{"type":"string","description":"For a CSV, the lines to read, such as 301-600; at most 300."}},"required":["assistant","id"]}`),
 			ReadOnly: true,
 			Handle: func(ctx context.Context, arguments json.RawMessage) (any, error) {
 				var args struct {
 					Assistant string `json:"assistant"`
 					ID        string `json:"id"`
 					Pages     string `json:"pages"`
+					Lines     string `json:"lines"`
 				}
 				if err := json.Unmarshal(arguments, &args); err != nil {
 					return nil, err
 				}
-				return s.file(ctx, args.Assistant, args.ID, args.Pages)
+				return s.file(ctx, args.Assistant, args.ID, args.Pages, args.Lines)
 			},
 		},
 		{
@@ -180,8 +184,9 @@ type pageTextJSON struct {
 	Image bool `json:"image,omitempty"`
 }
 
-// file reads the pages of the PDF with id, which the Owner sent assistant.
-func (s *MessengerService) file(ctx context.Context, assistant, id, pages string) (any, error) {
+// file reads the PDF or CSV with id, which the Owner sent assistant: the
+// pages of a PDF, or the lines of a CSV.
+func (s *MessengerService) file(ctx context.Context, assistant, id, pages, lines string) (any, error) {
 	token, ok := s.bot(assistant)
 	if !ok {
 		return nil, fmt.Errorf("there is no Assistant %q with a bot", assistant)
@@ -195,6 +200,9 @@ func (s *MessengerService) file(ctx context.Context, assistant, id, pages string
 	}
 	if err != nil {
 		return nil, fmt.Errorf("couldn't get the file from Telegram just now, try once more (%w)", err)
+	}
+	if !isPDF(data) {
+		return readCSV(data, lines)
 	}
 	doc, err := openPDF(data)
 	if err != nil {
