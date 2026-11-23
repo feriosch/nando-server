@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 
 	"go.mongodb.org/mongo-driver/v2/bson"
 	"go.mongodb.org/mongo-driver/v2/mongo"
@@ -31,13 +32,19 @@ func (r reviews) From(ctx context.Context, month string) (string, error) {
 	return doc.Month, err
 }
 
-func (r reviews) Asked(ctx context.Context, month string) (bool, error) {
-	n, err := r.collection.CountDocuments(ctx, bson.D{{Key: "_id", Value: month}})
-	return n > 0, err
+func (r reviews) Asked(ctx context.Context, month string) (string, error) {
+	var doc struct {
+		On string `bson:"askedOn"`
+	}
+	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: month}}).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return "", nil
+	}
+	return doc.On, err
 }
 
-func (r reviews) Record(ctx context.Context, month string) error {
+func (r reviews) Record(ctx context.Context, month, day string) error {
 	_, err := r.collection.UpdateOne(ctx, bson.D{{Key: "_id", Value: month}},
-		bson.D{{Key: "$setOnInsert", Value: bson.D{{Key: "asked", Value: true}}}}, options.UpdateOne().SetUpsert(true))
+		bson.D{{Key: "$setOnInsert", Value: bson.D{{Key: "askedOn", Value: day}}}}, options.UpdateOne().SetUpsert(true))
 	return err
 }

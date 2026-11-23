@@ -128,6 +128,7 @@ func TestBadReminderSettingsAreRefused(t *testing.T) {
 		"a closed Account":         {map[string]any{"reminders": []any{group("A", 1, closed.ID)}}, "closed"},
 		"an Account twice":         {map[string]any{"reminders": []any{group("A", 1, open.ID), group("B", 2, open.ID)}}, "two"},
 		"no name":                  {map[string]any{"reminders": []any{group(" ", 1, open.ID)}}, "name"},
+		"a name twice":             {map[string]any{"reminders": []any{group("App", 1, open.ID), group("app", 2)}}, "twice"},
 		"a time off the half hour": {map[string]any{"reminderTime": "09:10"}, "reminderTime"},
 	} {
 		if got := toolError(t, session, "money_save_settings", c.args); !strings.Contains(got, c.want) {

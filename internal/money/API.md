@@ -17,14 +17,14 @@ One document:
 ```
 
 - `askAbove`: per currency, the whole amount above which a Transaction Claude can't tell is asked about. Below it, Claude's best guess is kept, Unconfirmed (ADR 0014). ¥3,000 and MX$300 until changed. Each must be above 0, and only the Owner's currencies, JPY and MXN, are taken.
-- `reminders`: the Statement Reminders, one per app the Owner opens, each with a `name`, the `accounts` whose Statements it holds (open ones, each in at most one reminder) and its `day` of the month, 1 to 28. None until set; a save replaces the whole list.
+- `reminders`: the Statement Reminders, one per app the Owner opens, each with its own `name`, the `accounts` whose Statements it holds (open ones, each in at most one reminder) and its `day` of the month, 1 to 28. None until set; a save replaces the whole list.
 - `reminderTime`: when, in the Owner Time Zone, reminders and Monthly Review asks are sent, on the hour or half hour. 09:00 until changed.
 
 ## Notifications
 
 Sent in the Money Assistant's chat, at `reminderTime` (ADR 0014):
 - **A Statement Reminder** on a reminder's day, and again 3 days later, while any of its Accounts' Statements is missing: for an Account that holds the month, one reaching the end of the month before; for one that doesn't, such as a card that closes on the 27th, the cycle that closed the day before the reminder's day. It names the app and only the Accounts missing, and is sent no third time. It joins the Talk without waking a run.
-- **A Monthly Review ask**, a Notification that asks for work (ADR 0009), when a month becomes Complete: once per month, recorded in `reviews`, so a month Complete again after a Statement is sent again isn't asked for twice. Reviews are asked for from the month before the Module's first tick on, so history brought in later never floods the chat; the Owner can ask for any month's Review in the chat.
+- **A Monthly Review ask**, a Notification that asks for work (ADR 0009), when a month becomes Complete: once per month, recorded in `reviews` with the Day it was first asked, so a month Complete again after a Statement is sent again isn't asked for twice. A tick retried on that Day asks again, and Core's once-per-Notification rule keeps it from going out twice. Reviews are asked for from the month before the Module's first tick on, so history brought in later never floods the chat; the Owner can ask for any month's Review in the chat.
 
 ## Accounts
 
@@ -112,7 +112,7 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
 ## Tools
 
 - **`money_get_settings`**: the settings, as above. Read-only.
-- **`money_save_settings`** (`askAbove`, `reminders`, `reminderTime`): changes only what is given, within `askAbove` only the currencies given, such as `{"askAbove": {"JPY": 5000}}`, and answers the settings. A currency other than JPY or MXN, an amount of 0 or less, a day outside 1 to 28, an unknown or closed Account, an Account in two reminders, a time off the half hour, or nothing given is refused, and nothing changes.
+- **`money_save_settings`** (`askAbove`, `reminders`, `reminderTime`): changes only what is given, within `askAbove` only the currencies given, such as `{"askAbove": {"JPY": 5000}}`, and answers the settings. A currency other than JPY or MXN, an amount of 0 or less, a day outside 1 to 28, a reminder name used twice, an unknown or closed Account, an Account in two reminders, a time off the half hour, or nothing given is refused, and nothing changes.
 - **`money_save_account`** (`id` to change one, or `name`, `kind`, `currency` and `trackedFrom` for a new one; `institution`, `last4`, `note`, `closedFrom`, `holdsMonth` optional): answers the Account. Only the fields sent change.
 - **`money_list_accounts`**: every Account, open and closed, by name. Read-only.
 - **`money_save_statement`** (`account`, `from`, `to`, `source`, `fileIds`, `total`, `closingBalance`, `transactions`): saves the Statement as above, all at once or not at all. It answers the Statement, with `late`, how many Transactions were dated before the period, and `skipped`, how many of those another Statement already had; `missingFiles`, the files Telegram had dropped, which are left out; and `filesNote` when no files are kept, as without `MONEY_STATEMENTS_BUCKET`. If a file can't be kept for any other reason, nothing is saved, and the error says why.

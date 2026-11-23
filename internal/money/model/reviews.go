@@ -9,8 +9,10 @@ type ReviewsRepository interface {
 	// From returns the first month Reviews are asked for, setting it to
 	// month if it isn't set yet.
 	From(ctx context.Context, month string) (string, error)
-	// Asked is whether month's Review was asked for.
-	Asked(ctx context.Context, month string) (bool, error)
-	// Record records that month's Review was asked for.
-	Record(ctx context.Context, month string) error
+	// Asked returns the Day month's Review was first asked for, empty if
+	// never.
+	Asked(ctx context.Context, month string) (string, error)
+	// Record records that month's Review was asked for on day, keeping the
+	// first Day it was.
+	Record(ctx context.Context, month, day string) error
 }
