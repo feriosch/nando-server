@@ -364,9 +364,9 @@ func (s *IdentityService) finishSyncKey(w http.ResponseWriter, r *http.Request) 
 	utils.WriteJSON(w, http.StatusCreated, created)
 }
 
-// checkPasskey checks the Passkey's answer to a sign-in, approval or Sync Key
-// creation ceremony and saves its new sign count. If the Passkey is refused,
-// it answers r with 401 and returns false.
+// checkPasskey checks the Passkey's answer to a sign-in or approval ceremony
+// and saves its new sign count. If the Passkey is refused, it answers r with
+// 401 and returns false.
 func (s *IdentityService) checkPasskey(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -376,7 +376,9 @@ func (s *IdentityService) checkPasskey(
 	return s.checkPasskeyAs(w, r, parsed, sessionData, http.StatusUnauthorized)
 }
 
-// checkPasskeyAs is checkPasskey answering a refused Passkey with status.
+// checkPasskeyAs is checkPasskey answering a refused Passkey with status. A
+// Sync Key creation uses it with 403, since it is under /api/, where a 401
+// signs the Owner out.
 func (s *IdentityService) checkPasskeyAs(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -472,8 +474,8 @@ func enrollmentCodeError(w http.ResponseWriter, err error) {
 
 // beginCeremony keeps sessionData, go-webauthn's state, until the ceremony's
 // finish request, with what the ceremony is for set in purpose: the
-// Enrollment Code of a registration, the pending request of an approval, or
-// neither for a sign-in.
+// Enrollment Code of a registration, the pending request of an approval, the
+// name of a Sync Key creation, or none of them for a sign-in.
 func (s *IdentityService) beginCeremony(ctx context.Context, sessionData *webauthn.SessionData, purpose model.Ceremony) error {
 	stored, err := json.Marshal(sessionData)
 	if err != nil {
