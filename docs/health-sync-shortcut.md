@@ -40,16 +40,19 @@ If Nando's steps are higher than the Health app's, another app is writing steps 
 
 ## 3. Run it on a schedule
 
-In Shortcuts → **Automation** → **+** → **Time of Day**, three daily automations, at **12:00, 18:00 and 23:55**, each running "Nando Health Sync", with **Run Immediately** on and **Notify When Run** off.
+In Shortcuts → **Automation** → **+** → **Time of Day**, five daily automations, at **12:00, 18:00, 22:00, 23:00 and 23:55**, each running "Nando Health Sync", with **Run Immediately** on and **Notify When Run** off. The late ones are close together so the evening's steps still land if the iPhone is locked at one of them.
 
 Steps walked after the 23:55 run aren't counted, and a run on a locked iPhone sends nothing, so the Day keeps the numbers of its last run that did.
+
+A Day with no steps at all, such as one the iPhone stays home, sends nothing either, as the If skips it. Two such Days in a row bring the "Steps haven't synced" Notification below, though nothing is broken.
 
 ## When something is wrong
 
 To see a value mid-run, add **Show Result** (or **Quick Look**) with it, then **Stop This Shortcut** so no request is sent; remove both afterwards. What Nando answers:
 
 - `days must have at least one Day`: the body isn't the Text; see Request Body above.
-- `steps and activeKcal must be whole numbers: round them in the Shortcut`: a number wasn't rounded, or is in quotes.
+- `steps and activeKcal must be whole numbers: round them in the Shortcut`: a number wasn't rounded.
+- `body must be {"days": …}`: the Text isn't valid JSON, such as a number in quotes or a quote missing around the date.
 - `sign in first` or `that Sync Key is unknown or was removed`: the Authorization header is wrong, or the key was removed in Settings.
 
 If Nando gets no Health Sync for 48 hours, the Calories Assistant says so in Telegram: check that the automations are still on and the Sync Key is still listed in Settings.
