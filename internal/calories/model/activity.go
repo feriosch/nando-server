@@ -9,12 +9,16 @@ import (
 
 // HealthSync is one Day's steps and active kcal from Apple Health on the
 // Owner's iPhone, sent by the Health Sync Shortcut with a Sync Key (ADR
-// 0015). A Day has at most one; a later one replaces it.
+// 0015). A Day has at most one; a later one replaces it. When the iPhone
+// missed a Day's last sync, the Calories Assistant can correct it with the
+// Health app's numbers the Owner gives.
 type HealthSync struct {
 	Day        coremodel.Day `bson:"_id"`
 	Steps      int           `bson:"steps"`
 	ActiveKcal int           `bson:"activeKcal"`
 	SyncedAt   time.Time     `bson:"syncedAt"`
+	// Corrected is true when the Calories Assistant set it, not the iPhone.
+	Corrected bool `bson:"corrected,omitempty"`
 }
 
 // TreadmillWalk is one walk on the treadmill, which the iPhone never counts,
@@ -83,8 +87,8 @@ type HealthSyncsRepository interface {
 	Save(ctx context.Context, sync HealthSync) error
 	// ListBetween returns the Health Syncs from Day from to Day to, inclusive.
 	ListBetween(ctx context.Context, from, to coremodel.Day) ([]HealthSync, error)
-	// LastSyncedAt returns when the latest Health Sync came, or ErrNotFound if
-	// none ever has.
+	// LastSyncedAt returns when the iPhone last sent a Health Sync, or
+	// ErrNotFound if it never has. Corrections don't count.
 	LastSyncedAt(ctx context.Context) (time.Time, error)
 }
 
@@ -114,6 +118,7 @@ type HealthSyncJSON struct {
 	Steps      int    `json:"steps"`
 	ActiveKcal int    `json:"activeKcal"`
 	SyncedAt   string `json:"syncedAt"`
+	Corrected  bool   `json:"corrected"`
 }
 
 // TreadmillWalkJSON is a Treadmill Walk as the API shows it.

@@ -115,7 +115,7 @@ The Day view, the history and the Home Card also answer, beside them:
   "burnedCalories": 522,
   "entries": [ … ],
   "activity": {
-    "healthSync": { "steps": 9812, "activeKcal": 312, "syncedAt": "2026-10-21T09:02:00Z" },
+    "healthSync": { "steps": 9812, "activeKcal": 312, "syncedAt": "2026-10-21T09:02:00Z", "corrected": false },
     "walks": [ … ]
   }
 }
@@ -151,7 +151,7 @@ The Day view, the history and the Home Card also answer, beside them:
 
 A Day's Steps and Burned Calories come from two places ([ADR 0015](../../docs/adr/0015-steps-and-burned-calories-in-calories.md)):
 
-- **Health Sync**: the Day's steps and active kcal from Apple Health, sent by the iOS Shortcut in [`docs/health-sync-shortcut.md`](../../docs/health-sync-shortcut.md) a few times a day. A Day has at most one, and a later one replaces it. It can't be changed by hand.
+- **Health Sync**: the Day's steps and active kcal from Apple Health, sent by the iOS Shortcut in [`docs/health-sync-shortcut.md`](../../docs/health-sync-shortcut.md) a few times a day. A Day has at most one, and a later one replaces it. When the iPhone missed a Day's last sync, the Calories Assistant corrects it with `calories_correct_health_sync`; its `corrected` is then `true`. A correction doesn't count as the iPhone syncing for the "Steps haven't synced" Notification.
 - **Treadmill Walks**, which the iPhone never counts, as it stays on the console. The Calories Assistant logs them with the [Tools](#tools), and they follow the Editable Window, like Entries.
 
 ```json
@@ -287,6 +287,7 @@ Core serves these to every Connector at `/mcp` (see [Core's API](../core/API.md)
 | `calories_save_settings` | `noEntriesReminder`, `eveningSummary`, each `{enabled, time}`; `weighInReminder` `{enabled, weekday, time}` | Changes when the Calories Notifications are sent. Only the Notifications sent change, and within one, only the fields sent; at least one must come. `time` is on the hour or half hour. Answers the settings |
 | `calories_log_walk` | `km`; `day`, `kcal` | Logs a Treadmill Walk on `day` (today when left out), which must be in the Editable Window. Its Steps come from `km` and the Owner's height; without `kcal`, it is estimated from the latest Weigh-in, and refused if there is none. Answers `{"walk": Treadmill Walk, "day": {"day", "steps", "burnedCalories"}}` |
 | `calories_update_walk` | `id`; `km`, `kcal` | Corrects a Treadmill Walk in the Editable Window: only the values sent change. A new `km` gives it new Steps from the Owner's height now, and a new estimate if its kcal was estimated; `kcal` sent is the screen's, no longer estimated. Answers as `calories_log_walk` does |
+| `calories_correct_health_sync` | `steps`, `activeKcal`; `day` | Sets the Health Sync of `day` (today when left out), in the Editable Window, to the Health app's numbers the Owner gives, for a Day whose last sync the iPhone missed. It replaces what the iPhone sent and is marked `corrected`; the iPhone's next sync for that Day replaces it in turn. `steps` is a whole number from 0 to 200,000 and `activeKcal` from 0 to 10,000. Answers `{"day": {"day", "steps", "burnedCalories"}}` |
 | `calories_log_weigh_in` | `kg`; `day` | Logs `kg` (more than 0 and at most 500, to 1 decimal) as the Weigh-in for the week `day` is in, replacing any it had. Only this week and last week. Answers Weigh-ins |
 
 ### Delete (`destructiveHint`)

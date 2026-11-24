@@ -289,7 +289,7 @@ func TestTheConsentPageSaysWhatCaloriessToolsLetAConnectorDo(t *testing.T) {
 
 	// Deleting and archiving are said, as the Owner is asked first.
 	if want := []string{"read your Days and Daily Limit, log, correct and delete what you eat, save, change and archive your Meals, " +
-		"read, log and delete your weekly Weigh-ins, log, correct and delete your Treadmill Walks, and set your Daily Limit and when Calories Notifications come"}; !slices.Equal(got, want) {
+		"read, log and delete your weekly Weigh-ins, log, correct and delete your Treadmill Walks, correct a Day's steps the iPhone missed, and set your Daily Limit and when Calories Notifications come"}; !slices.Equal(got, want) {
 		t.Errorf("toolsDescriptions = %q, want %q", got, want)
 	}
 }
@@ -336,6 +336,8 @@ func TestEveryToolSaysWhetherItChangesOrDestroysAnything(t *testing.T) {
 		"calories_log_walk":        write,
 		"calories_update_walk":     write,
 		"calories_delete_walk":     destroy,
+		// Replaces a Day's Health Sync, which the iPhone's next sync replaces in turn.
+		"calories_correct_health_sync": write,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("Tools and their hints =\n%v\nwant\n%v", got, want)

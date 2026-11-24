@@ -461,3 +461,89 @@ func TestAGapInSyncingIsOnlyToldInItsFirstWeek(t *testing.T) {
 		t.Errorf("received %+v over a week into the gap, want nothing", got)
 	}
 }
+
+// correctedSyncJSON is a Day's Health Sync with whether the Calories
+// Assistant corrected it.
+type correctedSyncJSON struct {
+	Steps      int    `json:"steps"`
+	ActiveKcal int    `json:"activeKcal"`
+	SyncedAt   string `json:"syncedAt"`
+	Corrected  bool   `json:"corrected"`
+}
+
+// correctedDayJSON is the Day view's Health Sync, with whether it was corrected.
+type correctedDayJSON struct {
+	Steps          *int `json:"steps"`
+	BurnedCalories *int `json:"burnedCalories"`
+	Activity       struct {
+		HealthSync *correctedSyncJSON `json:"healthSync"`
+	} `json:"activity"`
+}
+
+func TestTheAssistantCorrectsADayTheIPhoneMissedTheLastSyncOf(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	n.mustHealthSync(phone.mustCreateSyncKey(), syncDayJSON{Day: "2026-10-20", Steps: 433, ActiveKcal: 14})
+
+	got := callTool[walkChangedJSON](t, phone.tools(), "calories_correct_health_sync", map[string]any{"day": "2026-10-20", "steps": 12400, "activeKcal": 410})
+
+	if got.Day.Day != "2026-10-20" || !equalInts(got.Day.Steps, iptr(12400)) || !equalInts(got.Day.BurnedCalories, iptr(410)) {
+		t.Errorf("the Day after correcting = %+v steps/burned %v/%v, want 2026-10-20 12400/410", got.Day, show(got.Day.Steps), show(got.Day.BurnedCalories))
+	}
+	day := get[correctedDayJSON](phone, "/api/calories/days/2026-10-20")
+	want := correctedSyncJSON{Steps: 12400, ActiveKcal: 410, SyncedAt: "2026-10-21T12:00:00Z", Corrected: true}
+	if day.Activity.HealthSync == nil || *day.Activity.HealthSync != want {
+		t.Errorf("Health Sync = %+v, want %+v", day.Activity.HealthSync, want)
+	}
+}
+
+func TestALaterSyncReplacesACorrection(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	key := phone.mustCreateSyncKey()
+	callTool[walkChangedJSON](t, phone.tools(), "calories_correct_health_sync", map[string]any{"steps": 5000, "activeKcal": 150})
+
+	n.mustHealthSync(key, syncDayJSON{Day: "2026-10-21", Steps: 9812, ActiveKcal: 312})
+
+	day := get[correctedDayJSON](phone, "/api/calories/days/2026-10-21")
+	if day.Activity.HealthSync == nil || day.Activity.HealthSync.Steps != 9812 || day.Activity.HealthSync.Corrected {
+		t.Errorf("Health Sync = %+v, want the iPhone's 9812 steps, not corrected", day.Activity.HealthSync)
+	}
+}
+
+func TestACorrectionNeedsADayInTheEditableWindowAndItsNumbers(t *testing.T) {
+	_, phone := signedInBrowser(t, wednesday)
+	session := phone.tools()
+
+	for name, args := range map[string]map[string]any{
+		"an old Day":     {"day": "2026-10-13", "steps": 5000, "activeKcal": 150},
+		"a future Day":   {"day": "2026-10-22", "steps": 5000, "activeKcal": 150},
+		"no steps":       {"activeKcal": 150},
+		"no activeKcal":  {"steps": 5000},
+		"negative steps": {"steps": -1, "activeKcal": 150},
+		"too many steps": {"steps": 200001, "activeKcal": 150},
+		"too many kcal":  {"steps": 5000, "activeKcal": 10001},
+	} {
+		if got := toolError(t, session, "calories_correct_health_sync", args); got == "" {
+			t.Errorf("calories_correct_health_sync with %s: refused without saying why", name)
+		}
+	}
+	if day := get[correctedDayJSON](phone, "/api/calories/days/2026-10-21"); day.Activity.HealthSync != nil {
+		t.Errorf("Health Sync = %+v, want none", day.Activity.HealthSync)
+	}
+}
+
+func TestACorrectionDoesNotHideThatTheIPhoneStoppedSyncing(t *testing.T) {
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
+	phone.saveTimeZone("Asia/Tokyo")
+	n.clock.Set(tokyoTime(23, 30))
+	n.mustHealthSync(phone.mustCreateSyncKey(), syncDayJSON{Day: "2026-10-22", Steps: 9812, ActiveKcal: 340})
+
+	// The next evening, the Owner gives the Assistant the Day's numbers.
+	n.clock.Set(tokyoTime(23, 30).Add(24 * time.Hour))
+	callTool[walkChangedJSON](t, phone.tools(), "calories_correct_health_sync", map[string]any{"steps": 8000, "activeKcal": 250})
+	n.tickAt(tokyoTime(23, 30).Add(48 * time.Hour))
+
+	want := []notification{{Title: "Calories", Body: "Steps haven't synced since Thu, Oct 22"}}
+	if got := n.received(); !slices.Equal(got, want) {
+		t.Errorf("received %+v, want %+v: a correction isn't the iPhone syncing", got, want)
+	}
+}
