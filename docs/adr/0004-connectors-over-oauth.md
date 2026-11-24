@@ -5,7 +5,7 @@ So that the Owner can talk to Claude about their Japanese Words from the Claude 
 ## Considered Options
 
 - **No authentication, at a secret URL**: rejected. Anyone who learns the URL could change the Owner's Words, and the URL would sit in the Claude app's settings and logs.
-- **A long-lived API key pasted into the Claude app**: rejected. Claude's custom connectors authenticate with OAuth, and a key that never expires is a worse secret than a refresh token that can be revoked.
+- **A long-lived API key pasted into the Claude app**: rejected. Claude's custom connectors authenticate with OAuth, and a key that never expires is a worse secret than a refresh token that can be revoked. (Amended by ADR 0015: a Sync Key, long-lived but limited to the few write routes a Module opens to it, lets an iOS Shortcut in, since a Shortcut can't do OAuth.)
 - **Chat inside Nando via the Anthropic API**: rejected for now. It bills per token on top of the Owner's Claude subscription, and the skills would have to be rebuilt as server code. A Connector uses the subscription the Owner already pays for.
 
 ## Consequences

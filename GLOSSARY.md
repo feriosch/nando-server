@@ -29,7 +29,7 @@ The screen Nando opens to, made up of Home Cards from Core and from every Module
 _Avoid_: Dashboard, start page, landing
 
 **Home Card**:
-A small summary that a Module (or Core itself) supplies for Home, such as today's Consumed Calories against the Daily Limit, or the latest Weigh-in. A Module may supply more than one.
+A small summary that a Module (or Core itself) supplies for Home, such as today's Consumed Calories against the Daily Limit, with its Steps and Burned Calories, or the latest Weigh-in. A Module may supply more than one.
 _Avoid_: Widget, tile, panel
 
 **Tool**:
@@ -50,7 +50,7 @@ _Avoid_: Grace period, edit range
 
 ## Calories
 
-The Module for tracking what the Owner eats each Day.
+The Module for tracking what the Owner eats, and what they burn, each Day.
 
 **Meal**:
 Something the Owner eats repeatedly, saved by name with its kcal (and optionally the store it comes from) so it can be logged in one tap. Not tied to any Day. A snack is a Meal too. A different recipe or size of the same product is a separate Meal, not a new version of one.
@@ -83,6 +83,22 @@ _Avoid_: Target, goal, budget, allowance
 **Weigh-in**:
 The Owner's weight for one week (Monday to Sunday in the Owner Time Zone), in kg; at most one per week, and a later one in the same week replaces the earlier. It belongs to Calories (ADR 0012), which also derives its BMI from the Owner's height in Core's settings.
 _Avoid_: Weight log, measurement, entry
+
+**Steps**:
+The steps the Owner walked in a Day: its Health Sync's steps plus its Treadmill Walks' Steps. Always derived, never entered directly. A Day with neither has no Steps (shown "—"), never 0. They inform, and never change the Daily Limit (ADR 0015).
+_Avoid_: Step count, activity, movement
+
+**Burned Calories**:
+An estimate of the kcal the Owner burned in a Day: its Health Sync's active kcal plus its Treadmill Walks' kcal. Always derived and always labelled an estimate. It is shown beside Consumed Calories but never raises the Daily Limit or is "eaten back".
+_Avoid_: Calories out, active calories, exercise calories, net calories
+
+**Health Sync**:
+One Day's steps and active kcal from Apple Health on the Owner's iPhone, sent by an iOS Shortcut with a Sync Key. A Day has at most one, and a later one replaces it; it is never edited by hand. Only today's and yesterday's can be sent.
+_Avoid_: Apple Fitness, import, upload, Health data
+
+**Treadmill Walk**:
+One walk on the treadmill, logged through the Calories Assistant because the iPhone isn't carried there: its km, its Steps (worked out from km and the Owner's height when logged, and kept), and its kcal (from the treadmill's screen, or estimated). A Day can have any number, added to its Health Sync.
+_Avoid_: Workout, exercise, session, run
 
 ## Japanese
 
@@ -353,6 +369,10 @@ _Avoid_: Login, token, device
 **Connector**:
 An outside app, such as Claude, that the Owner allowed, with a Passkey, to use Nando's Tools on their behalf. A Connector never signs in and has no Session; removing it cuts it off at once.
 _Avoid_: Integration, client, app, bot, token
+
+**Sync Key**:
+A long-lived key, created in Settings with a Passkey and shown once, that lets one of the Owner's own automations, such as the Health Sync Shortcut, call only the few routes a Module opens to it. It never signs in, can't read, and can't use Tools; removing it cuts it off at once (ADR 0015).
+_Avoid_: API key, token, password, Connector
 
 ## Messenger
 
