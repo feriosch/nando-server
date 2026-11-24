@@ -81,8 +81,6 @@ func (a DayActivity) BurnedCalories() *int {
 type HealthSyncsRepository interface {
 	// Save stores sync, replacing any for the same Day.
 	Save(ctx context.Context, sync HealthSync) error
-	// Find returns day's Health Sync.
-	Find(ctx context.Context, day coremodel.Day) (HealthSync, error)
 	// ListBetween returns the Health Syncs from Day from to Day to, inclusive.
 	ListBetween(ctx context.Context, from, to coremodel.Day) ([]HealthSync, error)
 	// LastSyncedAt returns when the latest Health Sync came, or ErrNotFound if

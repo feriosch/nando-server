@@ -124,7 +124,7 @@ type toolProvider struct{ m *Module }
 // consent page.
 func (p toolProvider) ToolsDescription() string {
 	return "read your Days and Daily Limit, log, correct and delete what you eat, save, change and archive your Meals, " +
-		"read, log and delete your weekly Weigh-ins and your Treadmill Walks, and set your Daily Limit and when Calories Notifications come"
+		"read, log and delete your weekly Weigh-ins, log, correct and delete your Treadmill Walks, and set your Daily Limit and when Calories Notifications come"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {

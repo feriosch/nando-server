@@ -289,7 +289,7 @@ func TestTheConsentPageSaysWhatCaloriessToolsLetAConnectorDo(t *testing.T) {
 
 	// Deleting and archiving are said, as the Owner is asked first.
 	if want := []string{"read your Days and Daily Limit, log, correct and delete what you eat, save, change and archive your Meals, " +
-		"read, log and delete your weekly Weigh-ins and your Treadmill Walks, and set your Daily Limit and when Calories Notifications come"}; !slices.Equal(got, want) {
+		"read, log and delete your weekly Weigh-ins, log, correct and delete your Treadmill Walks, and set your Daily Limit and when Calories Notifications come"}; !slices.Equal(got, want) {
 		t.Errorf("toolsDescriptions = %q, want %q", got, want)
 	}
 }

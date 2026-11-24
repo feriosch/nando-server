@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
@@ -90,11 +91,18 @@ func (s *ActivityService) activityBetween(ctx context.Context, from, to coremode
 }
 
 // healthSync takes the Days the Health Sync Shortcut sends, each replacing
-// that Day's last Health Sync. Only today and yesterday are taken; if any Day
-// is wrong, none is.
+// that Day's last Health Sync. Only today and yesterday are taken, and other
+// Days left out; if any Day is malformed, none is taken.
 func (s *ActivityService) healthSync(w http.ResponseWriter, r *http.Request) {
 	var req model.HealthSyncRequestJSON
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Health's sums are often fractional: say so, rather than blame the
+		// body's shape.
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) && strings.HasPrefix(typeErr.Value, "number ") {
+			http.Error(w, "steps and activeKcal must be whole numbers: round them in the Shortcut", http.StatusBadRequest)
+			return
+		}
 		http.Error(w, `body must be {"days": [{"day", "steps", "activeKcal"}]}`, http.StatusBadRequest)
 		return
 	}
@@ -130,14 +138,17 @@ func (s *ActivityService) checkHealthSync(req model.HealthSyncRequestJSON, today
 		if err != nil {
 			return nil, fmt.Errorf("each day must be YYYY-MM-DD, not %q", d.Day)
 		}
-		if day != today && day != today.AddDays(-1) {
-			return nil, fmt.Errorf("only today (%s) and yesterday can be synced, not %s", today, day)
-		}
 		if d.Steps == nil || *d.Steps < 0 || *d.Steps > maxSteps {
 			return nil, fmt.Errorf("steps must be a whole number from 0 to %d", maxSteps)
 		}
-		if d.ActiveKcal == nil || *d.ActiveKcal < 0 || *d.ActiveKcal > 10000 {
-			return nil, errors.New("activeKcal must be a whole number from 0 to 10000")
+		if _, err := utils.CheckKcal("activeKcal", d.ActiveKcal); err != nil {
+			return nil, err
+		}
+		// The iPhone's Days may not be the Owner Time Zone's while the Owner
+		// travels (ADR 0015): a Day other than today or yesterday is left
+		// out, so the others still land.
+		if day != today && day != today.AddDays(-1) {
+			continue
 		}
 		syncs = append(syncs, model.HealthSync{Day: day, Steps: *d.Steps, ActiveKcal: *d.ActiveKcal, SyncedAt: now})
 	}

@@ -125,16 +125,32 @@ func TestALaterHealthSyncReplacesTheDaysLastOne(t *testing.T) {
 	}
 }
 
-func TestOnlyTodayAndYesterdayCanBeSynced(t *testing.T) {
+func TestOnlyTodayAndYesterdayAreSynced(t *testing.T) {
 	n, phone := signedInBrowser(t, wednesday)
 	key := phone.mustCreateSyncKey()
 
-	for _, day := range []string{"2026-10-22", "2026-10-19", "21-10-2026"} {
-		// A good Day alongside: if one Day is wrong, none is taken.
-		rec := n.healthSync(key, syncDayJSON{Day: "2026-10-21", Steps: 100, ActiveKcal: 5}, syncDayJSON{Day: day, Steps: 100, ActiveKcal: 5})
-		if rec.Code != http.StatusBadRequest {
-			t.Errorf("sync %s: status = %d, want %d", day, rec.Code, http.StatusBadRequest)
+	// Abroad, the iPhone's Days aren't the Owner Time Zone's: a Day that
+	// isn't today or yesterday is left out, and the rest still land.
+	n.mustHealthSync(key,
+		syncDayJSON{Day: "2026-10-22", Steps: 100, ActiveKcal: 5},
+		syncDayJSON{Day: "2026-10-21", Steps: 9812, ActiveKcal: 312},
+		syncDayJSON{Day: "2026-10-19", Steps: 100, ActiveKcal: 5})
+
+	for day, want := range map[string]*int{"2026-10-22": nil, "2026-10-21": iptr(9812), "2026-10-19": nil} {
+		if got := get[activeDayJSON](phone, "/api/calories/days/"+day); !equalInts(got.Steps, want) {
+			t.Errorf("%s steps = %v, want %v", day, show(got.Steps), show(want))
 		}
+	}
+}
+
+func TestAMalformedDayIsRefusedWithTheRest(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	key := phone.mustCreateSyncKey()
+
+	rec := n.healthSync(key, syncDayJSON{Day: "2026-10-21", Steps: 100, ActiveKcal: 5}, syncDayJSON{Day: "21-10-2026", Steps: 100, ActiveKcal: 5})
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("sync with a malformed Day: status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 	if got := get[activeDayJSON](phone, "/api/calories/days/2026-10-21"); got.Activity.HealthSync != nil {
 		t.Errorf("today's Health Sync = %+v, want none", got.Activity.HealthSync)
@@ -427,5 +443,21 @@ func TestTheOwnerIsToldOnceWhenStepsStopSyncing(t *testing.T) {
 	want := []notification{{Title: "Calories", Body: "Steps haven't synced since Thu, Oct 22"}}
 	if got := n.received(); !slices.Equal(got, want) {
 		t.Errorf("received %+v, want %+v, once", got, want)
+	}
+}
+
+func TestAGapInSyncingIsOnlyToldInItsFirstWeek(t *testing.T) {
+	// Core forgets a sent Notification after 30 days, so one still due then
+	// would be sent again every month of a gap that never ends.
+	n, phone := signedInBrowser(t, tokyoTime(9, 0))
+	phone.saveTimeZone("Asia/Tokyo")
+	key := phone.mustCreateSyncKey()
+	n.clock.Set(tokyoTime(23, 30))
+	n.mustHealthSync(key, syncDayJSON{Day: "2026-10-22", Steps: 9812, ActiveKcal: 340})
+
+	n.tickAt(tokyoTime(23, 30).Add(48*time.Hour + 7*24*time.Hour))
+
+	if got := n.received(); len(got) != 0 {
+		t.Errorf("received %+v over a week into the gap, want nothing", got)
 	}
 }

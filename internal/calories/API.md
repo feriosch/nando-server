@@ -1,6 +1,6 @@
 # Calories API
 
-The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, the Owner's weekly Weigh-ins ([ADR 0012](../../docs/adr/0012-weigh-ins-belong-to-calories.md)), each Day's Steps and Burned Calories from Health Syncs and Treadmill Walks ([ADR 0015](../../docs/adr/0015-steps-and-burned-calories-in-calories.md)), the Calories and Weight Home Cards, and the Calories Notifications. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)), but for the Health Sync, which the Owner's iPhone sends with a Sync Key. Bodies are JSON. Errors are a status code with a short plain-text message. The web app only reads: every route here is a `GET`. The Calories Assistant writes, through the Module's [Tools](#tools), which also read the same data ([#141](https://github.com/feriosch/nando-server/issues/141)).
+The Calories Module: Meals, the Entries that record what the Owner ate each Day, the Daily Limit each Day is judged against, the Owner's weekly Weigh-ins ([ADR 0012](../../docs/adr/0012-weigh-ins-belong-to-calories.md)), each Day's Steps and Burned Calories from Health Syncs and Treadmill Walks ([ADR 0015](../../docs/adr/0015-steps-and-burned-calories-in-calories.md)), the Calories and Weight Home Cards, and the Calories Notifications. Every route is under `/api/calories/` and, like all of `/api/`, needs a valid Session cookie (see [Core's API](../core/API.md)), but for the Health Sync, which the Owner's iPhone sends with a Sync Key. Bodies are JSON. Errors are a status code with a short plain-text message. The web app only reads: every route it calls here is a `GET`. The Calories Assistant writes, through the Module's [Tools](#tools), which also read the same data ([#141](https://github.com/feriosch/nando-server/issues/141)).
 
 A Day is a date in the Owner Time Zone, written `YYYY-MM-DD`.
 
@@ -183,9 +183,9 @@ Called by the Owner's iPhone with a Sync Key, as `Authorization: Bearer <key>` (
 }
 ```
 
-`204`: each Day's Health Sync is replaced by the one sent, with `syncedAt` now.
+`204`: each Day's Health Sync is replaced by the one sent, with `syncedAt` now. Only today and yesterday in the Owner Time Zone are taken: any other Day is left out, so that while the Owner travels and the iPhone's Days aren't Nando's, the Days that match still land.
 
-`400`: there's no Day, a Day isn't `YYYY-MM-DD` or isn't today or yesterday in the Owner Time Zone, or `steps` isn't a whole number from 0 to 200,000 or `activeKcal` from 0 to 10,000. If one Day is wrong, none is taken.
+`400`: there's no Day, a Day isn't `YYYY-MM-DD`, or `steps` isn't a whole number from 0 to 200,000 or `activeKcal` from 0 to 10,000. If one Day is wrong, none is taken.
 
 `401`: the Sync Key is unknown or was removed.
 
@@ -253,7 +253,7 @@ Core's tick asks the Calories Module for its Notifications every 5 minutes, for 
 
 The evening summary adds a second line when today has Steps or Burned Calories: `9812 steps · 340 kcal burned (est.)`.
 
-One more is always on, with no setting: **Steps haven't synced** (`Steps haven't synced since Thu, Oct 22`), once no Health Sync has come for 48 hours, and once for each such gap. It is never sent before the first Health Sync.
+One more is always on, with no setting: **Steps haven't synced** (`Steps haven't synced since Thu, Oct 22`), once no Health Sync has come for 48 hours, and once for each such gap, within the gap's first week. It is never sent before the first Health Sync.
 
 ## Tools
 

@@ -35,14 +35,20 @@ func NewNotifications(settings *SettingsService, days *DaysService, activity *Ac
 	return &NotificationsService{settings: settings, days: days, activity: activity}
 }
 
-// notSyncedAfter is how long without a Health Sync before the Owner is told
-// their Steps stopped syncing.
-const notSyncedAfter = 48 * time.Hour
+const (
+	// notSyncedAfter is how long without a Health Sync before the Owner is
+	// told their Steps stopped syncing.
+	notSyncedAfter = 48 * time.Hour
+	// notSyncedFor is how long after notSyncedAfter the Notification stays
+	// due. Core forgets a sent Notification after 30 days, so one due for
+	// longer would be sent again each month of a gap that never ends.
+	notSyncedFor = 7 * 24 * time.Hour
+)
 
 // notSynced is the Notification that Steps stopped syncing, if no Health
-// Sync has come for 48 hours at slot. It is named after the Day of the last
-// one, so it is sent once for each gap. Before the first Health Sync ever,
-// there is nothing to say.
+// Sync has come for 48 hours at slot, up to a week after that. It is named
+// after the Day of the last one, so it is sent once for each gap. Before the
+// first Health Sync ever, there is nothing to say.
 func (s *NotificationsService) notSynced(ctx context.Context, slot time.Time) (*coremodel.Notification, error) {
 	last, err := s.activity.healthSyncs.LastSyncedAt(ctx)
 	if errors.Is(err, coreutils.ErrNotFound) {
@@ -51,7 +57,7 @@ func (s *NotificationsService) notSynced(ctx context.Context, slot time.Time) (*
 	if err != nil {
 		return nil, err
 	}
-	if slot.Sub(last) < notSyncedAfter {
+	if gap := slot.Sub(last); gap < notSyncedAfter || gap >= notSyncedAfter+notSyncedFor {
 		return nil, nil
 	}
 	last = last.In(slot.Location())

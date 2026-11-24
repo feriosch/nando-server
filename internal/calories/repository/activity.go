@@ -34,12 +34,6 @@ func (r healthSyncs) Save(ctx context.Context, sync model.HealthSync) error {
 	return err
 }
 
-func (r healthSyncs) Find(ctx context.Context, day coremodel.Day) (model.HealthSync, error) {
-	var sync model.HealthSync
-	err := r.collection.FindOne(ctx, bson.D{{Key: "_id", Value: day}}).Decode(&sync)
-	return sync, utils.NotFound(err)
-}
-
 func (r healthSyncs) ListBetween(ctx context.Context, from, to coremodel.Day) ([]model.HealthSync, error) {
 	cursor, err := r.collection.Find(ctx, bson.D{{Key: "_id", Value: bson.D{{Key: "$gte", Value: from}, {Key: "$lte", Value: to}}}})
 	if err != nil {
