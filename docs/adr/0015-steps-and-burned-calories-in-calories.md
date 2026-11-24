@@ -16,8 +16,9 @@ The Owner wants to see how much they moved next to what they ate: the Day's **St
 - **Burned Calories add the two as they are.** Health's active kcal excludes resting burn and most treadmills include it, so the sum runs a little high. That is accepted for a number that changes nothing.
 - **Only the Calories Assistant writes Treadmill Walks**, like the rest of Calories: `calories_log_walk`, `calories_update_walk`, and `calories_delete_walk` (destructive, asked first). They follow the Editable Window, like Entries. The web app only reads.
 - **The Health Sync comes from an iOS Shortcuts automation**, free and built into the iPhone:
-  - Personal automations run at a few times a day (such as 12:00, 18:00 and 23:30), without asking. Each sends today's and yesterday's steps and active kcal.
-  - iOS hides Health data while the iPhone is locked, so a run on a locked phone may send nothing. The other runs, and resending yesterday, make up for it.
+  - Personal automations run at a few times a day (12:00, 18:00, 22:00, 23:00 and 23:55, close together late so the evening lands even if the iPhone is locked at one), without asking. Each sends today's steps and active kcal, and only today's: steps walked after the last run of a Day are not counted.
+  - iOS hides Health data while the iPhone is locked, so a run on a locked phone finds nothing and sends nothing, leaving the Day's last Health Sync as it was. The other runs make up for it.
+  - The Shortcut first sent yesterday too, to catch steps walked late at night. Building that in Shortcuts proved fiddly (its date filters and variables), so the Owner keeps it to today. Nando still takes yesterday, so a Shortcut that sends it can be added back later without a change to Nando.
   - Nando takes only today and yesterday, and leaves out any other Day sent, so that abroad, where the iPhone's Days aren't Nando's, the Days that match still land.
   - The Shortcut sums the Day in the iPhone's time zone, not the Owner Time Zone. Away from it, a Day's Health Sync can be a few hours off. That is accepted: it only matters on travel days.
   - It sends steps and active kcal only. Walking distance and resting kcal are left out until something uses them.
