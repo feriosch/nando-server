@@ -1,9 +1,11 @@
-// Package calories is the Module for tracking what the Owner eats each Day.
+// Package calories is the Module for tracking what the Owner eats, and what
+// they burn, each Day.
 //
 // The Module is split in three layers: model declares its data and one
 // repository interface per collection, service handles requests, Tools and
 // validation (MealsService, EntriesService, DailyLimitsService,
-// SettingsService, DaysService for how each Day went, and
+// SettingsService, ActivityService for Health Syncs and Treadmill Walks,
+// DaysService for how each Day went, and
 // NotificationsService, the Module's Notification provider), and repository
 // holds all database code. The services see only the repository and
 // CoreService interfaces, never a database.
@@ -29,6 +31,7 @@ type Module struct {
 	entries     *service.EntriesService
 	dailyLimits *service.DailyLimitsService
 	days        *service.DaysService
+	activity    *service.ActivityService
 	settings    *service.SettingsService
 	weighIns    *service.WeighInsService
 	// notifications is the Module's Notification provider.
@@ -55,16 +58,27 @@ func NewCaloriesModule(ctx context.Context, db *mongo.Database, core coremodel.C
 	meals := repository.NewMeals(db)
 	dailyLimits := repository.NewDailyLimits(db)
 	entriesService := service.NewEntries(entries, meals, dailyLimits, core, now)
-	days := service.NewDays(entries, dailyLimits, core)
+	healthSyncs, err := repository.NewHealthSyncs(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	walks, err := repository.NewTreadmillWalks(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	weighIns := repository.NewWeighIns(db)
+	activity := service.NewActivity(healthSyncs, walks, weighIns, core, now)
+	days := service.NewDays(entries, dailyLimits, activity, core)
 	settings := service.NewSettings(repository.NewSettings(db))
 	return &Module{
 		meals:         service.NewMeals(meals, entries, core, now),
 		entries:       entriesService,
 		dailyLimits:   service.NewDailyLimits(dailyLimits, core),
 		days:          days,
+		activity:      activity,
 		settings:      settings,
-		weighIns:      service.NewWeighIns(repository.NewWeighIns(db), core),
-		notifications: service.NewNotifications(settings, days),
+		weighIns:      service.NewWeighIns(weighIns, core),
+		notifications: service.NewNotifications(settings, days, activity),
 	}, nil
 }
 
@@ -76,6 +90,13 @@ func (m *Module) Routes(mux *http.ServeMux) {
 	m.days.Routes(mux)
 	m.settings.Routes(mux)
 	m.weighIns.Routes(mux)
+	m.activity.Routes(mux)
+}
+
+// SyncKeyRoutes are the Module's routes a Sync Key may call, for
+// Core.OpenToSyncKeys: the Health Sync's (ADR 0015).
+func (m *Module) SyncKeyRoutes() []string {
+	return m.activity.SyncKeyRoutes()
 }
 
 // NotificationProvider is the Module's Notification provider, for Core to ask
@@ -103,9 +124,9 @@ type toolProvider struct{ m *Module }
 // consent page.
 func (p toolProvider) ToolsDescription() string {
 	return "read your Days and Daily Limit, log, correct and delete what you eat, save, change and archive your Meals, " +
-		"read, log and delete your weekly Weigh-ins, and set your Daily Limit and when Calories Notifications come"
+		"read, log and delete your weekly Weigh-ins, log, correct and delete your Treadmill Walks, and set your Daily Limit and when Calories Notifications come"
 }
 
 func (p toolProvider) Tools() []coremodel.Tool {
-	return slices.Concat(p.m.meals.Tools(), p.m.entries.Tools(), p.m.days.Tools(), p.m.dailyLimits.Tools(), p.m.settings.Tools(), p.m.weighIns.Tools())
+	return slices.Concat(p.m.meals.Tools(), p.m.entries.Tools(), p.m.days.Tools(), p.m.dailyLimits.Tools(), p.m.settings.Tools(), p.m.weighIns.Tools(), p.m.activity.Tools())
 }

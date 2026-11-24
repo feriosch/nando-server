@@ -93,6 +93,9 @@ func startNando(t *testing.T, client *mongo.Client, clk *clock) *nando {
 	c.AddNotificationProvider(cal.NotificationProvider())
 	c.AddAssistant(cal.Assistant())
 	c.AddToolProvider(cal.ToolProvider())
+	for _, route := range cal.SyncKeyRoutes() {
+		c.OpenToSyncKeys(route)
+	}
 	return &nando{
 		t:      t,
 		client: client,

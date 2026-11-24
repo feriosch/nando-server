@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/feriosch/nando-server/internal/calories/model"
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
+	coreutils "github.com/feriosch/nando-server/internal/core/utils"
 )
 
 const (
@@ -17,16 +20,49 @@ const (
 // NotificationsService is the Module's Notification provider, which Core asks
 // at every tick: the no-Entries reminder that nothing is logged yet today and
 // the evening summary of how today went, each at the time in the Calories
-// settings, and the weekly Weigh-in reminder at its weekday and time. It asks the SettingsService for those settings and the
-// DaysService for how today went.
+// settings, the weekly Weigh-in reminder at its weekday and time, and the
+// one that Steps stopped syncing. It asks the SettingsService for those
+// settings, the DaysService for how today went and the ActivityService for
+// its Steps and Health Syncs.
 type NotificationsService struct {
 	settings *SettingsService
 	days     *DaysService
+	activity *ActivityService
 }
 
 // NewNotifications returns the NotificationsService.
-func NewNotifications(settings *SettingsService, days *DaysService) *NotificationsService {
-	return &NotificationsService{settings: settings, days: days}
+func NewNotifications(settings *SettingsService, days *DaysService, activity *ActivityService) *NotificationsService {
+	return &NotificationsService{settings: settings, days: days, activity: activity}
+}
+
+const (
+	// notSyncedAfter is how long without a Health Sync before the Owner is
+	// told their Steps stopped syncing.
+	notSyncedAfter = 48 * time.Hour
+	// notSyncedFor is how long after notSyncedAfter the Notification stays
+	// due. Core forgets a sent Notification after 30 days, so one due for
+	// longer would be sent again each month of a gap that never ends.
+	notSyncedFor = 7 * 24 * time.Hour
+)
+
+// notSynced is the Notification that Steps stopped syncing, if no Health
+// Sync has come for 48 hours at slot, up to a week after that. It is named
+// after the Day of the last one, so it is sent once for each gap. Before the
+// first Health Sync ever, there is nothing to say.
+func (s *NotificationsService) notSynced(ctx context.Context, slot time.Time) (*coremodel.Notification, error) {
+	last, err := s.activity.healthSyncs.LastSyncedAt(ctx)
+	if errors.Is(err, coreutils.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if gap := slot.Sub(last); gap < notSyncedAfter || gap >= notSyncedAfter+notSyncedFor {
+		return nil, nil
+	}
+	last = last.In(slot.Location())
+	n := notification("steps-not-synced", coremodel.DayOf(last, slot.Location()), "Steps haven't synced since "+last.Format("Mon, Jan 2"))
+	return &n, nil
 }
 
 // DueNotifications returns the Calories Notifications due at slot, which is
@@ -40,6 +76,13 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 	var due []coremodel.Notification
 	if settings.WeighInReminder.DueAt(slot) {
 		due = append(due, notification("weigh-in-reminder", day.Week(), "Time to log this week's weight"))
+	}
+	notSynced, err := s.notSynced(ctx, slot)
+	if err != nil {
+		return nil, err
+	}
+	if notSynced != nil {
+		due = append(due, *notSynced)
 	}
 	reminderDue := settings.NoEntriesReminder.DueAt(slot)
 	summaryDue := settings.EveningSummary.DueAt(slot)
@@ -56,7 +99,11 @@ func (s *NotificationsService) DueNotifications(ctx context.Context, slot time.T
 		due = append(due, notification("no-entries-reminder", day, "Nothing logged yet today"))
 	}
 	if summaryDue {
-		due = append(due, notification("evening-summary", day, eveningSummaryBody(calories)))
+		activity, err := s.activity.dayActivity(ctx, day)
+		if err != nil {
+			return nil, err
+		}
+		due = append(due, notification("evening-summary", day, eveningSummaryBody(calories)+activityLine(activity)))
 	}
 	return due, nil
 }
@@ -81,4 +128,20 @@ func eveningSummaryBody(d model.DayCalories) string {
 		return fmt.Sprintf("Today: %d kcal", *d.ConsumedCalories)
 	}
 	return fmt.Sprintf("Today: %d / %d kcal", *d.ConsumedCalories, *d.DailyLimit)
+}
+
+// activityLine is the evening summary's line of the Day's Steps and Burned
+// Calories, after a line break, or "" for a Day with neither.
+func activityLine(a model.DayActivity) string {
+	var parts []string
+	if steps := a.Steps(); steps != nil {
+		parts = append(parts, fmt.Sprintf("%d steps", *steps))
+	}
+	if burned := a.BurnedCalories(); burned != nil {
+		parts = append(parts, fmt.Sprintf("%d kcal burned (est.)", *burned))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "\n" + strings.Join(parts, " · ")
 }

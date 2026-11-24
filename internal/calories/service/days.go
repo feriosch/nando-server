@@ -17,12 +17,15 @@ import (
 type DaysService struct {
 	entries     model.EntriesRepository
 	dailyLimits model.DailyLimitsRepository
-	core        coremodel.CoreService
+	// activity answers each Day's Steps and Burned Calories.
+	activity *ActivityService
+	core     coremodel.CoreService
 }
 
 // NewDays returns the DaysService.
-func NewDays(entries model.EntriesRepository, dailyLimits model.DailyLimitsRepository, core coremodel.CoreService) *DaysService {
-	return &DaysService{entries: entries, dailyLimits: dailyLimits, core: core}
+func NewDays(entries model.EntriesRepository, dailyLimits model.DailyLimitsRepository, activity *ActivityService,
+	core coremodel.CoreService) *DaysService {
+	return &DaysService{entries: entries, dailyLimits: dailyLimits, activity: activity, core: core}
 }
 
 // Routes adds the Day routes to mux, under /api/calories/.
@@ -43,15 +46,21 @@ func toCaloriesJSON(d model.DayCalories) model.CaloriesJSON {
 }
 
 // dayView returns day's Entries with its Consumed Calories against its Daily
-// Limit.
+// Limit, and its Steps and Burned Calories with what they come from.
 func (s *DaysService) dayView(ctx context.Context, day coremodel.Day) (model.DayJSON, error) {
 	calories, entries, err := s.dayCalories(ctx, day)
 	if err != nil {
 		return model.DayJSON{}, err
 	}
+	activity, err := s.activity.dayActivity(ctx, day)
+	if err != nil {
+		return model.DayJSON{}, err
+	}
 	return model.DayJSON{
-		CaloriesJSON: toCaloriesJSON(calories),
-		Entries:      utils.ToEntryJSONs(entries),
+		CaloriesJSON:       toCaloriesJSON(calories),
+		ActivityTotalsJSON: toActivityTotalsJSON(activity),
+		Entries:            utils.ToEntryJSONs(entries),
+		Activity:           toActivityJSON(activity),
 	}, nil
 }
 
@@ -93,7 +102,7 @@ func (s *DaysService) getDay(w http.ResponseWriter, r *http.Request) {
 }
 
 // homeCard answers the Calories Home Card: today's Consumed Calories against
-// the Daily Limit.
+// the Daily Limit, and its Steps and Burned Calories.
 func (s *DaysService) homeCard(w http.ResponseWriter, r *http.Request) {
 	today, err := s.core.Today(r.Context())
 	if err != nil {
@@ -105,14 +114,15 @@ func (s *DaysService) homeCard(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	coreutils.WriteJSON(w, http.StatusOK, view.CaloriesJSON)
+	coreutils.WriteJSON(w, http.StatusOK, model.DayTotalsJSON{CaloriesJSON: view.CaloriesJSON, ActivityTotalsJSON: view.ActivityTotalsJSON})
 }
 
 // maxHistoryDays is the most Days the history answers at once: a leap year.
 const maxHistoryDays = 366
 
 // history lists every Day from ?from= to ?to= (today at the latest), newest
-// first, with its Consumed Calories against the Daily Limit it had.
+// first, with its Consumed Calories against the Daily Limit it had, and its
+// Steps and Burned Calories.
 func (s *DaysService) history(w http.ResponseWriter, r *http.Request) {
 	from, errFrom := coremodel.ParseDay(r.URL.Query().Get("from"))
 	to, errTo := coremodel.ParseDay(r.URL.Query().Get("to"))
@@ -143,13 +153,21 @@ func (s *DaysService) history(w http.ResponseWriter, r *http.Request) {
 		coreutils.ServerError(w, err)
 		return
 	}
-	list := []model.CaloriesJSON{}
+	activity, err := s.activity.activityBetween(r.Context(), from, to)
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	list := []model.DayTotalsJSON{}
 	for day := to; day >= from; day = day.AddDays(-1) {
 		var kcal *int
 		if k, logged := consumed[day]; logged {
 			kcal = &k
 		}
-		list = append(list, toCaloriesJSON(limits.Calories(day, kcal)))
+		list = append(list, model.DayTotalsJSON{
+			CaloriesJSON:       toCaloriesJSON(limits.Calories(day, kcal)),
+			ActivityTotalsJSON: toActivityTotalsJSON(activity[day]),
+		})
 	}
 	coreutils.WriteJSON(w, http.StatusOK, list)
 }
@@ -158,8 +176,10 @@ func (s *DaysService) history(w http.ResponseWriter, r *http.Request) {
 func (s *DaysService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
 		Name: "calories_get_day",
-		Description: "A Day as the Nando app shows it: its Entries in the order they were logged, and its Consumed Calories " +
-			"against the Daily Limit it had. An Unlogged Day has no Entries, and null Consumed Calories: not recorded, never 0 kcal.",
+		Description: "A Day as the Nando app shows it: its Entries in the order they were logged, its Consumed Calories " +
+			"against the Daily Limit it had, and its Steps and Burned Calories (an estimate) with the Health Sync and Treadmill Walks " +
+			"they come from. An Unlogged Day has no Entries, and null Consumed Calories: not recorded, never 0 kcal. " +
+			"Null Steps mean nothing synced or logged, never 0 steps.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
 			`"day":{"type":"string","description":"YYYY-MM-DD in the Owner Time Zone; leave out for today."}}}`),
 		ReadOnly: true,

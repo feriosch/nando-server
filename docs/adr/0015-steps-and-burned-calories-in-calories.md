@@ -18,7 +18,7 @@ The Owner wants to see how much they moved next to what they ate: the Day's **St
 - **The Health Sync comes from an iOS Shortcuts automation**, free and built into the iPhone:
   - Personal automations run at a few times a day (such as 12:00, 18:00 and 23:30), without asking. Each sends today's and yesterday's steps and active kcal.
   - iOS hides Health data while the iPhone is locked, so a run on a locked phone may send nothing. The other runs, and resending yesterday, make up for it.
-  - Nando accepts only today and yesterday, and refuses a future Day.
+  - Nando takes only today and yesterday, and leaves out any other Day sent, so that abroad, where the iPhone's Days aren't Nando's, the Days that match still land.
   - The Shortcut sums the Day in the iPhone's time zone, not the Owner Time Zone. Away from it, a Day's Health Sync can be a few hours off. That is accepted: it only matters on travel days.
   - It sends steps and active kcal only. Walking distance and resting kcal are left out until something uses them.
 - **A Sync Key lets the Shortcut in, and Core owns it.**
