@@ -76,7 +76,7 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 	accountsRepo := repository.NewAccounts(db)
 	accounts := service.NewAccounts(accountsRepo, statements)
 	settings := service.NewSettings(repository.NewSettings(db), accountsRepo)
-	categories := service.NewCategories(repository.NewSubcategories(db), statements, merchantsRepo, subscriptionsRepo)
+	categories := service.NewCategories(repository.NewSubcategories(db), settings, statements, merchantsRepo, subscriptionsRepo)
 	merchants := service.NewMerchants(merchantsRepo, categories)
 	statementsService := service.NewStatements(statements, accounts, categories, merchants, files, core)
 	rates := service.NewRates(repository.NewRates(db), core, cfg.RatesURL)

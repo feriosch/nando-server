@@ -168,3 +168,68 @@ func TestUnconfirmedTransactionsAreListedUntilConfirmed(t *testing.T) {
 		t.Errorf("Gifts = %+v; want the confirmed one", gifts)
 	}
 }
+
+func TestACategoryDefaultMarksWhatHasNoSubcategory(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	snacks := saveSubcategory(t, session, map[string]any{"category": "groceries", "name": "Snacks", "essential": false})
+	callTool[map[string]any](t, session, "money_save_settings", map[string]any{
+		"essentialByCategory": map[string]any{"groceries": true, "eating_out": false},
+	})
+
+	_, got := oneStatement(t, session,
+		map[string]any{"kind": "expense", "day": "2026-10-03", "amount": 3000, "rawText": "SUPERMARKET", "category": "groceries"},
+		map[string]any{"kind": "expense", "day": "2026-10-04", "amount": 500, "rawText": "CHIPS", "category": "groceries", "subcategory": snacks.ID},
+		map[string]any{"kind": "expense", "day": "2026-10-05", "amount": 1200, "rawText": "RAMEN", "category": "eating_out"},
+		map[string]any{"kind": "expense", "day": "2026-10-06", "amount": 900, "rawText": "DINNER", "category": "eating_out", "essential": true},
+		map[string]any{"kind": "expense", "day": "2026-10-07", "amount": 2000, "rawText": "ATM", "category": "cash_paypay"},
+	)
+
+	want := []*bool{ptr(true), ptr(false), ptr(false), ptr(true), nil}
+	for i, w := range want {
+		e := got[i].Essential
+		if (e == nil) != (w == nil) || (e != nil && *e != *w) {
+			t.Errorf("%s: essential = %v, want %v", got[i].RawText, deref(e), deref(w))
+		}
+	}
+
+	totals := callTool[totalsJSON](t, session, "money_get_month_totals", map[string]any{"month": "2026-10"})
+	if totals.Spending.Essential != 3900 || totals.Spending.Optional != 1700 || totals.Spending.Unmarked != 2000 {
+		t.Errorf("essential %d, optional %d, unmarked %d; want 3,900, 1,700 and 2,000",
+			totals.Spending.Essential, totals.Spending.Optional, totals.Spending.Unmarked)
+	}
+
+	// null removes a Category's mark.
+	callTool[map[string]any](t, session, "money_save_settings", map[string]any{"essentialByCategory": map[string]any{"eating_out": nil}})
+	again := callTool[[]whatItIs](t, session, "money_list_transactions", map[string]any{"category": "eating_out"})
+	if again[0].Essential != nil {
+		t.Errorf("after removing Eating Out's mark: %v; want unmarked", *again[0].Essential)
+	}
+}
+
+func TestBadCategoryMarksAreRefused(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+
+	for name, c := range map[string]struct {
+		marks map[string]any
+		want  string
+	}{
+		"an unknown Category": {map[string]any{"toys": true}, "toys"},
+		"an income Category":  {map[string]any{"salary": true}, "salary"},
+	} {
+		if got := toolError(t, session, "money_save_settings", map[string]any{"essentialByCategory": c.marks}); !strings.Contains(got, c.want) {
+			t.Errorf("%s: %q; want it to name %q", name, got, c.want)
+		}
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
+
+// deref is *b for printing, or "unmarked".
+func deref(b *bool) any {
+	if b == nil {
+		return "unmarked"
+	}
+	return *b
+}

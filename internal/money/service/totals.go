@@ -77,7 +77,7 @@ type figures struct {
 }
 
 // figures works out month's figures, converting with conv.
-func (s *TotalsService) figures(ctx context.Context, month string, currencies map[string]string, essentials map[string]bool, conv *converter) (figures, error) {
+func (s *TotalsService) figures(ctx context.Context, month string, currencies map[string]string, essentials marks, conv *converter) (figures, error) {
 	found, err := s.statements.Transactions(ctx, model.TransactionFilter{FromMonth: month, ToMonth: month})
 	if err != nil {
 		return figures{}, err
@@ -121,10 +121,7 @@ func (s *TotalsService) figures(ctx context.Context, month string, currencies ma
 			f.bySubcategory[t.Category] = map[string]int64{}
 		}
 		f.bySubcategory[t.Category][t.SubcategoryID] += yen
-		mark, marked := essentials[t.SubcategoryID]
-		if t.Essential != nil {
-			mark, marked = *t.Essential, true
-		}
+		mark, marked := essentials.of(t.Transaction)
 		switch {
 		case !marked:
 			f.unmarked += yen

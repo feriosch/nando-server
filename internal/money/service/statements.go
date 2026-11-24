@@ -74,15 +74,13 @@ func (s *StatementsService) keepFiles(ctx context.Context, statement *model.Stat
 
 // toTransactionJSON is t, in an Account in currency, with essentials, every
 // Subcategory's Essential mark by its ID.
-func toTransactionJSON(currency string, t model.Transaction, essentials map[string]bool) model.TransactionJSON {
+func toTransactionJSON(currency string, t model.Transaction, essentials marks) model.TransactionJSON {
 	j := model.TransactionJSON{
 		ID: t.ID, Kind: string(t.Kind), Day: t.Day, Amount: utils.FromMinor(currency, t.Amount), Direction: t.Direction,
 		RawText: t.RawText, Note: t.Note, OtherAccount: t.OtherAccountID, Category: t.Category, Subcategory: t.SubcategoryID,
 		Merchant: t.MerchantID, EssentialOverride: t.Essential, Unconfirmed: t.Unconfirmed,
 	}
-	if t.Essential != nil {
-		j.Essential = t.Essential
-	} else if mark, ok := essentials[t.SubcategoryID]; ok {
+	if mark, marked := essentials.of(t); marked {
 		j.Essential = &mark
 	}
 	return j
@@ -98,7 +96,7 @@ func fromMinorPtr(currency string, amount *int64) *float64 {
 	return &v
 }
 
-func toStatementJSON(currency string, s model.Statement, essentials map[string]bool) model.StatementJSON {
+func toStatementJSON(currency string, s model.Statement, essentials marks) model.StatementJSON {
 	j := model.StatementJSON{
 		ID: s.ID, Account: s.AccountID, From: s.From, To: s.To, Source: string(s.Source), FileIDs: s.FileIDs,
 		Total: fromMinorPtr(currency, s.Total), ClosingBalance: fromMinorPtr(currency, s.ClosingBalance),
@@ -558,7 +556,7 @@ func (s *StatementsService) listStatementsTool(ctx context.Context, arguments js
 	}
 	answer := make([]model.StatementJSON, len(list))
 	for i, statement := range list {
-		answer[i] = toStatementJSON(account.Currency, statement, nil)
+		answer[i] = toStatementJSON(account.Currency, statement, marks{})
 	}
 	return answer, nil
 }

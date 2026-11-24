@@ -19,6 +19,7 @@ One document:
 - `askAbove`: per currency, the whole amount above which a Transaction Claude can't tell is asked about. Below it, Claude's best guess is kept, Unconfirmed (ADR 0014). ¥3,000 and MX$300 until changed. Each must be above 0, and only the Owner's currencies, JPY and MXN, are taken.
 - `reminders`: the Statement Reminders, one per app the Owner opens, each with its own `name`, the `accounts` whose Statements it holds (open ones, each in at most one reminder) and its `day` of the month, 1 to 28. None until set; a save replaces the whole list.
 - `reminderTime`: when, in the Owner Time Zone, reminders and Monthly Review asks are sent, on the hour or half hour. 09:00 until changed.
+- `essentialByCategory`: by expense Category key, `true` (Essential) or `false` (Optional), the mark of what has no Subcategory in that Category. None until set. A save changes only the Categories sent, and `null` removes one's mark; an unknown or income Category is refused.
 
 ## Notifications
 
@@ -90,7 +91,7 @@ A Statement is one Account and one period (`from`, `to`, Days as `YYYY-MM-DD`), 
   - `merchant` is its Merchant;
   - `essential` is set only when this one Transaction differs from its Subcategory, and `unconfirmed` marks Claude's best guess awaiting the Owner.
   - A `transfer` has none of these, only `unconfirmed`.
-  - Answers carry `essentialOverride`, and `essential`, what the Transaction counts as: its override, else its Subcategory's mark, else `null`, unmarked, so a missing mark shows rather than being guessed.
+  - Answers carry `essentialOverride`, and `essential`, what the Transaction counts as: its override, else its Subcategory's mark, else its Category's default from `essentialByCategory`, else `null`, unmarked, so a missing mark shows rather than being guessed.
 - A **Merchant** (`id`, `name`, `rawTexts`, `category`, `subcategory`) is who a Transaction was with, cleaned up from the raw texts it has been seen as, with what its Transactions usually are. One that sells everything has neither.
 - A **Subscription** (`id`, `merchant`, `amount`, `currency`, `every`: `monthly` or `yearly`, `lastCharged`, `category`, `subcategory`, `essential`, `active`) is a charge that repeats. It is `late` when active and more than a week past its expected charge (a month or a year after `lastCharged`), so the Review can ask whether it was cancelled.
 
@@ -112,7 +113,7 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
 ## Routes
 
 - **`GET /api/money/card`**: the Home Card, for the latest Complete month, never the one under way, since Statements arrive after a month ends. It has `month`; `spending` (`total`, `average3` of up to 3 months before, `essential`, `optional`, `unmarked`); `netWorth` (`total`; `previous`, the month before's; and `missing`, each `id` and `name` of the Accounts with no balance near the month's end, left out of `total`); and `unconfirmed`, how many Transactions of any month are still Unconfirmed. It is `null` before any month is Complete, looking back at most 36 months.
-- **`GET /api/money/settings`**: the settings, for the Settings Section, read-only. It has `askAbove`, `reminderTime`, and each reminder's `name`, `day` and Accounts by name.
+- **`GET /api/money/settings`**: the settings, for the Settings Section, read-only. It has `askAbove`, `reminderTime`, `essentialByCategory`, and each reminder's `name`, `day` and Accounts by name.
 
 ## Tools
 
