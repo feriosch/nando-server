@@ -243,3 +243,37 @@ func TestASyncKeyCeremonyCannotSignIn(t *testing.T) {
 			rec.Code, rec.Body, mac.session != nil, http.StatusBadRequest)
 	}
 }
+
+// A refused Passkey or a used challenge answers 403, not 401: under /api/,
+// the web app takes a 401 for a lost Session and signs the Owner out.
+func TestARefusedSyncKeyCreationIsForbiddenNotUnauthorized(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	// A second Passkey, on a Mac, deleted since.
+	phones := phone.listPasskeys()
+	mac := n.newBrowser("Mac")
+	mac.mustEnroll()
+	for _, p := range phone.listPasskeys() {
+		if p.ID == phones[0].ID {
+			continue
+		}
+		if rec := phone.do(http.MethodDelete, "/api/passkeys/"+p.ID, nil); rec.Code != http.StatusNoContent {
+			t.Fatalf("DELETE the Mac's Passkey: status = %d, body %q", rec.Code, rec.Body)
+		}
+	}
+
+	options := phone.do(http.MethodPost, "/api/sync-keys/begin", mustJSON(t, map[string]string{"name": "iPhone Health"}))
+	answer := mac.passkey.Get(t, phone.origin, options.Body.Bytes())
+	if rec := phone.do(http.MethodPost, "/api/sync-keys/finish", answer); rec.Code != http.StatusForbidden {
+		t.Errorf("finish with an unknown Passkey: status = %d, body %q; want %d", rec.Code, rec.Body, http.StatusForbidden)
+	}
+	// Its challenge is used up now.
+	if rec := phone.do(http.MethodPost, "/api/sync-keys/finish", phone.passkey.Get(t, phone.origin, options.Body.Bytes())); rec.Code != http.StatusForbidden {
+		t.Errorf("finish with a used challenge: status = %d, body %q; want %d", rec.Code, rec.Body, http.StatusForbidden)
+	}
+	if rec := phone.do(http.MethodGet, "/api/sync-keys", nil); rec.Code != http.StatusOK {
+		t.Errorf("GET /api/sync-keys afterwards: status = %d; want the Session kept", rec.Code)
+	}
+	if list := phone.listSyncKeys(); len(list) != 0 {
+		t.Errorf("Sync Keys = %+v; want none", list)
+	}
+}

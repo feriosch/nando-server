@@ -338,7 +338,7 @@ Body: the `PublicKeyCredential` from `navigator.credentials.get`.
 }
 ```
 
-`400`: the body isn't a `PublicKeyCredential`, or its challenge was for another ceremony, such as a sign-in. `401`: the Passkey is unknown or failed, or the challenge is unknown, used or expired.
+`400`: the body isn't a `PublicKeyCredential`, or its challenge was for another ceremony, such as a sign-in. `403`: the Passkey is unknown or failed, or the challenge is unknown, used or expired. It is `403`, not `401` as on `/auth/`, because the route is under `/api/`, where the web app takes a `401` for a lost Session.
 
 ### `GET /api/sync-keys`
 

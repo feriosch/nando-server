@@ -344,14 +344,16 @@ func (s *IdentityService) finishSyncKey(w http.ResponseWriter, r *http.Request) 
 	}
 	ceremony, sessionData, err := s.takeCeremony(r.Context(), parsed.Response.CollectedClientData.Challenge)
 	if err != nil {
-		ceremonyError(w, err)
+		ceremonyErrorAs(w, err, http.StatusForbidden)
 		return
 	}
 	if ceremony.SyncKeyName == "" {
 		http.Error(w, "that challenge was not for creating a Sync Key", http.StatusBadRequest)
 		return
 	}
-	if !s.checkPasskey(w, r, parsed, sessionData) {
+	// 403, not 401: this is under /api/, where the web app takes a 401 for a
+	// lost Session and signs the Owner out.
+	if !s.checkPasskeyAs(w, r, parsed, sessionData, http.StatusForbidden) {
 		return
 	}
 	created, err := s.syncKeys.create(r.Context(), ceremony.SyncKeyName)
@@ -363,19 +365,29 @@ func (s *IdentityService) finishSyncKey(w http.ResponseWriter, r *http.Request) 
 }
 
 // checkPasskey checks the Passkey's answer to a sign-in, approval or Sync Key
-// creation ceremony
-// and saves its new sign count. If the Passkey is refused, it answers r and
-// returns false.
+// creation ceremony and saves its new sign count. If the Passkey is refused,
+// it answers r with 401 and returns false.
 func (s *IdentityService) checkPasskey(
 	w http.ResponseWriter,
 	r *http.Request,
 	parsed *protocol.ParsedCredentialAssertionData,
 	sessionData webauthn.SessionData,
 ) bool {
+	return s.checkPasskeyAs(w, r, parsed, sessionData, http.StatusUnauthorized)
+}
+
+// checkPasskeyAs is checkPasskey answering a refused Passkey with status.
+func (s *IdentityService) checkPasskeyAs(
+	w http.ResponseWriter,
+	r *http.Request,
+	parsed *protocol.ParsedCredentialAssertionData,
+	sessionData webauthn.SessionData,
+	refused int,
+) bool {
 	var passkey model.Passkey
 	_, credential, err := s.webauthn.ValidatePasskeyLogin(s.findOwner(r.Context(), &passkey), sessionData, parsed)
 	if err != nil {
-		http.Error(w, signInRefused, http.StatusUnauthorized)
+		http.Error(w, signInRefused, refused)
 		return false
 	}
 	// A sign count that didn't go up means another copy of the Passkey may
@@ -384,7 +396,7 @@ func (s *IdentityService) checkPasskey(
 	if credential.Authenticator.CloneWarning {
 		log.Printf("passkey refused: passkey %x reported sign count %d, not above the stored %d; it may have been copied",
 			credential.ID, parsed.Response.AuthenticatorData.Counter, credential.Authenticator.SignCount)
-		http.Error(w, signInRefused, http.StatusUnauthorized)
+		http.Error(w, signInRefused, refused)
 		return false
 	}
 	stored, err := json.Marshal(credential)
@@ -398,7 +410,7 @@ func (s *IdentityService) checkPasskey(
 	err = s.passkeys.Update(r.Context(), passkey.ID, passkey.Credential, stored)
 	if errors.Is(err, utils.ErrNotFound) {
 		log.Printf("passkey refused: passkey %x was deleted or used again meanwhile", passkey.ID)
-		http.Error(w, signInRefused, http.StatusUnauthorized)
+		http.Error(w, signInRefused, refused)
 		return false
 	}
 	if err != nil {
@@ -493,8 +505,13 @@ func (s *IdentityService) takeCeremony(ctx context.Context, challenge string) (m
 }
 
 func ceremonyError(w http.ResponseWriter, err error) {
+	ceremonyErrorAs(w, err, http.StatusUnauthorized)
+}
+
+// ceremonyErrorAs is ceremonyError answering a missing ceremony with status.
+func ceremonyErrorAs(w http.ResponseWriter, err error, status int) {
 	if errors.Is(err, errNoCeremony) {
-		http.Error(w, "that challenge is unknown, used or expired; start again", http.StatusUnauthorized)
+		http.Error(w, "that challenge is unknown, used or expired; start again", status)
 		return
 	}
 	utils.ServerError(w, err)
