@@ -138,10 +138,27 @@ func TestASyncKeyReachesNoOtherRoute(t *testing.T) {
 		{http.MethodGet, "/api/settings"},
 		{http.MethodGet, "/api/workouts/sync"},
 		{http.MethodPost, "/mcp"},
+		// Decodes to the open route, but the mux routes it elsewhere.
+		{http.MethodPost, "/api/workouts%2Fsync"},
 	} {
 		if rec := n.automationDo(route.method, route.path, key, []byte(`{}`)); rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s with the Sync Key: status = %d, body %q; want %d", route.method, route.path, rec.Code, rec.Body, http.StatusUnauthorized)
 		}
+	}
+}
+
+func TestASyncKeyMaySayBearerInAnyCase(t *testing.T) {
+	n, phone := signedInBrowser(t, wednesday)
+	n.withWorkouts()
+	key := phone.mustCreateSyncKey("iPhone Health").Key
+
+	req := httptest.NewRequest(http.MethodPost, "/api/workouts/sync", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "bearer "+key)
+	rec := httptest.NewRecorder()
+	n.handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("POST /api/workouts/sync with \"bearer\" in lower case: status = %d, body %q; want %d", rec.Code, rec.Body, http.StatusOK)
 	}
 }
 

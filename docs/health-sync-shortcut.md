@@ -31,7 +31,7 @@ Then one **Get Contents of URL**:
 }
 ```
 
-Round steps and kcal to whole numbers. A Day with no samples sums to `0`, and is sent as that.
+Round steps and kcal to whole numbers. Leave a Day out of `days` when its Steps samples come back empty (an **If** around each Day): a run on a locked iPhone finds none, and sending `0` would replace that Day's good Health Sync, for good once it is older than yesterday. If both Days are left out, skip the request.
 
 ## 3. Run it on a schedule
 

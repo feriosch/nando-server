@@ -362,7 +362,8 @@ func (s *IdentityService) finishSyncKey(w http.ResponseWriter, r *http.Request) 
 	utils.WriteJSON(w, http.StatusCreated, created)
 }
 
-// checkPasskey checks the Passkey's answer to a sign-in or approval ceremony
+// checkPasskey checks the Passkey's answer to a sign-in, approval or Sync Key
+// creation ceremony
 // and saves its new sign count. If the Passkey is refused, it answers r and
 // returns false.
 func (s *IdentityService) checkPasskey(
@@ -499,7 +500,8 @@ func ceremonyError(w http.ResponseWriter, err error) {
 	utils.ServerError(w, err)
 }
 
-// sha256Of hashes a secret (an Enrollment Code or a Session token) for storing.
+// sha256Of hashes a secret (an Enrollment Code, a Session token or a Sync Key)
+// for storing.
 func sha256Of(s string) []byte {
 	h := sha256.Sum256([]byte(s))
 	return h[:]

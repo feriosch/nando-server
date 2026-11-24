@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -36,8 +37,16 @@ func (s *SyncKeysService) Routes(mux *http.ServeMux) {
 
 // Open lets a Sync Key call route, written "METHOD /path" with no wildcards,
 // such as "POST /api/calories/health-sync". Modules open their routes once,
-// at startup, before serving.
+// at startup, before serving. A route that can't be opened, a read or one
+// with a wildcard, which would never match, panics, as a bad mux pattern does.
 func (s *SyncKeysService) Open(route string) {
+	method, path, ok := strings.Cut(route, " ")
+	if !ok || !strings.HasPrefix(path, "/") || strings.ContainsAny(path, "{} ") {
+		panic(fmt.Sprintf("Sync Keys can't open %q: write it \"METHOD /path\", with no wildcards", route))
+	}
+	if method == http.MethodGet || method == http.MethodHead {
+		panic(fmt.Sprintf("Sync Keys can't open %q: a Sync Key can't read", route))
+	}
 	s.open[route] = true
 }
 
@@ -47,8 +56,11 @@ func (s *SyncKeysService) Open(route string) {
 // Session as before.
 func (s *SyncKeysService) Guard(sessionGuarded, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		key, bearer := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !bearer || !s.open[r.Method+" "+r.URL.Path] {
+		key, bearer := bearerToken(r)
+		// The escaped path, as the mux matches it: a path such as
+		// /api/calories%2Fhealth-sync decodes to an open route but is
+		// routed elsewhere, so it isn't open.
+		if !bearer || !s.open[r.Method+" "+r.URL.EscapedPath()] {
 			sessionGuarded.ServeHTTP(w, r)
 			return
 		}
@@ -61,12 +73,24 @@ func (s *SyncKeysService) Guard(sessionGuarded, next http.Handler) http.Handler 
 			utils.ServerError(w, err)
 			return
 		}
+		// Recording when it was last used is bookkeeping, as for a
+		// Connector: failing at it doesn't refuse a Sync Key that is let in.
 		if err := s.keys.MarkUsed(r.Context(), found.ID, s.now()); err != nil {
-			utils.ServerError(w, err)
-			return
+			log.Printf("record Sync Key %s as used: %v", found.ID, err)
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// bearerToken is r's bearer token, and whether it has one. The scheme's case
+// doesn't matter (RFC 9110 section 11.1).
+func bearerToken(r *http.Request) (string, bool) {
+	const scheme = "bearer "
+	header := r.Header.Get("Authorization")
+	if len(header) < len(scheme) || !strings.EqualFold(header[:len(scheme)], scheme) {
+		return "", false
+	}
+	return header[len(scheme):], true
 }
 
 // maxSyncKeyName is the longest a Sync Key's name may be, in characters.
