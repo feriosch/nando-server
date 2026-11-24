@@ -44,13 +44,13 @@ func toSettingsJSON(settings model.Settings) model.SettingsJSON {
 	for i, g := range settings.Reminders {
 		groups[i] = model.ReminderGroupJSON{Name: g.Name, Accounts: g.AccountIDs, Day: g.Day}
 	}
-	marks := map[string]*bool{}
+	defaults := map[string]*bool{}
 	for key, mark := range settings.EssentialByCategory {
-		marks[key] = &mark
+		defaults[key] = &mark
 	}
 	return model.SettingsJSON{
 		AskAbove:  map[string]int{"JPY": settings.AskAbove.JPY, "MXN": settings.AskAbove.MXN},
-		Reminders: &groups, ReminderTime: &settings.ReminderTime, EssentialByCategory: marks,
+		Reminders: &groups, ReminderTime: &settings.ReminderTime, EssentialByCategory: defaults,
 	}
 }
 
@@ -120,9 +120,9 @@ func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.R
 		*field = amount
 	}
 	if len(args.EssentialByCategory) > 0 {
-		marks := map[string]bool{}
+		defaults := map[string]bool{}
 		for key, mark := range settings.EssentialByCategory {
-			marks[key] = mark
+			defaults[key] = mark
 		}
 		for key, mark := range args.EssentialByCategory {
 			category, ok := model.CategoryOf(key)
@@ -130,12 +130,12 @@ func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.R
 				return nil, utils.Refusal{Message: fmt.Sprintf("essentialByCategory: %q isn't an expense Category's key, from money_list_categories", key)}
 			}
 			if mark == nil {
-				delete(marks, key)
+				delete(defaults, key)
 			} else {
-				marks[key] = *mark
+				defaults[key] = *mark
 			}
 		}
-		settings.EssentialByCategory = marks
+		settings.EssentialByCategory = defaults
 	}
 	if args.ReminderTime != nil {
 		if !coreutils.IsHalfHour(*args.ReminderTime) {
