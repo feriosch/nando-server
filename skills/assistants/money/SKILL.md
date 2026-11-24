@@ -62,7 +62,7 @@ Read `money_get_month_totals` for the month and the months before it, `money_lis
 1. **Spending** in yen against last month and the 3-month average.
 2. **Essential against Optional**, and what is still unmarked.
 3. **The Categories that moved most**, up or down, not every one.
-4. **Subscriptions**: new ones, price changes, ones `late` (maybe cancelled: ask), and what they cost a month together.
+4. **Subscriptions**: new ones, price changes, ones `late` (no charge where the card's Statements already reach: maybe cancelled, so ask), and what they cost a month together.
 5. **Worth a look**: one-off large charges, and Optional spending that keeps growing month after month.
 6. **Net worth**, its change, each savings and investment Account's Return, and the saving rate. Name the Accounts its `missing` leaves out of net worth.
 7. **Still Unconfirmed**: how many, and the ones above `askAbove` to answer.

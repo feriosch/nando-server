@@ -93,7 +93,7 @@ A Statement is one Account and one period (`from`, `to`, Days as `YYYY-MM-DD`), 
   - A `transfer` has none of these, only `unconfirmed`.
   - Answers carry `essentialOverride`, and `essential`, what the Transaction counts as: its override, else its Subcategory's mark, else its Category's default from `essentialByCategory`, else `null`, unmarked, so a missing mark shows rather than being guessed.
 - A **Merchant** (`id`, `name`, `rawTexts`, `category`, `subcategory`) is who a Transaction was with, cleaned up from the raw texts it has been seen as, with what its Transactions usually are. One that sells everything has neither.
-- A **Subscription** (`id`, `merchant`, `amount`, `currency`, `every`: `monthly` or `yearly`, `lastCharged`, `category`, `subcategory`, `essential`, `active`) is a charge that repeats. It is `late` when active and more than a week past its expected charge (a month or a year after `lastCharged`), so the Review can ask whether it was cancelled.
+- A **Subscription** (`id`, `merchant`, `amount`, `currency`, `every`: `monthly` or `yearly`, `lastCharged`, `category`, `subcategory`, `essential`, `active`) is a charge that repeats. It is `late` when active and its expected charge (a month or a year after `lastCharged`) is more than a week before the last Day the Statements reach, without a gap from the one with its Merchant's last charge, of the Account that charge was on, never past today, so the Review can ask whether it was cancelled. Statements come a month late, so a charge not yet billed isn't counted as missing. A Subscription whose Merchant has no Transaction compares with today.
 
 ## Months
 
