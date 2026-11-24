@@ -69,3 +69,25 @@ func TestASubscriptionIsLateOnlyAgainstTheStatementsThatAreIn(t *testing.T) {
 		t.Errorf("with November in and no charge: %+v; want it late", got)
 	}
 }
+
+func TestAStatementMissingInBetweenKeepsASubscriptionFromLookingLate(t *testing.T) {
+	_, phone := signedInBrowser(t) // today is 23 November 2026
+	session := phone.tools()
+	card := saveAccount(t, session, map[string]any{"name": "Card", "kind": "card", "currency": "JPY", "trackedFrom": "2026-09"})
+	service := callTool[merchantJSON](t, session, "money_save_merchant", map[string]any{"name": "Service", "category": "subscriptions"})
+	saveStatement(t, session, map[string]any{
+		"account": card.ID, "from": "2026-09-01", "to": "2026-09-30", "source": "pdf",
+		"transactions": []any{map[string]any{"kind": "expense", "day": "2026-09-12", "amount": 3000, "rawText": "SERVICE", "category": "subscriptions", "merchant": service.ID}},
+	})
+	// October is missing; November is in.
+	saveStatement(t, session, map[string]any{"account": card.ID, "from": "2026-11-01", "to": "2026-11-20", "source": "pdf"})
+
+	sub := callTool[subscriptionJSON](t, session, "money_save_subscription", map[string]any{
+		"merchant": service.ID, "amount": 3000, "currency": "JPY", "every": "monthly", "lastCharged": "2026-09-12",
+		"category": "subscriptions", "essential": false,
+	})
+
+	if sub.Late {
+		t.Errorf("with October's Statement missing: %+v; want it not late, as its charge may be there", sub)
+	}
+}
