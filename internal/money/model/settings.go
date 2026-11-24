@@ -13,6 +13,10 @@ type Settings struct {
 	// ReminderTime is when, in the Owner Time Zone, Statement Reminders and
 	// Monthly Review asks are sent: "HH:MM" on the hour or half hour.
 	ReminderTime string `bson:"reminderTime"`
+	// EssentialByCategory is, by expense Category key, whether what has no
+	// Subcategory there counts as Essential (true) or Optional (false); a
+	// Category it doesn't name leaves such spending unmarked.
+	EssentialByCategory map[string]bool `bson:"essentialByCategory"`
 }
 
 // ReminderGroup is one app the Owner opens for Statements, such as one
@@ -54,6 +58,9 @@ type SettingsJSON struct {
 	AskAbove     map[string]int       `json:"askAbove,omitempty"`
 	Reminders    *[]ReminderGroupJSON `json:"reminders,omitempty"`
 	ReminderTime *string              `json:"reminderTime,omitempty"`
+	// EssentialByCategory is each Category's default mark; in a save, a
+	// Category sent as null loses its mark, and one left out keeps it.
+	EssentialByCategory map[string]*bool `json:"essentialByCategory,omitempty"`
 }
 
 // ReminderGroupJSON is a ReminderGroup as the Tools read and write it.
@@ -66,9 +73,10 @@ type ReminderGroupJSON struct {
 // SettingsPageJSON is Money's settings as the web app reads them, for its
 // Settings Section: each reminder with its Accounts' names.
 type SettingsPageJSON struct {
-	AskAbove     map[string]int          `json:"askAbove"`
-	ReminderTime string                  `json:"reminderTime"`
-	Reminders    []ReminderGroupPageJSON `json:"reminders"`
+	EssentialByCategory map[string]bool         `json:"essentialByCategory"`
+	AskAbove            map[string]int          `json:"askAbove"`
+	ReminderTime        string                  `json:"reminderTime"`
+	Reminders           []ReminderGroupPageJSON `json:"reminders"`
 }
 
 // ReminderGroupPageJSON is a reminder as the web app reads it.

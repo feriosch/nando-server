@@ -44,9 +44,13 @@ func toSettingsJSON(settings model.Settings) model.SettingsJSON {
 	for i, g := range settings.Reminders {
 		groups[i] = model.ReminderGroupJSON{Name: g.Name, Accounts: g.AccountIDs, Day: g.Day}
 	}
+	marks := map[string]*bool{}
+	for key, mark := range settings.EssentialByCategory {
+		marks[key] = &mark
+	}
 	return model.SettingsJSON{
 		AskAbove:  map[string]int{"JPY": settings.AskAbove.JPY, "MXN": settings.AskAbove.MXN},
-		Reminders: &groups, ReminderTime: &settings.ReminderTime,
+		Reminders: &groups, ReminderTime: &settings.ReminderTime, EssentialByCategory: marks,
 	}
 }
 
@@ -58,7 +62,8 @@ func (s *SettingsService) Tools() []coremodel.Tool {
 		Description: "Money's settings: askAbove, per currency (JPY, MXN), the amount above which a Transaction you " +
 			"can't tell is asked about (below it, keep your best guess, Unconfirmed); reminders, the Statement " +
 			"Reminders, one per app the Owner opens {name, accounts, day of the month}; and reminderTime, when " +
-			"reminders and Monthly Review asks are sent.",
+			"reminders and Monthly Review asks are sent; and essentialByCategory, each expense Category's default mark, " +
+			"Essential (true) or Optional (false), for what has no Subcategory there.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		ReadOnly:    true,
 		Handle: func(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -79,7 +84,9 @@ func (s *SettingsService) Tools() []coremodel.Tool {
 			`"accounts":{"type":"array","items":{"type":"string"},"description":"The ids of the Accounts whose Statements it holds."},` +
 			`"day":{"type":"integer","description":"Day of the month, 1 to 28: the day after a card closes, or the 1st."}},` +
 			`"required":["name","accounts","day"]}},` +
-			`"reminderTime":{"type":"string","description":"HH:MM on the hour or half hour, in the Owner Time Zone."}}}`),
+			`"reminderTime":{"type":"string","description":"HH:MM on the hour or half hour, in the Owner Time Zone."},` +
+			`"essentialByCategory":{"type":"object","additionalProperties":{"type":["boolean","null"]},` +
+			`"description":"By expense Category key: true Essential, false Optional, null to remove its mark. Only the Categories sent change."}}}`),
 		Handle: s.saveSettingsTool,
 	}}
 }
@@ -90,8 +97,8 @@ func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.R
 	if err := json.Unmarshal(arguments, &args); err != nil {
 		return nil, utils.Refusal{Message: "send askAbove as an object of whole amounts by currency, such as {\"JPY\": 3000}"}
 	}
-	if len(args.AskAbove) == 0 && args.Reminders == nil && args.ReminderTime == nil {
-		return nil, utils.Refusal{Message: "give askAbove, reminders, reminderTime or several"}
+	if len(args.AskAbove) == 0 && args.Reminders == nil && args.ReminderTime == nil && len(args.EssentialByCategory) == 0 {
+		return nil, utils.Refusal{Message: "give askAbove, reminders, reminderTime, essentialByCategory or several"}
 	}
 	settings, err := s.savedOrDefault(ctx)
 	if err != nil {
@@ -111,6 +118,24 @@ func (s *SettingsService) saveSettingsTool(ctx context.Context, arguments json.R
 			return nil, utils.Refusal{Message: fmt.Sprintf("askAbove.%s must be a whole amount above 0", currency)}
 		}
 		*field = amount
+	}
+	if len(args.EssentialByCategory) > 0 {
+		marks := map[string]bool{}
+		for key, mark := range settings.EssentialByCategory {
+			marks[key] = mark
+		}
+		for key, mark := range args.EssentialByCategory {
+			category, ok := model.CategoryOf(key)
+			if !ok || category.Kind != model.Expense {
+				return nil, utils.Refusal{Message: fmt.Sprintf("essentialByCategory: %q isn't an expense Category's key, from money_list_categories", key)}
+			}
+			if mark == nil {
+				delete(marks, key)
+			} else {
+				marks[key] = *mark
+			}
+		}
+		settings.EssentialByCategory = marks
 	}
 	if args.ReminderTime != nil {
 		if !coreutils.IsHalfHour(*args.ReminderTime) {

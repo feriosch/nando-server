@@ -104,9 +104,13 @@ func (s *OverviewService) getSettings(w http.ResponseWriter, r *http.Request) {
 		names[a.ID] = a.Name
 	}
 	page := model.SettingsPageJSON{
-		AskAbove:     map[string]int{"JPY": settings.AskAbove.JPY, "MXN": settings.AskAbove.MXN},
-		ReminderTime: settings.ReminderTime,
-		Reminders:    make([]model.ReminderGroupPageJSON, len(settings.Reminders)),
+		EssentialByCategory: map[string]bool{},
+		AskAbove:            map[string]int{"JPY": settings.AskAbove.JPY, "MXN": settings.AskAbove.MXN},
+		ReminderTime:        settings.ReminderTime,
+		Reminders:           make([]model.ReminderGroupPageJSON, len(settings.Reminders)),
+	}
+	for key, mark := range settings.EssentialByCategory {
+		page.EssentialByCategory[key] = mark
 	}
 	for i, g := range settings.Reminders {
 		group := model.ReminderGroupPageJSON{Name: g.Name, Day: g.Day, Accounts: []string{}}

@@ -18,29 +18,54 @@ import (
 // grow inside them (ADR 0014).
 type CategoriesService struct {
 	subcategories model.SubcategoriesRepository
+	// settings holds each Category's default mark.
+	settings *SettingsService
 	// movers are the repositories whose documents point at Subcategories,
 	// which a merge moves.
 	movers []model.MovesSubcategories
 }
 
 // NewCategories returns the CategoriesService.
-func NewCategories(subcategories model.SubcategoriesRepository, movers ...model.MovesSubcategories) *CategoriesService {
-	return &CategoriesService{subcategories: subcategories, movers: movers}
+func NewCategories(subcategories model.SubcategoriesRepository, settings *SettingsService, movers ...model.MovesSubcategories) *CategoriesService {
+	return &CategoriesService{subcategories: subcategories, settings: settings, movers: movers}
 }
 
 func toSubcategoryJSON(s model.Subcategory) model.SubcategoryJSON {
 	return model.SubcategoryJSON{ID: s.ID, Category: s.Category, Name: s.Name, Essential: s.Essential}
 }
 
-// essentials is every Subcategory's Essential mark, by its ID.
-func (s *CategoriesService) essentials(ctx context.Context) (map[string]bool, error) {
+// marks are every Subcategory's Essential mark, by its ID, and every
+// Category's default, by its key.
+type marks struct {
+	bySubcategory, byCategory map[string]bool
+}
+
+// of is whether t counts as Essential, and whether it is marked at all: its
+// own override, else its Subcategory's mark, else its Category's default.
+func (m marks) of(t model.Transaction) (essential, marked bool) {
+	if t.Essential != nil {
+		return *t.Essential, true
+	}
+	if mark, ok := m.bySubcategory[t.SubcategoryID]; ok && t.SubcategoryID != "" {
+		return mark, true
+	}
+	mark, ok := m.byCategory[t.Category]
+	return mark, ok
+}
+
+// essentials is the marks Transactions count by.
+func (s *CategoriesService) essentials(ctx context.Context) (marks, error) {
 	list, err := s.subcategories.List(ctx)
 	if err != nil {
-		return nil, err
+		return marks{}, err
 	}
-	m := map[string]bool{}
+	settings, err := s.settings.savedOrDefault(ctx)
+	if err != nil {
+		return marks{}, err
+	}
+	m := marks{bySubcategory: map[string]bool{}, byCategory: settings.EssentialByCategory}
 	for _, sub := range list {
-		m[sub.ID] = sub.Essential
+		m.bySubcategory[sub.ID] = sub.Essential
 	}
 	return m, nil
 }

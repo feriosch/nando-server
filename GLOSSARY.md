@@ -297,7 +297,7 @@ A finer place inside a Category, such as Fashion or Furniture inside Shopping. U
 _Avoid_: Tag, sub-tag, child category
 
 **Essential**:
-Spending the Owner needs, as opposed to **Optional** spending they choose. Each Subcategory is one or the other, and a single Transaction can say otherwise. Optional spending is where unnecessary expenses are looked for.
+Spending the Owner needs, as opposed to **Optional** spending they choose. Each Subcategory is one or the other, a Category can carry a default for what has no Subcategory there, and a single Transaction can say otherwise. Optional spending is where unnecessary expenses are looked for.
 _Avoid_: Need/want, necessary, mandatory, discretionary
 
 **Merchant**:
