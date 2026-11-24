@@ -163,6 +163,7 @@ func toActivityJSON(a model.DayActivity) model.ActivityJSON {
 			Steps:      a.HealthSync.Steps,
 			ActiveKcal: a.HealthSync.ActiveKcal,
 			SyncedAt:   utcString(a.HealthSync.SyncedAt),
+			Corrected:  a.HealthSync.Corrected,
 		}
 	}
 	for i, walk := range a.Walks {
@@ -299,6 +300,18 @@ func (s *ActivityService) Tools() []coremodel.Tool {
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"}},"required":["id"]}`),
 		Destructive: true,
 		Handle:      s.deleteWalkTool,
+	}, {
+		Name: "calories_correct_health_sync",
+		Description: "Sets a Day's Health Sync to the steps and active kcal the Owner gives from the Health app, for a Day whose last " +
+			"sync the iPhone missed (it was locked, or the automation didn't run). It replaces what the iPhone sent, and is marked " +
+			"corrected; a later sync from the iPhone replaces it in turn. The Day must be in the Editable Window, today and the 7 Days " +
+			"before it. Answers the Day's Steps and Burned Calories.",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{` +
+			`"day":{"type":"string","description":"YYYY-MM-DD in the Owner Time Zone; leave out for today."},` +
+			`"steps":{"type":"integer","description":"The Day's steps in the Health app, 0 to 200000."},` +
+			`"activeKcal":{"type":"integer","description":"The Day's active kcal (Active Energy, the Move ring) in the Health app, 0 to 10000."}},` +
+			`"required":["steps","activeKcal"]}`),
+		Handle: s.correctHealthSyncTool,
 	}}
 }
 
@@ -413,4 +426,44 @@ func (s *ActivityService) walkChanged(ctx context.Context, walk model.TreadmillW
 		return walkChangedJSON{}, err
 	}
 	return walkChangedJSON{Walk: toWalkJSON(walk), Day: totals}, nil
+}
+
+func (s *ActivityService) correctHealthSyncTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	var args struct {
+		Day        string `json:"day"`
+		Steps      *int   `json:"steps"`
+		ActiveKcal *int   `json:"activeKcal"`
+	}
+	if err := json.Unmarshal(arguments, &args); err != nil {
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) {
+			return nil, utils.Invalid("steps and activeKcal must be whole numbers, and day YYYY-MM-DD")
+		}
+		return nil, err
+	}
+	day, err := toolDay(ctx, s.core, args.Day)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.checkEditable(ctx, day); err != nil {
+		return nil, err
+	}
+	if args.Steps == nil || *args.Steps < 0 || *args.Steps > maxSteps {
+		return nil, utils.Invalid(fmt.Sprintf("steps must be a whole number from 0 to %d", maxSteps))
+	}
+	activeKcal, err := utils.CheckKcal("activeKcal", args.ActiveKcal)
+	if err != nil {
+		return nil, utils.Invalid(err.Error())
+	}
+	sync := model.HealthSync{Day: day, Steps: *args.Steps, ActiveKcal: activeKcal, SyncedAt: s.now(), Corrected: true}
+	if err := s.healthSyncs.Save(ctx, sync); err != nil {
+		return nil, err
+	}
+	totals, err := s.dayTotals(ctx, day)
+	if err != nil {
+		return nil, err
+	}
+	return struct {
+		Day dayActivityJSON `json:"day"`
+	}{totals}, nil
 }

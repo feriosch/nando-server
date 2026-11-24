@@ -45,7 +45,8 @@ func (r healthSyncs) ListBetween(ctx context.Context, from, to coremodel.Day) ([
 
 func (r healthSyncs) LastSyncedAt(ctx context.Context) (time.Time, error) {
 	var sync model.HealthSync
-	err := r.collection.FindOne(ctx, bson.D{}, options.FindOne().SetSort(bson.D{{Key: "syncedAt", Value: -1}})).Decode(&sync)
+	err := r.collection.FindOne(ctx, bson.D{{Key: "corrected", Value: bson.D{{Key: "$ne", Value: true}}}},
+		options.FindOne().SetSort(bson.D{{Key: "syncedAt", Value: -1}})).Decode(&sync)
 	return sync.SyncedAt, utils.NotFound(err)
 }
 

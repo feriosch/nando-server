@@ -42,7 +42,7 @@ If Nando's steps are higher than the Health app's, another app is writing steps 
 
 In Shortcuts → **Automation** → **+** → **Time of Day**, five daily automations, at **12:00, 18:00, 22:00, 23:00 and 23:55**, each running "Nando Health Sync", with **Run Immediately** on and **Notify When Run** off. The late ones are close together so the evening's steps still land if the iPhone is locked at one of them.
 
-Steps walked after the 23:55 run aren't counted, and a run on a locked iPhone sends nothing, so the Day keeps the numbers of its last run that did.
+Steps walked after the 23:55 run aren't counted, and a run on a locked iPhone sends nothing, so the Day keeps the numbers of its last run that did. When a Day ends short, tell the Calories Assistant its steps and active kcal from the Health app ("yesterday: 12,400 steps, 410 kcal"), and it corrects the Day.
 
 A Day with no steps at all, such as one the iPhone stays home, sends nothing either, as the If skips it. Two such Days in a row bring the "Steps haven't synced" Notification below, though nothing is broken.
 

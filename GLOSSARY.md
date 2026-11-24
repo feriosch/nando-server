@@ -93,7 +93,7 @@ An estimate of the kcal the Owner burned in a Day: its Health Sync's active kcal
 _Avoid_: Calories out, active calories, exercise calories, net calories
 
 **Health Sync**:
-One Day's steps and active kcal from Apple Health on the Owner's iPhone, sent by an iOS Shortcut with a Sync Key. A Day has at most one, and a later one replaces it; it is never edited by hand. Only today's and yesterday's can be sent.
+One Day's steps and active kcal from Apple Health on the Owner's iPhone, sent by an iOS Shortcut with a Sync Key. A Day has at most one, and a later one replaces it. Only today's and yesterday's can be sent. When the iPhone missed a Day's last sync, the Calories Assistant can correct it with the Health app's numbers the Owner gives.
 _Avoid_: Apple Fitness, import, upload, Health data
 
 **Treadmill Walk**:
