@@ -74,6 +74,7 @@ type Core struct {
 	oauth         *service.OAuthService
 	messenger     *service.MessengerService
 	gmailFilings  *service.GmailFilingsService
+	syncKeys      *service.SyncKeysService
 	// coreService is what Modules' services are handed.
 	coreService coreService
 }
@@ -124,6 +125,10 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
+	syncKeys, err := repository.NewSyncKeys(ctx, db)
+	if err != nil {
+		return nil, err
+	}
 	passkeys := repository.NewPasskeys(db)
 
 	// apiURL is the API's own URL, which Connectors reach it at, and webURL
@@ -136,6 +141,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		settings:   service.NewSettings(repository.NewSettings(db), now),
 		mcp:        mcp,
 		connectors: service.NewConnectors(connectors, oauthClients, now),
+		syncKeys:   service.NewSyncKeys(syncKeys, now),
 		messenger: service.NewMessenger(talks, func(assistant string) utils.FireRecord {
 			return repository.NewMessengerFires(db, assistant)
 		}, cfg.Messenger, apiURL, now),
@@ -151,7 +157,7 @@ func New(ctx context.Context, db *mongo.Database, cfg Config) (*Core, error) {
 		mcp.AddToolProvider(c.gmailFilings)
 	}
 	c.coreService = coreService{settings: c.settings, messenger: c.messenger, now: now}
-	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, c.oauth, cfg.Domain, cfg.Origins, now)
+	c.identity, err = service.NewIdentity(enrollmentCodes, ceremonies, passkeys, c.sessions, c.oauth, c.syncKeys, cfg.Domain, cfg.Origins, now)
 	if err != nil {
 		return nil, err
 	}
@@ -185,6 +191,7 @@ func (c *Core) Routes(mux *http.ServeMux) {
 	c.connectors.Routes(mux)
 	c.oauth.Routes(mux)
 	c.messenger.Routes(mux)
+	c.syncKeys.Routes(mux)
 }
 
 // Service is Core's service, which Modules' services call for Core's data.
@@ -268,7 +275,16 @@ func (c *Core) Talk(ctx context.Context, assistant string) (model.Talk, error) {
 }
 
 // RequireSession lets a request through to next only if it carries a valid
-// Session; otherwise it answers 401.
+// Session, or, on a route opened with OpenToSyncKeys, a Sync Key; otherwise
+// it answers 401.
 func (c *Core) RequireSession(next http.Handler) http.Handler {
-	return c.sessions.RequireSession(next)
+	return c.syncKeys.Guard(c.sessions.RequireSession(next), next)
+}
+
+// OpenToSyncKeys lets a Sync Key call route, written "METHOD /path" with no
+// wildcards, such as "POST /api/calories/health-sync" (ADR 0015). Each
+// Module opens its routes once, at startup, before serving. A Sync Key
+// reaches no other route.
+func (c *Core) OpenToSyncKeys(route string) {
+	c.syncKeys.Open(route)
 }

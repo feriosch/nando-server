@@ -40,6 +40,7 @@ type IdentityService struct {
 	passkeys        model.PasskeysRepository
 	sessions        *SessionsService
 	oauth           *OAuthService
+	syncKeys        *SyncKeysService
 	webauthn        *webauthn.WebAuthn
 	now             func() time.Time
 }
@@ -52,6 +53,7 @@ func NewIdentity(
 	passkeys model.PasskeysRepository,
 	sessions *SessionsService,
 	oauth *OAuthService,
+	syncKeys *SyncKeysService,
 	domain string,
 	origins []string,
 	now func() time.Time,
@@ -78,6 +80,7 @@ func NewIdentity(
 		passkeys:        passkeys,
 		sessions:        sessions,
 		oauth:           oauth,
+		syncKeys:        syncKeys,
 		webauthn:        relyingParty,
 		now:             now,
 	}, nil
@@ -91,6 +94,8 @@ func (s *IdentityService) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /auth/signin/finish", s.finishSignIn)
 	mux.HandleFunc("POST /auth/connect/{request}/begin", s.beginApproval)
 	mux.HandleFunc("POST /auth/connect/{request}/finish", s.finishApproval)
+	mux.HandleFunc("POST /api/sync-keys/begin", s.beginSyncKey)
+	mux.HandleFunc("POST /api/sync-keys/finish", s.finishSyncKey)
 }
 
 // IssueEnrollmentCode stores and returns a new Enrollment Code.
@@ -237,7 +242,7 @@ func (s *IdentityService) finishSignIn(w http.ResponseWriter, r *http.Request) {
 		ceremonyError(w, err)
 		return
 	}
-	if ceremony.EnrollmentCodeHash != nil || ceremony.AuthorizationRequestID != "" {
+	if ceremony.EnrollmentCodeHash != nil || ceremony.AuthorizationRequestID != "" || ceremony.SyncKeyName != "" {
 		http.Error(w, "that challenge was not for a sign-in", http.StatusBadRequest)
 		return
 	}
@@ -300,6 +305,61 @@ func (s *IdentityService) finishApproval(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	utils.WriteJSON(w, http.StatusOK, model.RedirectJSON{Redirect: redirect})
+}
+
+// beginSyncKey answers with the options for navigator.credentials.get, for
+// the Owner to approve creating a Sync Key with the name in the body. A
+// Session is never enough to create one.
+func (s *IdentityService) beginSyncKey(w http.ResponseWriter, r *http.Request) {
+	var body model.SyncKeyNameJSON
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "body must be {\"name\": ...}", http.StatusBadRequest)
+		return
+	}
+	name, err := syncKeyName(body.Name)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	assertion, sessionData, err := s.webauthn.BeginDiscoverableLogin()
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	if err := s.beginCeremony(r.Context(), sessionData, model.Ceremony{SyncKeyName: name}); err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, assertion)
+}
+
+// finishSyncKey checks the Passkey's answer from navigator.credentials.get
+// and creates the Sync Key, answering it with its key, which is never
+// answered again.
+func (s *IdentityService) finishSyncKey(w http.ResponseWriter, r *http.Request) {
+	parsed, err := protocol.ParseCredentialRequestResponseBody(r.Body)
+	if err != nil {
+		http.Error(w, "body must be a PublicKeyCredential", http.StatusBadRequest)
+		return
+	}
+	ceremony, sessionData, err := s.takeCeremony(r.Context(), parsed.Response.CollectedClientData.Challenge)
+	if err != nil {
+		ceremonyError(w, err)
+		return
+	}
+	if ceremony.SyncKeyName == "" {
+		http.Error(w, "that challenge was not for creating a Sync Key", http.StatusBadRequest)
+		return
+	}
+	if !s.checkPasskey(w, r, parsed, sessionData) {
+		return
+	}
+	created, err := s.syncKeys.create(r.Context(), ceremony.SyncKeyName)
+	if err != nil {
+		utils.ServerError(w, err)
+		return
+	}
+	utils.WriteJSON(w, http.StatusCreated, created)
 }
 
 // checkPasskey checks the Passkey's answer to a sign-in or approval ceremony

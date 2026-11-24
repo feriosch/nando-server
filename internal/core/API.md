@@ -4,6 +4,7 @@ Identity: Passkeys, Enrollment Codes and Sessions ([ADR 0002](../../docs/adr/000
 Settings: the Owner Time Zone and height. Weigh-ins, and the BMI derived from the height, belong to Calories ([ADR 0012](../../docs/adr/0012-weigh-ins-belong-to-calories.md)).
 Notifications: sent in the Messenger at the scheduler's tick ([ADR 0001](../../docs/adr/0001-cloud-run-hosting.md), [ADR 0008](../../docs/adr/0008-assistants-on-telegram.md)).
 Connectors: Nando as its own OAuth 2.1 authorization server, the consent page's calls, the Tools at `/mcp`, and the Owner's list of Connectors ([ADR 0004](../../docs/adr/0004-connectors-over-oauth.md)).
+Sync Keys: long-lived keys for the Owner's own automations, such as the Health Sync Shortcut, which reach only the routes a Module opens to them ([ADR 0015](../../docs/adr/0015-steps-and-burned-calories-in-calories.md)).
 
 The web app calls the API with `credentials: "include"`. Bodies are JSON. Errors are a status code with a short plain-text message. Answers to the origins in `ALLOWED_ORIGINS` expose `Content-Disposition` (`Access-Control-Expose-Headers`), which a browser otherwise hides from another origin, so the web app can name a file it downloads, such as the JLPT deck.
 
@@ -306,6 +307,46 @@ A Connector's access token works only here; under `/api/` it gets `401`.
 ### `DELETE /api/connectors/{id}`
 
 `204`: removes the Connector and its tokens. Its next call to `/mcp` gets `401`, and its refresh token `invalid_grant`. If no other Connector uses its registration, the registration expires a day later, so the app can be connected again with the same `client_id` until then. Deleting one that doesn't exist also answers `204`.
+
+## Sync Keys
+
+A Sync Key lets one of the Owner's own automations, such as an iOS Shortcut, which can't sign in with a Passkey or do OAuth, call the few routes a Module opens to Sync Keys ([ADR 0015](../../docs/adr/0015-steps-and-burned-calories-in-calories.md)). It is sent as `Authorization: Bearer <key>`, with no Session. On any other route, including `/mcp`, it gets `401`, as does a key that is unknown or was removed. Each Module documents the routes it opens, such as Calories' `POST /api/calories/health-sync`. Only the key's hash is stored, like a Session token's.
+
+Creating one is a Passkey ceremony, like approving a Connector: a Session is never enough.
+
+### `POST /api/sync-keys/begin`
+
+Body: `{"name": "iPhone Health"}`, 1 to 50 characters once trimmed.
+
+`200`: the options for `navigator.credentials.get`, for any of the Owner's Passkeys.
+
+`400`: the name is missing, blank or too long.
+
+### `POST /api/sync-keys/finish`
+
+Body: the `PublicKeyCredential` from `navigator.credentials.get`.
+
+`201`: the new Sync Key, with its `key`. This is the only time the key is answered: the web app shows it once, for the Owner to copy.
+
+```json
+{
+  "id": "QF3M…",
+  "name": "iPhone Health",
+  "createdAt": "2026-11-25T10:00:00Z",
+  "lastUsedAt": null,
+  "key": "K7Q2…"
+}
+```
+
+`400`: the body isn't a `PublicKeyCredential`, or its challenge was for another ceremony, such as a sign-in. `401`: the Passkey is unknown or failed, or the challenge is unknown, used or expired.
+
+### `GET /api/sync-keys`
+
+`200`: every Sync Key, oldest first, without its `key`. `lastUsedAt` is its last call, or `null` if it has never made one.
+
+### `DELETE /api/sync-keys/{id}`
+
+`204`: removes the Sync Key. Its next call gets `401`. Deleting one that doesn't exist also answers `204`.
 
 ## Messenger
 

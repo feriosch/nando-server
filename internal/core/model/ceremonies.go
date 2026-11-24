@@ -5,9 +5,9 @@ import (
 	"time"
 )
 
-// Ceremony is a Passkey registration, sign-in or Connector approval between
-// its begin and finish requests, which Cloud Run may send to different
-// instances.
+// Ceremony is a Passkey registration, sign-in, Connector approval or Sync Key
+// creation between its begin and finish requests, which Cloud Run may send to
+// different instances.
 type Ceremony struct {
 	Challenge string `bson:"_id"`
 	// SessionData is go-webauthn's state for the ceremony, as JSON.
@@ -17,8 +17,10 @@ type Ceremony struct {
 	EnrollmentCodeHash []byte `bson:"enrollmentCodeHash,omitempty"`
 	// AuthorizationRequestID is the Connector's pending request an approval
 	// was begun for.
-	AuthorizationRequestID string    `bson:"authorizationRequestId,omitempty"`
-	ExpiresAt              time.Time `bson:"expiresAt"`
+	AuthorizationRequestID string `bson:"authorizationRequestId,omitempty"`
+	// SyncKeyName is the name of the Sync Key a creation was begun for.
+	SyncKeyName string    `bson:"syncKeyName,omitempty"`
+	ExpiresAt   time.Time `bson:"expiresAt"`
 }
 
 // CeremoniesRepository reads and writes the ceremonies collection.
