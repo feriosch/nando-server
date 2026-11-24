@@ -91,7 +91,7 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 		statements:    statementsService,
 		categories:    categories,
 		merchants:     merchants,
-		subscriptions: service.NewSubscriptions(subscriptionsRepo, merchants, categories, core),
+		subscriptions: service.NewSubscriptions(subscriptionsRepo, merchants, categories, statements, core),
 	}, nil
 }
 

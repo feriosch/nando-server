@@ -21,12 +21,47 @@ type SubscriptionsService struct {
 	subscriptions model.SubscriptionsRepository
 	merchants     *MerchantsService
 	categories    *CategoriesService
-	core          coremodel.CoreService
+	// statements tells how far each Account's Statements reach, which is as
+	// far as a missing charge can be seen.
+	statements model.StatementsRepository
+	core       coremodel.CoreService
 }
 
 // NewSubscriptions returns the SubscriptionsService.
-func NewSubscriptions(subscriptions model.SubscriptionsRepository, merchants *MerchantsService, categories *CategoriesService, core coremodel.CoreService) *SubscriptionsService {
-	return &SubscriptionsService{subscriptions: subscriptions, merchants: merchants, categories: categories, core: core}
+func NewSubscriptions(subscriptions model.SubscriptionsRepository, merchants *MerchantsService, categories *CategoriesService, statements model.StatementsRepository, core coremodel.CoreService) *SubscriptionsService {
+	return &SubscriptionsService{subscriptions: subscriptions, merchants: merchants, categories: categories, statements: statements, core: core}
+}
+
+// seenUntil is the last Day a missing charge of s could show by: how far the
+// Statements reach of the Account that last charged its Merchant, and never
+// past today. With no charge to go by, it is today.
+func (s *SubscriptionsService) seenUntil(ctx context.Context, sub model.Subscription, today string) (string, error) {
+	charges, err := s.statements.Transactions(ctx, model.TransactionFilter{MerchantID: sub.MerchantID})
+	if err != nil || len(charges) == 0 {
+		return today, err
+	}
+	statements, err := s.statements.ForAccount(ctx, charges[len(charges)-1].AccountID, "", "")
+	if err != nil {
+		return today, err
+	}
+	reach := ""
+	for _, st := range statements {
+		reach = max(reach, st.To)
+	}
+	if reach == "" || reach > today {
+		return today, nil
+	}
+	return reach, nil
+}
+
+// subscriptionJSON is sub as the Tools answer it, late or not by what its
+// Statements show on today.
+func (s *SubscriptionsService) subscriptionJSON(ctx context.Context, sub model.Subscription, today string) (model.SubscriptionJSON, error) {
+	until, err := s.seenUntil(ctx, sub, today)
+	if err != nil {
+		return model.SubscriptionJSON{}, err
+	}
+	return toSubscriptionJSON(sub, until), nil
 }
 
 // lateAfter is how long past its expected charge an active Subscription is
@@ -36,9 +71,9 @@ const lateAfter = 7 * 24 * time.Hour
 // everies are how often a Subscription can charge.
 var everies = []string{"monthly", "yearly"}
 
-// isLate is whether s is active and more than a week past its expected
-// charge on today.
-func isLate(s model.Subscription, today string) bool {
+// isLate is whether s is active and its expected charge is more than a week
+// before until, the last Day a missing charge could show by.
+func isLate(s model.Subscription, until string) bool {
 	last, err := time.Parse(utils.DayLayout, s.LastCharged)
 	if err != nil || !s.Active {
 		return false
@@ -47,8 +82,8 @@ func isLate(s model.Subscription, today string) bool {
 	if s.Every == "yearly" {
 		next = last.AddDate(1, 0, 0)
 	}
-	now, _ := time.Parse(utils.DayLayout, today)
-	return now.Sub(next) > lateAfter
+	seen, _ := time.Parse(utils.DayLayout, until)
+	return seen.Sub(next) > lateAfter
 }
 
 func toSubscriptionJSON(s model.Subscription, today string) model.SubscriptionJSON {
@@ -72,8 +107,9 @@ func (s *SubscriptionsService) Tools() []coremodel.Tool {
 			`"category":{"type":"string"},"subcategory":{"type":"string"},"essential":{"type":"boolean"},"active":{"type":"boolean"}}}`),
 		Handle: s.saveSubscriptionTool,
 	}, {
-		Name:        "money_list_subscriptions",
-		Description: "Every Subscription, active ones first, then by last charge, each saying whether it is late.",
+		Name: "money_list_subscriptions",
+		Description: "Every Subscription, active ones first, then by last charge, each saying whether it is late: more " +
+			"than a week past its expected charge, by the Statements of the Account that last charged it (never past today).",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		ReadOnly:    true,
 		Handle: func(ctx context.Context, _ json.RawMessage) (any, error) {
@@ -87,7 +123,9 @@ func (s *SubscriptionsService) Tools() []coremodel.Tool {
 			}
 			answer := make([]model.SubscriptionJSON, len(list))
 			for i, sub := range list {
-				answer[i] = toSubscriptionJSON(sub, string(today))
+				if answer[i], err = s.subscriptionJSON(ctx, sub, string(today)); err != nil {
+					return nil, err
+				}
 			}
 			return answer, nil
 		},
@@ -189,5 +227,5 @@ func (s *SubscriptionsService) saveSubscriptionTool(ctx context.Context, argumen
 	if err != nil {
 		return nil, err
 	}
-	return toSubscriptionJSON(sub, string(today)), nil
+	return s.subscriptionJSON(ctx, sub, string(today))
 }
