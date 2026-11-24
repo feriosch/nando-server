@@ -1,44 +1,55 @@
 # The Health Sync Shortcut
 
-How the Owner builds the iOS Shortcut that sends each Day's steps and active kcal to Nando, as a Health Sync ([ADR 0015](adr/0015-steps-and-burned-calories-in-calories.md)). It is built by hand on the iPhone, once.
+How the Owner builds the iOS Shortcut that sends today's steps and active kcal to Nando, as a Health Sync ([ADR 0015](adr/0015-steps-and-burned-calories-in-calories.md)). It is built by hand on the iPhone, once.
 
 ## 1. Create a Sync Key
 
-In Nando's Settings, under Sync Keys, create one named "iPhone Health" and approve it with a Passkey. Copy the key: it is shown only once.
+In Nando's Settings, under **Sync Keys**, keep the name "iPhone Health" and tap **Create with Face ID**. Tap **Copy**: the key is shown only once. If it is lost or leaks, remove it there and create another.
 
 ## 2. Build the Shortcut "Nando Health Sync"
 
-In the Shortcuts app, a new Shortcut with these actions, repeated for **today** and **yesterday**:
+In the Shortcuts app, a new Shortcut with these actions, in order:
 
-1. **Find Health Samples** where Type is **Steps** and Start Date is **today** (for yesterday, **yesterday**).
-2. **Calculate Statistics**: **Sum** of the samples → the Day's steps.
-3. **Find Health Samples** where Type is **Active Energy**, same Day, and **Calculate Statistics**: **Sum** → the Day's active kcal.
-4. **Format Date**: the Day as `yyyy-MM-dd`.
-
-Then one **Get Contents of URL**:
-
-- URL: `https://api.<domain>/api/calories/health-sync`
-- Method: **POST**
-- Headers: `Authorization: Bearer <Sync Key>`
-- Request Body: **JSON**:
-
-```json
-{
-  "days": [
-    { "day": "2026-11-24", "steps": 9812, "activeKcal": 312 },
-    { "day": "2026-11-23", "steps": 11402, "activeKcal": 380 }
-  ]
-}
+```
+Current Date
+Find Health Samples   Type is Steps, Start Date is today
+If   Health Samples has any value
+   Calculate Statistics   Sum of Health Samples
+   Round                  Sum to Integer
+   Set Variable           Steps = Rounded Number
+   Find Health Samples    Type is Active Calories, Start Date is today
+   Calculate Statistics   Sum of Health Samples
+   Round                  Sum to Integer
+   Set Variable           KCal = Rounded Number
+   Format Date            Current Date, Custom: yyyy-MM-dd
+   Set Variable           FormattedToday = Formatted Date
+   Text                   {"days":[{"day":"[FormattedToday]","steps":[Steps],"activeKcal":[KCal]}]}
+   Set Variable           TodayBody = Text
+   Get Contents of URL    https://api.nanders.app/api/calories/health-sync
+End If
 ```
 
-Round steps and kcal to whole numbers. Leave a Day out of `days` when its Steps samples come back empty (an **If** around each Day): a run on a locked iPhone finds none, and sending `0` would replace that Day's good Health Sync, for good once it is older than yesterday. If both Days are left out, skip the request.
+- **Get Contents of URL**, under its **›**: Method **POST**; Headers `Authorization` = `Bearer <Sync Key>` (one space after Bearer) and `Content-Type` = `application/json`; Request Body **File**, set to the **TodayBody** variable. Left on **JSON** with no fields, it sends `{}`, which Nando refuses with "days must have at least one Day".
+- In the **Text**, only the date is in quotes: `steps` and `activeKcal` are whole numbers, which is what the **Round** actions are for.
+- Shortcuts can't rename an action's result, so each value is kept with **Set Variable**, and picked by that name. A new action fills itself with the result of the action right above it, which is the easiest way to wire one up.
+- The **If** matters: iOS hides Health data while the iPhone is locked, so a run then finds no samples, and without the If it would send 0 steps over the Day's real count.
+
+Run it once from the editor. It answers nothing when it works. Allow it to read **Steps** and **Active Energy**, and to connect to `api.nanders.app` (**Always Allow**). Today's Day view in Nando then shows **iPhone, Synced HH:MM** under Activity.
+
+If Nando's steps are higher than the Health app's, another app is writing steps too: add the filter **Source is iPhone** to the Steps search.
 
 ## 3. Run it on a schedule
 
-In Shortcuts → Automation, add three **Time of Day** personal automations (12:00, 18:00, 23:30), each running "Nando Health Sync", with **Run Immediately** on and **Notify When Run** off.
+In Shortcuts → **Automation** → **+** → **Time of Day**, three daily automations, at **12:00, 18:00 and 23:55**, each running "Nando Health Sync", with **Run Immediately** on and **Notify When Run** off.
 
-iOS hides Health data while the iPhone is locked, so a run on a locked phone may find nothing. That's why it runs three times and resends yesterday.
+Steps walked after the 23:55 run aren't counted, and a run on a locked iPhone sends nothing, so the Day keeps the numbers of its last run that did.
 
-## When it stops
+## When something is wrong
 
-If Nando gets no Health Sync for 48 hours, the Calories Assistant says so in Telegram. Check that the automations are still on and the Sync Key wasn't removed.
+To see a value mid-run, add **Show Result** (or **Quick Look**) with it, then **Stop This Shortcut** so no request is sent; remove both afterwards. What Nando answers:
+
+- `days must have at least one Day`: the body isn't the Text; see Request Body above.
+- `steps and activeKcal must be whole numbers: round them in the Shortcut`: a number wasn't rounded, or is in quotes.
+- `sign in first` or `that Sync Key is unknown or was removed`: the Authorization header is wrong, or the key was removed in Settings.
+
+If Nando gets no Health Sync for 48 hours, the Calories Assistant says so in Telegram: check that the automations are still on and the Sync Key is still listed in Settings.
