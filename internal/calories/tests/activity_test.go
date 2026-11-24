@@ -521,9 +521,10 @@ func TestACorrectionNeedsADayInTheEditableWindowAndItsNumbers(t *testing.T) {
 		"negative steps": {"steps": -1, "activeKcal": 150},
 		"too many steps": {"steps": 200001, "activeKcal": 150},
 		"too many kcal":  {"steps": 5000, "activeKcal": 10001},
+		"half a step":    {"steps": 5000.5, "activeKcal": 150},
 	} {
-		if got := toolError(t, session, "calories_correct_health_sync", args); got == "" {
-			t.Errorf("calories_correct_health_sync with %s: refused without saying why", name)
+		if got := toolError(t, session, "calories_correct_health_sync", args); got == "" || strings.Contains(got, "json:") {
+			t.Errorf("calories_correct_health_sync with %s: refused with %q, want a plain reason", name, got)
 		}
 	}
 	if day := get[correctedDayJSON](phone, "/api/calories/days/2026-10-21"); day.Activity.HealthSync != nil {

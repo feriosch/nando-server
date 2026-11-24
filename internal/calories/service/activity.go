@@ -435,6 +435,10 @@ func (s *ActivityService) correctHealthSyncTool(ctx context.Context, arguments j
 		ActiveKcal *int   `json:"activeKcal"`
 	}
 	if err := json.Unmarshal(arguments, &args); err != nil {
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) {
+			return nil, utils.Invalid("steps and activeKcal must be whole numbers, and day YYYY-MM-DD")
+		}
 		return nil, err
 	}
 	day, err := toolDay(ctx, s.core, args.Day)
