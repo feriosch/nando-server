@@ -16,8 +16,20 @@ type CaloriesJSON struct {
 	OverLimit        *bool         `json:"overLimit"`
 }
 
-// DayJSON is the Day view as the API answers it.
+// DayTotalsJSON is a Day's Consumed Calories against its Daily Limit, and
+// its Steps and Burned Calories, as the history and the Home Card answer
+// them.
+type DayTotalsJSON struct {
+	CaloriesJSON
+	ActivityTotalsJSON
+}
+
+// DayJSON is the Day view as the API answers it: its Consumed Calories
+// against its Daily Limit, its Steps and Burned Calories, and what they come
+// from.
 type DayJSON struct {
 	CaloriesJSON
-	Entries []EntryJSON `json:"entries"`
+	ActivityTotalsJSON
+	Entries  []EntryJSON  `json:"entries"`
+	Activity ActivityJSON `json:"activity"`
 }

@@ -235,6 +235,9 @@ func run() error {
 	}
 	nandoCore.AddToolProvider(caloriesModule.ToolProvider())
 	nandoCore.AddNotificationProvider(caloriesModule.NotificationProvider())
+	for _, route := range caloriesModule.SyncKeyRoutes() {
+		nandoCore.OpenToSyncKeys(route)
+	}
 	nandoCore.AddAssistant(caloriesModule.Assistant())
 	japaneseModule, err := japanese.NewJapaneseModule(connectCtx, dbs.Japanese, nandoCore.Service(), japanese.Config{
 		WordRequestsTriggerURL:   cfg.wordRequestsTriggerURL,
