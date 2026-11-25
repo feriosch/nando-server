@@ -66,6 +66,10 @@ func (c *converter) yen(ctx context.Context, currency string, minor int64, month
 type figures struct {
 	spending, income              int64
 	essential, optional, unmarked int64
+	// oneOff is the part of spending that is One-offs, and
+	// oneOffByCategory by Category key: left out of comparisons.
+	oneOff           int64
+	oneOffByCategory map[string]int64
 	// byCategory is spending by Category key, and incomeByCategory income.
 	byCategory, incomeByCategory map[string]int64
 	bySubcategory                map[string]map[string]int64
@@ -82,7 +86,8 @@ func (s *TotalsService) figures(ctx context.Context, month string, currencies ma
 	if err != nil {
 		return figures{}, err
 	}
-	f := figures{byCategory: map[string]int64{}, incomeByCategory: map[string]int64{}, bySubcategory: map[string]map[string]int64{}, netIn: map[string]int64{}}
+	f := figures{byCategory: map[string]int64{}, incomeByCategory: map[string]int64{}, bySubcategory: map[string]map[string]int64{},
+		netIn: map[string]int64{}, oneOffByCategory: map[string]int64{}}
 	own, counterpart := map[string]int64{}, map[string]int64{}
 	hasOwn := map[string]bool{}
 	for _, t := range found {
@@ -117,6 +122,10 @@ func (s *TotalsService) figures(ctx context.Context, month string, currencies ma
 		}
 		f.spending += yen
 		f.byCategory[t.Category] += yen
+		if t.OneOff {
+			f.oneOff += yen
+			f.oneOffByCategory[t.Category] += yen
+		}
 		if f.bySubcategory[t.Category] == nil {
 			f.bySubcategory[t.Category] = map[string]int64{}
 		}
@@ -275,10 +284,10 @@ func (s *TotalsService) MonthTotals(ctx context.Context, month string) (model.Mo
 	}
 	answer.Complete, answer.Missing = complete.Complete, complete.Missing
 	answer.Spending = model.SpendingJSON{
-		Total: this.spending, Essential: this.essential, Optional: this.optional, Unmarked: this.unmarked,
+		Total: this.spending, OneOff: this.oneOff, Essential: this.essential, Optional: this.optional, Unmarked: this.unmarked,
 		ByCategory: []model.CategoryTotalJSON{},
 	}
-	answer.Spending.Previous, answer.Spending.Average3 = compare(before, func(f figures) int64 { return f.spending })
+	answer.Spending.Previous, answer.Spending.Average3 = compare(before, func(f figures) int64 { return f.spending - f.oneOff })
 	answer.Income = model.IncomeJSON{Total: this.income, ByCategory: []model.CategoryTotalJSON{}}
 	for _, c := range model.Categories {
 		if total, ok := this.incomeByCategory[c.Key]; ok {
@@ -293,8 +302,8 @@ func (s *TotalsService) MonthTotals(ctx context.Context, month string) (model.Mo
 		if !ok || c.Kind != model.Expense {
 			continue
 		}
-		ct := model.CategoryTotalJSON{Category: c.Key, Name: c.Name, Total: total}
-		ct.Previous, ct.Average3 = compare(before, func(f figures) int64 { return f.byCategory[c.Key] })
+		ct := model.CategoryTotalJSON{Category: c.Key, Name: c.Name, Total: total, OneOff: this.oneOffByCategory[c.Key]}
+		ct.Previous, ct.Average3 = compare(before, func(f figures) int64 { return f.byCategory[c.Key] - f.oneOffByCategory[c.Key] })
 		for sub, subTotal := range this.bySubcategory[c.Key] {
 			ct.Subcategories = append(ct.Subcategories, model.SubcategoryTotalJSON{Subcategory: sub, Name: names[sub], Total: subTotal})
 		}
@@ -442,7 +451,7 @@ func (s *TotalsService) Summaries(ctx context.Context, months []string) ([]model
 			return nil, err
 		}
 		summary := model.MonthSummaryJSON{Month: m, Income: f.income, SavingRate: savingRate(f)}
-		summary.Spending.Total, summary.Spending.Essential = f.spending, f.essential
+		summary.Spending.Total, summary.Spending.OneOff, summary.Spending.Essential = f.spending, f.oneOff, f.essential
 		summary.Spending.Optional, summary.Spending.Unmarked = f.optional, f.unmarked
 		summary.NetWorth.Total, summary.NetWorth.Missing = nw.Total, nw.Missing
 		list = append(list, summary)
@@ -486,7 +495,7 @@ func (s *TotalsService) Totals(ctx context.Context, fromMonth, toMonth string) (
 		if err != nil {
 			return nil, err
 		}
-		list = append(list, model.MonthSumJSON{Month: m, Spending: f.spending, Income: f.income, ByCategory: f.byCategory})
+		list = append(list, model.MonthSumJSON{Month: m, Spending: f.spending, OneOff: f.oneOff, Income: f.income, ByCategory: f.byCategory})
 	}
 	return list, nil
 }
@@ -497,7 +506,8 @@ func (s *TotalsService) Tools() []coremodel.Tool {
 		Name: "money_get_month_totals",
 		Description: "month's (YYYY-MM) totals in yen, each amount turned into yen at the month's Rate: spending " +
 			"(total, by Category and Subcategory, Essential against Optional against unmarked, each against the month " +
-			"before and the average of up to 3 before), income by Category (Transfers are neither), net worth (each " +
+			"before and the average of up to 3 before, which leave One-offs out: compare them with total less oneOff, the " +
+			"One-offs' part), income by Category (Transfers are neither), net worth (each " +
 			"Account's month-end balance; a card's is what it owes), Return of savings and investments (their growth " +
 			"less what was Transferred in), the saving rate ((income − spending) ÷ income, without Return), the " +
 			"Unconfirmed Transactions, and whether the month is Complete.",
@@ -517,7 +527,7 @@ func (s *TotalsService) Tools() []coremodel.Tool {
 		},
 	}, {
 		Name: "money_get_totals",
-		Description: "Each month's spending and income in yen, and spending by Category key, from fromMonth to " +
+		Description: "Each month's spending (with oneOff, the part that is One-offs) and income in yen, and spending by Category key, from fromMonth to " +
 			"toMonth (YYYY-MM, at most 36 months), for questions over time such as how much went on eating out since summer.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"fromMonth":{"type":"string"},"toMonth":{"type":"string"}},"required":["fromMonth","toMonth"]}`),
 		ReadOnly:    true,
@@ -577,11 +587,11 @@ func (s *TotalsService) CategoryPage(ctx context.Context, month string, category
 			return model.CategoryPageJSON{}, err
 		}
 		if complete {
-			page.History = append(page.History, model.CategoryMonthJSON{Month: m, Total: f.byCategory[key]})
+			page.History = append(page.History, model.CategoryMonthJSON{Month: m, Total: f.byCategory[key], OneOff: f.oneOffByCategory[key]})
 		}
 	}
 	this := byMonth[month]
-	page.Total = this.byCategory[key]
+	page.Total, page.OneOff = this.byCategory[key], this.oneOffByCategory[key]
 	// The months before, for comparing: those that are part of the history,
 	// as a month's totals compare them.
 	var before []figures
@@ -592,7 +602,7 @@ func (s *TotalsService) CategoryPage(ctx context.Context, month string, category
 		}
 		before = append(before, byMonth[m])
 	}
-	page.Previous, page.Average3 = compare(before, func(f figures) int64 { return f.byCategory[key] })
+	page.Previous, page.Average3 = compare(before, func(f figures) int64 { return f.byCategory[key] - f.oneOffByCategory[key] })
 	subcategories := this.bySubcategory[key]
 	// A Category without Subcategories lists none, rather than one without a
 	// name.
@@ -654,7 +664,7 @@ func (s *TotalsService) categoryTransactions(ctx context.Context, accounts []mod
 		}
 		listed := model.ScreenTransactionJSON{
 			ID: t.ID, Day: t.Day, Merchant: name, Amount: utils.FromMinor(account.Currency, t.Amount), Currency: account.Currency,
-			Yen: yen, Account: account.Name, Subcategory: subcategories[t.SubcategoryID], Unconfirmed: t.Unconfirmed, Note: t.Note,
+			Yen: yen, OneOff: t.OneOff, Account: account.Name, Subcategory: subcategories[t.SubcategoryID], Unconfirmed: t.Unconfirmed, Note: t.Note,
 		}
 		if mark, marked := essentials.of(t.Transaction); marked {
 			listed.Essential = &mark

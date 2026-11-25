@@ -106,7 +106,7 @@ func (s *OverviewService) card(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	card := model.CardJSON{Month: month, Unconfirmed: len(waiting)}
-	card.Spending.Total, card.Spending.Average3 = totals.Spending.Total, totals.Spending.Average3
+	card.Spending.Total, card.Spending.OneOff, card.Spending.Average3 = totals.Spending.Total, totals.Spending.OneOff, totals.Spending.Average3
 	card.Spending.Essential, card.Spending.Optional, card.Spending.Unmarked = totals.Spending.Essential, totals.Spending.Optional, totals.Spending.Unmarked
 	card.NetWorth.Total, card.NetWorth.Previous, card.NetWorth.Missing = totals.NetWorth.Total, totals.NetWorth.Previous, totals.NetWorth.Missing
 	coreutils.WriteJSON(w, http.StatusOK, card)

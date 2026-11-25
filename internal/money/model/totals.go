@@ -3,9 +3,12 @@ package model
 // CategoryTotalJSON is a Category's total in yen, with its Subcategories'
 // and, for spending, the month before's and the average of the 3 before.
 type CategoryTotalJSON struct {
-	Category      string                 `json:"category"`
-	Name          string                 `json:"name"`
-	Total         int64                  `json:"total"`
+	Category string `json:"category"`
+	Name     string `json:"name"`
+	Total    int64  `json:"total"`
+	// OneOff is the part of Total that is One-offs, which Previous and
+	// Average3 leave out: compare them with Total − OneOff.
+	OneOff        int64                  `json:"oneOff"`
 	Previous      *int64                 `json:"previous,omitempty"`
 	Average3      *int64                 `json:"average3,omitempty"`
 	Subcategories []SubcategoryTotalJSON `json:"bySubcategory,omitempty"`
@@ -19,9 +22,12 @@ type SubcategoryTotalJSON struct {
 	Total       int64  `json:"total"`
 }
 
-// SpendingJSON is a month's spending in yen.
+// SpendingJSON is a month's spending in yen. OneOff is the part of Total
+// that is One-offs, which Previous and Average3 leave out: compare them with
+// Total − OneOff.
 type SpendingJSON struct {
 	Total      int64               `json:"total"`
+	OneOff     int64               `json:"oneOff"`
 	Previous   *int64              `json:"previous"`
 	Average3   *int64              `json:"average3"`
 	Essential  int64               `json:"essential"`
@@ -91,6 +97,7 @@ type MonthTotalsJSON struct {
 type MonthSumJSON struct {
 	Month      string           `json:"month"`
 	Spending   int64            `json:"spending"`
+	OneOff     int64            `json:"oneOff"`
 	Income     int64            `json:"income"`
 	ByCategory map[string]int64 `json:"byCategory"`
 }
@@ -100,7 +107,10 @@ type MonthSumJSON struct {
 type CardJSON struct {
 	Month    string `json:"month"`
 	Spending struct {
-		Total     int64  `json:"total"`
+		Total int64 `json:"total"`
+		// OneOff is the part of Total that is One-offs, which Average3
+		// leaves out.
+		OneOff    int64  `json:"oneOff"`
 		Average3  *int64 `json:"average3"`
 		Essential int64  `json:"essential"`
 		Optional  int64  `json:"optional"`
@@ -123,6 +133,7 @@ type MonthSummaryJSON struct {
 	Month    string `json:"month"`
 	Spending struct {
 		Total     int64 `json:"total"`
+		OneOff    int64 `json:"oneOff"`
 		Essential int64 `json:"essential"`
 		Optional  int64 `json:"optional"`
 		Unmarked  int64 `json:"unmarked"`
@@ -147,6 +158,7 @@ type ScreenTransactionJSON struct {
 	Amount   float64 `json:"amount"`
 	Currency string  `json:"currency"`
 	Yen      int64   `json:"yen"`
+	OneOff   bool    `json:"oneOff"`
 	// Account is its Account's name, and Subcategory its Subcategory's,
 	// empty without one.
 	Account     string `json:"account"`
@@ -159,8 +171,9 @@ type ScreenTransactionJSON struct {
 
 // CategoryMonthJSON is a Category's spending in one month, in yen.
 type CategoryMonthJSON struct {
-	Month string `json:"month"`
-	Total int64  `json:"total"`
+	Month  string `json:"month"`
+	Total  int64  `json:"total"`
+	OneOff int64  `json:"oneOff"`
 }
 
 // CategoryPageJSON is one expense Category's page for a Complete month: its
@@ -172,6 +185,7 @@ type CategoryPageJSON struct {
 	Category      string                  `json:"category"`
 	Name          string                  `json:"name"`
 	Total         int64                   `json:"total"`
+	OneOff        int64                   `json:"oneOff"`
 	Previous      *int64                  `json:"previous"`
 	Average3      *int64                  `json:"average3"`
 	Subcategories []SubcategoryTotalJSON  `json:"subcategories"`
