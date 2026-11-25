@@ -234,7 +234,7 @@ func (s *StatementsService) Tools() []coremodel.Tool {
 			"unless one is given too), subcategory, merchant, essential (null to follow its Subcategory again) and " +
 			"unconfirmed; and for an expense, oneOff, a One-off the Owner named (it counts in its month but not in the " +
 			"comparisons with the months around it). With teachMerchant, its Merchant also learns its raw text and to usually take its category " +
-			"and subcategory: do it for a correction that should stick, not a one-off. Answers it.",
+			"and subcategory: do it for a correction that should stick, not for an exception. Answers it.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"note":{"type":"string"},` +
 			`"otherAccount":{"type":"string"},"category":{"type":"string"},"subcategory":{"type":"string"},` +
 			`"merchant":{"type":"string"},"essential":{"type":["boolean","null"]},"unconfirmed":{"type":"boolean"},` +

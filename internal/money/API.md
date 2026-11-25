@@ -144,7 +144,7 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
 - **`money_update_transaction`** (`id`, `note`, `otherAccount`, `category`, `subcategory`, `merchant`, `essential`, `unconfirmed`, `oneOff`, `teachMerchant`): changes the fields given, and answers the Transaction.
   - `otherAccount` is for a `transfer` only, and empty clears it.
   - A `category` given without a `subcategory` clears the Subcategory. A `null` `essential` has it follow its Subcategory again.
-  - `teachMerchant` also has its Merchant learn its raw text and usually take its Category and Subcategory: for a correction that should stick. Without it, an exception stays one-off.
+  - `teachMerchant` also has its Merchant learn its raw text and usually take its Category and Subcategory: for a correction that should stick. Without it, an exception stays an exception.
 - **`money_list_categories`**: every Category, in order, with its Subcategories. Read-only.
 - **`money_save_subcategory`** (`id` to change one, or `category`, `name` and `essential` for a new one): answers it.
 - **`money_merge_subcategories`** (`from`, `into`): moves every Transaction, Merchant and Subscription of `from` into `into`, and into its Category, then removes `from`. Both must be in Categories of the same kind, so income never becomes spending. The Assistant asks the Owner first.
