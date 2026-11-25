@@ -81,17 +81,18 @@ func NewMoneyModule(ctx context.Context, db *mongo.Database, core coremodel.Core
 	statementsService := service.NewStatements(statements, accounts, categories, merchants, files, core)
 	rates := service.NewRates(repository.NewRates(db), core, cfg.RatesURL)
 	totals := service.NewTotals(statements, accounts, categories, rates, statementsService)
+	subscriptions := service.NewSubscriptions(subscriptionsRepo, merchants, categories, statements, core)
 	return &Module{
 		rates:         rates,
 		totals:        totals,
-		overview:      service.NewOverview(totals, statementsService, accountsRepo, settings, core),
+		overview:      service.NewOverview(totals, statementsService, accountsRepo, settings, subscriptions, merchantsRepo, rates, core),
 		settings:      settings,
 		notifications: service.NewNotifications(settings, accountsRepo, statementsService, repository.NewReviews(db)),
 		accounts:      accounts,
 		statements:    statementsService,
 		categories:    categories,
 		merchants:     merchants,
-		subscriptions: service.NewSubscriptions(subscriptionsRepo, merchants, categories, statements, core),
+		subscriptions: subscriptions,
 	}, nil
 }
 

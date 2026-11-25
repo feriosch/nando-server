@@ -47,3 +47,20 @@ type SubscriptionJSON struct {
 	// week past.
 	Late bool `json:"late"`
 }
+
+// ScreenSubscriptionJSON is a Subscription as the Money screen lists it,
+// with its Merchant's name and, while active, what it costs a month in yen.
+type ScreenSubscriptionJSON struct {
+	SubscriptionJSON
+	MerchantName string `json:"merchantName"`
+	// MonthlyYen is a monthly one's amount, or a yearly one's by 12, in yen
+	// at the latest Rate; nil when it isn't active.
+	MonthlyYen *int64 `json:"monthlyYen"`
+}
+
+// SubscriptionsPageJSON is the Money screen's Subscriptions: every one,
+// active first, and what the active ones cost a month in yen.
+type SubscriptionsPageJSON struct {
+	MonthlyTotal  int64                    `json:"monthlyTotal"`
+	Subscriptions []ScreenSubscriptionJSON `json:"subscriptions"`
+}

@@ -110,6 +110,26 @@ func toSubscriptionJSON(s model.Subscription, until string) model.SubscriptionJS
 	}
 }
 
+// List is every Subscription, active ones first, then by last charge, each
+// saying whether it is late.
+func (s *SubscriptionsService) List(ctx context.Context) ([]model.SubscriptionJSON, error) {
+	today, err := s.core.Today(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list, err := s.subscriptions.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	answer := make([]model.SubscriptionJSON, len(list))
+	for i, sub := range list {
+		if answer[i], err = s.subscriptionJSON(ctx, sub, string(today)); err != nil {
+			return nil, err
+		}
+	}
+	return answer, nil
+}
+
 // Tools are what the SubscriptionsService offers Connectors.
 func (s *SubscriptionsService) Tools() []coremodel.Tool {
 	return []coremodel.Tool{{
@@ -130,21 +150,7 @@ func (s *SubscriptionsService) Tools() []coremodel.Tool {
 		InputSchema: json.RawMessage(`{"type":"object","properties":{}}`),
 		ReadOnly:    true,
 		Handle: func(ctx context.Context, _ json.RawMessage) (any, error) {
-			today, err := s.core.Today(ctx)
-			if err != nil {
-				return nil, err
-			}
-			list, err := s.subscriptions.List(ctx)
-			if err != nil {
-				return nil, err
-			}
-			answer := make([]model.SubscriptionJSON, len(list))
-			for i, sub := range list {
-				if answer[i], err = s.subscriptionJSON(ctx, sub, string(today)); err != nil {
-					return nil, err
-				}
-			}
-			return answer, nil
+			return s.List(ctx)
 		},
 	}}
 }

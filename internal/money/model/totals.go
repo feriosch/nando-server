@@ -116,3 +116,76 @@ type CardJSON struct {
 	// Unconfirmed counts the Transactions of every month still Unconfirmed.
 	Unconfirmed int `json:"unconfirmed"`
 }
+
+// MonthSummaryJSON is one Complete month as the Money screen lists it: its
+// spending, income, saving rate and net worth, in yen.
+type MonthSummaryJSON struct {
+	Month    string `json:"month"`
+	Spending struct {
+		Total     int64 `json:"total"`
+		Essential int64 `json:"essential"`
+		Optional  int64 `json:"optional"`
+		Unmarked  int64 `json:"unmarked"`
+	} `json:"spending"`
+	Income     int64    `json:"income"`
+	SavingRate *float64 `json:"savingRate"`
+	NetWorth   struct {
+		Total int64 `json:"total"`
+		// Missing names the Accounts with no balance near the month's end,
+		// left out of Total.
+		Missing []AccountRefJSON `json:"missing"`
+	} `json:"netWorth"`
+}
+
+// ScreenTransactionJSON is an Expense as a Category's page lists it, with
+// names rather than ids, in its own currency and in yen.
+type ScreenTransactionJSON struct {
+	ID  string `json:"id"`
+	Day string `json:"day"`
+	// Merchant is its Merchant's name, or its raw text without one.
+	Merchant string  `json:"merchant"`
+	Amount   float64 `json:"amount"`
+	Currency string  `json:"currency"`
+	Yen      int64   `json:"yen"`
+	// Account is its Account's name, and Subcategory its Subcategory's,
+	// empty without one.
+	Account     string `json:"account"`
+	Subcategory string `json:"subcategory"`
+	// Essential is what it counts as, null when unmarked.
+	Essential   *bool  `json:"essential"`
+	Unconfirmed bool   `json:"unconfirmed"`
+	Note        string `json:"note"`
+}
+
+// CategoryMonthJSON is a Category's spending in one month, in yen.
+type CategoryMonthJSON struct {
+	Month string `json:"month"`
+	Total int64  `json:"total"`
+}
+
+// CategoryPageJSON is one expense Category's page for a Complete month: its
+// total against the month before and the 3 before, its Subcategories'
+// totals, its Expenses by Day, and its spending in each of the up to 12
+// Complete months ending with this one, oldest first.
+type CategoryPageJSON struct {
+	Month         string                  `json:"month"`
+	Category      string                  `json:"category"`
+	Name          string                  `json:"name"`
+	Total         int64                   `json:"total"`
+	Previous      *int64                  `json:"previous"`
+	Average3      *int64                  `json:"average3"`
+	Subcategories []SubcategoryTotalJSON  `json:"subcategories"`
+	Transactions  []ScreenTransactionJSON `json:"transactions"`
+	History       []CategoryMonthJSON     `json:"history"`
+}
+
+// NetWorthMonthJSON is one Complete month's net worth in yen, with each
+// Account's month-end balance, the Return of savings and investments, and
+// the Accounts with no balance near the month's end, left out of Total.
+type NetWorthMonthJSON struct {
+	Month    string           `json:"month"`
+	Total    int64            `json:"total"`
+	Accounts []BalanceJSON    `json:"accounts"`
+	Returns  []ReturnJSON     `json:"returns"`
+	Missing  []AccountRefJSON `json:"missing"`
+}

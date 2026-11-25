@@ -113,6 +113,18 @@ A month is **Complete** when every Account tracked in it (from `trackedFrom`, un
 ## Routes
 
 - **`GET /api/money/card`**: the Home Card, for the latest Complete month, never the one under way, since Statements arrive after a month ends. It has `month`; `spending` (`total`, `average3` of up to 3 months before, `essential`, `optional`, `unmarked`); `netWorth` (`total`; `previous`, the month before's; and `missing`, each `id` and `name` of the Accounts with no balance near the month's end, left out of `total`); and `unconfirmed`, how many Transactions of any month are still Unconfirmed. It is `null` before any month is Complete, looking back at most 36 months.
+- **The Money screen** reads only **Complete** months, before the one under way, as the Home Card does: Statements arrive a month late, so the month under way would be nearly empty. It never gets a Statement's file; the Money chat reads files back (`money_get_statement_file`).
+  - **`GET /api/money/months`**: the Complete months, newest first, looking back at most 36 months, `[]` before any. Each has `month`; `spending` (`total`, `essential`, `optional`, `unmarked`); `income`; `savingRate`, `null` without income; and `netWorth` (`total`, and `missing`, the Accounts left out of it). The screen's month arrows, its 12-month spending chart and its net-worth line read it.
+  - **`GET /api/money/months/{month}`**: a Complete month's totals, as `money_get_month_totals` answers them. A month that isn't Complete, isn't tracked, is under way or isn't `YYYY-MM` is a 404.
+  - **`GET /api/money/months/{month}/categories/{key}`**: an expense Category's page for a Complete month. It has:
+    - `month`, `category`, `name`, and its `total`, `previous` and `average3`;
+    - `subcategories`: its Subcategories' totals, largest first, `[]` when it has none;
+    - `transactions`: its Expenses by Day. Each has `id`, `day`, `merchant` (its Merchant's name, or its raw text without one), `amount` and `currency` (its own; negative for a Refund), `yen`, `account` and `subcategory` (names, empty without one), `essential` (as it counts, `null` unmarked), `unconfirmed` and `note`;
+    - `history`: its spending in each Complete month of the 12 ending with this one, oldest first, for its bar chart.
+
+    An unknown or income Category, or a month that isn't Complete, is a 404.
+  - **`GET /api/money/subscriptions`**: `subscriptions`, every Subscription as `money_list_subscriptions` lists it, each with its Merchant's `merchantName`, and `monthlyYen` while active: a yearly one's amount by 12, pesos at last month's average Rate. `monthlyTotal` adds up the active ones.
+  - **`GET /api/money/net-worth`**: each Complete month, newest first, at most 36 months back, with `month`, `total`, `accounts` (each Account's month-end balance in its own currency and in yen, a card's below 0), `returns` (the Return of each savings and investment Account) and `missing` (the Accounts left out of `total`).
 - **`GET /api/money/settings`**: the settings, for the Settings Section, read-only. It has `askAbove`, `reminderTime`, `essentialByCategory`, and each reminder's `name`, `day` and Accounts by name.
 
 ## Tools
