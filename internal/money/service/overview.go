@@ -169,38 +169,41 @@ func (s *OverviewService) months(w http.ResponseWriter, r *http.Request) {
 	coreutils.WriteJSON(w, http.StatusOK, summaries)
 }
 
-// isComplete is whether month, before today's, is part of the history and
-// Complete: the only months the Money screen shows.
-func (s *OverviewService) isComplete(ctx context.Context, month string) (bool, error) {
-	if !utils.IsMonth(month) {
-		return false, nil
-	}
+// completeness answers whether a month, before today's, is part of the
+// history and Complete: the only months the Money screen shows. It reads
+// today and the Accounts once, for the many months a page asks about.
+func (s *OverviewService) completeness(ctx context.Context) (func(month string) (bool, error), error) {
 	today, err := s.core.Today(ctx)
 	if err != nil {
-		return false, err
-	}
-	if month >= utils.MonthOf(string(today)) {
-		return false, nil
+		return nil, err
 	}
 	accounts, err := s.accounts.List(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	if !tracked(accounts, month) {
-		return false, nil
-	}
-	complete, err := s.statements.Month(ctx, month)
-	if err != nil {
-		return false, err
-	}
-	return complete.Complete, nil
+	thisMonth := utils.MonthOf(string(today))
+	return func(month string) (bool, error) {
+		if !utils.IsMonth(month) || month >= thisMonth || !tracked(accounts, month) {
+			return false, nil
+		}
+		complete, err := s.statements.Month(ctx, month)
+		if err != nil {
+			return false, err
+		}
+		return complete.Complete, nil
+	}, nil
 }
 
 // month answers a Complete month's totals, or 404.
 func (s *OverviewService) month(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	month := r.PathValue("month")
-	complete, err := s.isComplete(ctx, month)
+	isComplete, err := s.completeness(ctx)
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	complete, err := isComplete(month)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
@@ -217,20 +220,28 @@ func (s *OverviewService) month(w http.ResponseWriter, r *http.Request) {
 	coreutils.WriteJSON(w, http.StatusOK, totals)
 }
 
-// historyMonths is how many months a Category's page charts, ending with its
-// own.
-const historyMonths = 12
+// uncategorized is the key, in a Category page's path, of the Expenses
+// not yet in any Category, which a month's totals list as "Uncategorized".
+const uncategorized = "uncategorized"
 
 // category answers an expense Category's page for a Complete month, or 404.
 func (s *OverviewService) category(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	month, key := r.PathValue("month"), r.PathValue("key")
 	category, ok := model.CategoryOf(key)
+	if key == uncategorized {
+		category, ok = model.Category{Key: "", Name: "Uncategorized", Kind: model.Expense}, true
+	}
 	if !ok || category.Kind != model.Expense {
 		http.Error(w, "no such expense Category", http.StatusNotFound)
 		return
 	}
-	complete, err := s.isComplete(ctx, month)
+	isComplete, err := s.completeness(ctx)
+	if err != nil {
+		coreutils.ServerError(w, err)
+		return
+	}
+	complete, err := isComplete(month)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
@@ -239,43 +250,12 @@ func (s *OverviewService) category(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no such Complete month", http.StatusNotFound)
 		return
 	}
-	totals, err := s.totals.MonthTotals(ctx, month)
+	page, err := s.totals.CategoryPage(ctx, month, category, isComplete)
 	if err != nil {
 		coreutils.ServerError(w, err)
 		return
 	}
-	page := model.CategoryPageJSON{Month: month, Category: key, Name: category.Name, Subcategories: []model.SubcategoryTotalJSON{}}
-	for _, c := range totals.Spending.ByCategory {
-		if c.Category != key {
-			continue
-		}
-		page.Total, page.Previous, page.Average3 = c.Total, c.Previous, c.Average3
-		// A Category without Subcategories lists none, rather than one
-		// without a name.
-		if len(c.Subcategories) > 1 || (len(c.Subcategories) == 1 && c.Subcategories[0].Subcategory != "") {
-			page.Subcategories = c.Subcategories
-		}
-	}
-	if page.Transactions, err = s.totals.CategoryTransactions(ctx, month, key); err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	sums, err := s.totals.Totals(ctx, utils.AddMonths(month, -(historyMonths-1)), month)
-	if err != nil {
-		coreutils.ServerError(w, err)
-		return
-	}
-	page.History = []model.CategoryMonthJSON{}
-	for _, sum := range sums {
-		complete, err := s.isComplete(ctx, sum.Month)
-		if err != nil {
-			coreutils.ServerError(w, err)
-			return
-		}
-		if complete {
-			page.History = append(page.History, model.CategoryMonthJSON{Month: sum.Month, Total: sum.ByCategory[key]})
-		}
-	}
+	page.Category = key
 	coreutils.WriteJSON(w, http.StatusOK, page)
 }
 

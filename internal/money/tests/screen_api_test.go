@@ -368,3 +368,44 @@ func TestTheMoneyScreensRoutesNeedASession(t *testing.T) {
 		stranger.must(http.MethodGet, path, nil, http.StatusUnauthorized)
 	}
 }
+
+func TestACategoryWithNothingThisMonthStillComparesWithTheMonthsBefore(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	bank := saveAccount(t, session, map[string]any{"name": "Bank", "kind": "bank", "currency": "JPY", "trackedFrom": "2026-09"})
+	saveStatement(t, session, map[string]any{
+		"account": bank.ID, "from": "2026-09-01", "to": "2026-09-30", "source": "csv",
+		"transactions": []any{map[string]any{"kind": "expense", "day": "2026-09-03", "amount": 3000, "rawText": "CAFE", "category": "eating_out"}},
+	})
+	saveStatement(t, session, map[string]any{"account": bank.ID, "from": "2026-10-01", "to": "2026-10-31", "source": "csv"})
+
+	got := get[struct {
+		Total    int64  `json:"total"`
+		Previous *int64 `json:"previous"`
+		Average3 *int64 `json:"average3"`
+	}](phone, "/api/money/months/2026-10/categories/eating_out", http.StatusOK)
+
+	if got.Total != 0 || got.Previous == nil || *got.Previous != 3000 || got.Average3 == nil || *got.Average3 != 3000 {
+		t.Errorf("October's eating out = %+v; want 0 against September's 3,000", got)
+	}
+}
+
+func TestExpensesInNoCategoryHaveAPageToo(t *testing.T) {
+	_, phone := signedInBrowser(t)
+	session := phone.tools()
+	bank := saveAccount(t, session, map[string]any{"name": "Bank", "kind": "bank", "currency": "JPY", "trackedFrom": "2026-10"})
+	saveStatement(t, session, map[string]any{
+		"account": bank.ID, "from": "2026-10-01", "to": "2026-10-31", "source": "csv",
+		"transactions": []any{
+			map[string]any{"kind": "expense", "day": "2026-10-03", "amount": 700, "rawText": "MYSTERY"},
+			map[string]any{"kind": "expense", "day": "2026-10-04", "amount": 300, "rawText": "CAFE", "category": "eating_out"},
+		},
+	})
+
+	got := get[categoryPageJSON](phone, "/api/money/months/2026-10/categories/uncategorized", http.StatusOK)
+
+	if got.Category != "uncategorized" || got.Name != "Uncategorized" || got.Total != 700 || len(got.Transactions) != 1 ||
+		got.Transactions[0].Merchant != "MYSTERY" {
+		t.Errorf("page = %+v; want the one Expense in no Category", got)
+	}
+}

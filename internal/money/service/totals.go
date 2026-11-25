@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"math"
-	"sort"
 
 	coremodel "github.com/feriosch/nando-server/internal/core/model"
 	"github.com/feriosch/nando-server/internal/money/model"
@@ -541,20 +540,85 @@ func (s *TotalsService) Tools() []coremodel.Tool {
 	}}
 }
 
-// CategoryTransactions are month's Expenses in the Category with key, by
-// Day, with names rather than ids, in their own currency and in yen.
-func (s *TotalsService) CategoryTransactions(ctx context.Context, month, key string) ([]model.ScreenTransactionJSON, error) {
+// historyMonths is how many months a Category's page charts, ending with its
+// own.
+const historyMonths = 12
+
+// CategoryPage works out category's page for month: its total against the
+// month before and the 3 before, its Subcategories' totals, its Expenses by
+// Day, and its spending in each month of the 12 ending with this one that
+// isComplete. Each month's figures are worked out once.
+func (s *TotalsService) CategoryPage(ctx context.Context, month string, category model.Category, isComplete func(string) (bool, error)) (model.CategoryPageJSON, error) {
 	accounts, err := s.accounts.accounts.List(ctx)
 	if err != nil {
-		return nil, err
+		return model.CategoryPageJSON{}, err
 	}
-	byID := map[string]model.Account{}
+	currencies := map[string]string{}
 	for _, a := range accounts {
-		byID[a.ID] = a
+		currencies[a.ID] = a.Currency
 	}
 	essentials, err := s.categories.essentials(ctx)
 	if err != nil {
-		return nil, err
+		return model.CategoryPageJSON{}, err
+	}
+	key := category.Key
+	page := model.CategoryPageJSON{Month: month, Category: key, Name: category.Name,
+		Subcategories: []model.SubcategoryTotalJSON{}, History: []model.CategoryMonthJSON{}}
+	byMonth := map[string]figures{}
+	for n := historyMonths - 1; n >= 0; n-- {
+		m := utils.AddMonths(month, -n)
+		f, err := s.figures(ctx, m, currencies, essentials, &converter{month: m, rates: s.rates})
+		if err != nil {
+			return model.CategoryPageJSON{}, err
+		}
+		byMonth[m] = f
+		complete, err := isComplete(m)
+		if err != nil {
+			return model.CategoryPageJSON{}, err
+		}
+		if complete {
+			page.History = append(page.History, model.CategoryMonthJSON{Month: m, Total: f.byCategory[key]})
+		}
+	}
+	this := byMonth[month]
+	page.Total = this.byCategory[key]
+	// The months before, for comparing: those that are part of the history,
+	// as a month's totals compare them.
+	var before []figures
+	for n := 1; n <= 3; n++ {
+		m := utils.AddMonths(month, -n)
+		if !tracked(accounts, m) {
+			break
+		}
+		before = append(before, byMonth[m])
+	}
+	page.Previous, page.Average3 = compare(before, func(f figures) int64 { return f.byCategory[key] })
+	subcategories := this.bySubcategory[key]
+	// A Category without Subcategories lists none, rather than one without a
+	// name.
+	if _, none := subcategories[""]; len(subcategories) > 1 || (len(subcategories) == 1 && !none) {
+		names, err := s.categories.subcategoryNames(ctx)
+		if err != nil {
+			return model.CategoryPageJSON{}, err
+		}
+		for sub, total := range subcategories {
+			page.Subcategories = append(page.Subcategories, model.SubcategoryTotalJSON{Subcategory: sub, Name: names[sub], Total: total})
+		}
+		sortSubcategoryTotals(page.Subcategories)
+	}
+	if page.Transactions, err = s.categoryTransactions(ctx, accounts, essentials, month, key); err != nil {
+		return model.CategoryPageJSON{}, err
+	}
+	return page, nil
+}
+
+// categoryTransactions are month's Expenses in the Category with key, empty
+// for those in none, by Day, with names rather than ids, in their own
+// currency and in yen.
+func (s *TotalsService) categoryTransactions(ctx context.Context, accounts []model.Account, essentials marks, month, key string) ([]model.ScreenTransactionJSON, error) {
+	byID := map[string]model.Account{}
+	for _, a := range accounts {
+		byID[a.ID] = a
 	}
 	subcategories, err := s.categories.subcategoryNames(ctx)
 	if err != nil {
@@ -568,6 +632,7 @@ func (s *TotalsService) CategoryTransactions(ctx context.Context, month, key str
 	for _, m := range merchants {
 		merchantNames[m.ID] = m.Name
 	}
+	// An empty Category filters nothing, so those in none are picked here.
 	found, err := s.statements.Transactions(ctx, model.TransactionFilter{FromMonth: month, ToMonth: month, Kind: model.Expense, Category: key})
 	if err != nil {
 		return nil, err
@@ -575,6 +640,9 @@ func (s *TotalsService) CategoryTransactions(ctx context.Context, month, key str
 	conv := &converter{month: month, rates: s.rates}
 	list := []model.ScreenTransactionJSON{}
 	for _, t := range found {
+		if t.Category != key {
+			continue
+		}
 		account := byID[t.AccountID]
 		yen, err := conv.yen(ctx, account.Currency, t.Amount, false)
 		if err != nil {
@@ -593,6 +661,5 @@ func (s *TotalsService) CategoryTransactions(ctx context.Context, month, key str
 		}
 		list = append(list, listed)
 	}
-	sort.SliceStable(list, func(i, j int) bool { return list[i].Day < list[j].Day })
 	return list, nil
 }
