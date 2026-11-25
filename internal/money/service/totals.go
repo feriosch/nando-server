@@ -315,6 +315,20 @@ func (s *TotalsService) MonthTotals(ctx context.Context, month string) (model.Mo
 		nw.Previous = &prev.Total
 	}
 	answer.NetWorth = nw
+	if answer.Returns, err = returns(ctx, accounts, balances, prevBalances, this.netIn, conv); err != nil {
+		return model.MonthTotalsJSON{}, err
+	}
+	answer.SavingRate = savingRate(this)
+	answer.Unconfirmed = this.unconfirmed
+	answer.Rate = conv.rate
+	return answer, nil
+}
+
+// returns is the Return of each savings and investment Account with a
+// balance this month and the month before: its growth less what was
+// Transferred in, netIn, in yen at the month's end.
+func returns(ctx context.Context, accounts []model.Account, balances, prevBalances, netIn map[string]int64, conv *converter) ([]model.ReturnJSON, error) {
+	list := []model.ReturnJSON{}
 	for _, a := range accounts {
 		if a.Kind != model.KindSavings && a.Kind != model.KindInvestment {
 			continue
@@ -324,19 +338,116 @@ func (s *TotalsService) MonthTotals(ctx context.Context, month string) (model.Mo
 		if !ok || !okBefore {
 			continue
 		}
-		yen, err := conv.yen(ctx, a.Currency, now-then-this.netIn[a.ID], true)
+		yen, err := conv.yen(ctx, a.Currency, now-then-netIn[a.ID], true)
 		if err != nil {
-			return model.MonthTotalsJSON{}, err
+			return nil, err
 		}
-		answer.Returns = append(answer.Returns, model.ReturnJSON{Account: a.ID, Name: a.Name, Yen: yen})
+		list = append(list, model.ReturnJSON{Account: a.ID, Name: a.Name, Yen: yen})
 	}
-	if this.income > 0 {
-		rate := math.Round(float64(this.income-this.spending)/float64(this.income)*10000) / 10000
-		answer.SavingRate = &rate
+	return list, nil
+}
+
+// NetWorths works out each of months' net worth, with each Account's
+// balance and the Return of savings and investments, for the Money screen.
+func (s *TotalsService) NetWorths(ctx context.Context, months []string) ([]model.NetWorthMonthJSON, error) {
+	accounts, err := s.accounts.accounts.List(ctx)
+	if err != nil {
+		return nil, err
 	}
-	answer.Unconfirmed = this.unconfirmed
-	answer.Rate = conv.rate
-	return answer, nil
+	currencies := map[string]string{}
+	for _, a := range accounts {
+		currencies[a.ID] = a.Currency
+	}
+	essentials, err := s.categories.essentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// balances keeps each month's, so a month and the one after it share
+	// one reading.
+	type reading struct {
+		nw       model.NetWorthJSON
+		balances map[string]int64
+	}
+	read := map[string]reading{}
+	readMonth := func(m string, conv *converter) (reading, error) {
+		if r, ok := read[m]; ok {
+			return r, nil
+		}
+		nw, balances, _, err := s.netWorth(ctx, accounts, m, conv)
+		if err != nil {
+			return reading{}, err
+		}
+		read[m] = reading{nw: nw, balances: balances}
+		return read[m], nil
+	}
+	list := []model.NetWorthMonthJSON{}
+	for _, m := range months {
+		conv := &converter{month: m, rates: s.rates}
+		this, err := readMonth(m, conv)
+		if err != nil {
+			return nil, err
+		}
+		previousMonth := utils.AddMonths(m, -1)
+		before, err := readMonth(previousMonth, &converter{month: previousMonth, rates: s.rates})
+		if err != nil {
+			return nil, err
+		}
+		f, err := s.figures(ctx, m, currencies, essentials, conv)
+		if err != nil {
+			return nil, err
+		}
+		month := model.NetWorthMonthJSON{Month: m, Total: this.nw.Total, Accounts: this.nw.Accounts, Missing: this.nw.Missing}
+		if month.Returns, err = returns(ctx, accounts, this.balances, before.balances, f.netIn, conv); err != nil {
+			return nil, err
+		}
+		list = append(list, month)
+	}
+	return list, nil
+}
+
+// savingRate is (income − spending) ÷ income, to 4 decimals, or nil
+// without income.
+func savingRate(f figures) *float64 {
+	if f.income <= 0 {
+		return nil
+	}
+	rate := math.Round(float64(f.income-f.spending)/float64(f.income)*10000) / 10000
+	return &rate
+}
+
+// Summaries works out each of months' spending, income, saving rate and net
+// worth, for the Money screen's list of months.
+func (s *TotalsService) Summaries(ctx context.Context, months []string) ([]model.MonthSummaryJSON, error) {
+	accounts, err := s.accounts.accounts.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	currencies := map[string]string{}
+	for _, a := range accounts {
+		currencies[a.ID] = a.Currency
+	}
+	essentials, err := s.categories.essentials(ctx)
+	if err != nil {
+		return nil, err
+	}
+	list := []model.MonthSummaryJSON{}
+	for _, m := range months {
+		conv := &converter{month: m, rates: s.rates}
+		f, err := s.figures(ctx, m, currencies, essentials, conv)
+		if err != nil {
+			return nil, err
+		}
+		nw, _, _, err := s.netWorth(ctx, accounts, m, conv)
+		if err != nil {
+			return nil, err
+		}
+		summary := model.MonthSummaryJSON{Month: m, Income: f.income, SavingRate: savingRate(f)}
+		summary.Spending.Total, summary.Spending.Essential = f.spending, f.essential
+		summary.Spending.Optional, summary.Spending.Unmarked = f.optional, f.unmarked
+		summary.NetWorth.Total, summary.NetWorth.Missing = nw.Total, nw.Missing
+		list = append(list, summary)
+	}
+	return list, nil
 }
 
 // compare is the value of the month before, and the average of the months
@@ -427,4 +538,128 @@ func (s *TotalsService) Tools() []coremodel.Tool {
 			return s.Totals(ctx, args.FromMonth, args.ToMonth)
 		},
 	}}
+}
+
+// historyMonths is how many months a Category's page charts, ending with its
+// own.
+const historyMonths = 12
+
+// CategoryPage works out category's page for month: its total against the
+// month before and the 3 before, its Subcategories' totals, its Expenses by
+// Day, and its spending in each month of the 12 ending with this one that
+// isComplete. Each month's figures are worked out once.
+func (s *TotalsService) CategoryPage(ctx context.Context, month string, category model.Category, isComplete func(string) (bool, error)) (model.CategoryPageJSON, error) {
+	accounts, err := s.accounts.accounts.List(ctx)
+	if err != nil {
+		return model.CategoryPageJSON{}, err
+	}
+	currencies := map[string]string{}
+	for _, a := range accounts {
+		currencies[a.ID] = a.Currency
+	}
+	essentials, err := s.categories.essentials(ctx)
+	if err != nil {
+		return model.CategoryPageJSON{}, err
+	}
+	key := category.Key
+	page := model.CategoryPageJSON{Month: month, Category: key, Name: category.Name,
+		Subcategories: []model.SubcategoryTotalJSON{}, History: []model.CategoryMonthJSON{}}
+	byMonth := map[string]figures{}
+	for n := historyMonths - 1; n >= 0; n-- {
+		m := utils.AddMonths(month, -n)
+		f, err := s.figures(ctx, m, currencies, essentials, &converter{month: m, rates: s.rates})
+		if err != nil {
+			return model.CategoryPageJSON{}, err
+		}
+		byMonth[m] = f
+		complete, err := isComplete(m)
+		if err != nil {
+			return model.CategoryPageJSON{}, err
+		}
+		if complete {
+			page.History = append(page.History, model.CategoryMonthJSON{Month: m, Total: f.byCategory[key]})
+		}
+	}
+	this := byMonth[month]
+	page.Total = this.byCategory[key]
+	// The months before, for comparing: those that are part of the history,
+	// as a month's totals compare them.
+	var before []figures
+	for n := 1; n <= 3; n++ {
+		m := utils.AddMonths(month, -n)
+		if !tracked(accounts, m) {
+			break
+		}
+		before = append(before, byMonth[m])
+	}
+	page.Previous, page.Average3 = compare(before, func(f figures) int64 { return f.byCategory[key] })
+	subcategories := this.bySubcategory[key]
+	// A Category without Subcategories lists none, rather than one without a
+	// name.
+	if _, none := subcategories[""]; len(subcategories) > 1 || (len(subcategories) == 1 && !none) {
+		names, err := s.categories.subcategoryNames(ctx)
+		if err != nil {
+			return model.CategoryPageJSON{}, err
+		}
+		for sub, total := range subcategories {
+			page.Subcategories = append(page.Subcategories, model.SubcategoryTotalJSON{Subcategory: sub, Name: names[sub], Total: total})
+		}
+		sortSubcategoryTotals(page.Subcategories)
+	}
+	if page.Transactions, err = s.categoryTransactions(ctx, accounts, essentials, month, key); err != nil {
+		return model.CategoryPageJSON{}, err
+	}
+	return page, nil
+}
+
+// categoryTransactions are month's Expenses in the Category with key, empty
+// for those in none, by Day, with names rather than ids, in their own
+// currency and in yen.
+func (s *TotalsService) categoryTransactions(ctx context.Context, accounts []model.Account, essentials marks, month, key string) ([]model.ScreenTransactionJSON, error) {
+	byID := map[string]model.Account{}
+	for _, a := range accounts {
+		byID[a.ID] = a
+	}
+	subcategories, err := s.categories.subcategoryNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	merchants, err := s.statementsSvc.merchants.merchants.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	merchantNames := map[string]string{}
+	for _, m := range merchants {
+		merchantNames[m.ID] = m.Name
+	}
+	// An empty Category filters nothing, so those in none are picked here.
+	found, err := s.statements.Transactions(ctx, model.TransactionFilter{FromMonth: month, ToMonth: month, Kind: model.Expense, Category: key})
+	if err != nil {
+		return nil, err
+	}
+	conv := &converter{month: month, rates: s.rates}
+	list := []model.ScreenTransactionJSON{}
+	for _, t := range found {
+		if t.Category != key {
+			continue
+		}
+		account := byID[t.AccountID]
+		yen, err := conv.yen(ctx, account.Currency, t.Amount, false)
+		if err != nil {
+			return nil, err
+		}
+		name := merchantNames[t.MerchantID]
+		if name == "" {
+			name = t.RawText
+		}
+		listed := model.ScreenTransactionJSON{
+			ID: t.ID, Day: t.Day, Merchant: name, Amount: utils.FromMinor(account.Currency, t.Amount), Currency: account.Currency,
+			Yen: yen, Account: account.Name, Subcategory: subcategories[t.SubcategoryID], Unconfirmed: t.Unconfirmed, Note: t.Note,
+		}
+		if mark, marked := essentials.of(t.Transaction); marked {
+			listed.Essential = &mark
+		}
+		list = append(list, listed)
+	}
+	return list, nil
 }
