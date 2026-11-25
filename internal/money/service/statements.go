@@ -78,7 +78,7 @@ func toTransactionJSON(currency string, t model.Transaction, essentials marks) m
 	j := model.TransactionJSON{
 		ID: t.ID, Kind: string(t.Kind), Day: t.Day, Amount: utils.FromMinor(currency, t.Amount), Direction: t.Direction,
 		RawText: t.RawText, Note: t.Note, OtherAccount: t.OtherAccountID, Category: t.Category, Subcategory: t.SubcategoryID,
-		Merchant: t.MerchantID, EssentialOverride: t.Essential, Unconfirmed: t.Unconfirmed,
+		Merchant: t.MerchantID, EssentialOverride: t.Essential, Unconfirmed: t.Unconfirmed, OneOff: t.OneOff,
 	}
 	if mark, marked := essentials.of(t); marked {
 		j.Essential = &mark
@@ -135,7 +135,8 @@ const statementSchema = `{"type":"object","properties":{` +
 	`"subcategory":{"type":"string","description":"Its Subcategory's id, in that Category."},` +
 	`"merchant":{"type":"string","description":"Its Merchant's id."},` +
 	`"essential":{"type":"boolean","description":"Only when this one is Essential or Optional apart from its Subcategory."},` +
-	`"unconfirmed":{"type":"boolean","description":"True while what it is is your best guess, awaiting the Owner."}},` +
+	`"unconfirmed":{"type":"boolean","description":"True while what it is is your best guess, awaiting the Owner."},` +
+	`"oneOff":{"type":"boolean","description":"For an expense only: true for a One-off the Owner named, such as a laptop or a lease renewal fee, and a Refund tied to one. It counts in its month, but not in the comparisons with the months before and after."}},` +
 	`"required":["kind","day","amount","rawText"]}}},` +
 	`"required":["account","from","to","source"]}`
 
@@ -217,13 +218,13 @@ func (s *StatementsService) Tools() []coremodel.Tool {
 	}, {
 		Name: "money_list_transactions",
 		Description: "Transactions, by Day, with their Statement and Account: of one account, in the months from " +
-			"fromMonth to toMonth (YYYY-MM), of one kind, category, subcategory or merchant, unconfirmed or not, or " +
+			"fromMonth to toMonth (YYYY-MM), of one kind, category, subcategory or merchant, unconfirmed or not, One-off or not, or " +
 			"whose raw text or note contains text, in any case. At most limit (200 if not given, at most 1000).",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"account":{"type":"string"},` +
 			`"fromMonth":{"type":"string"},"toMonth":{"type":"string"},` +
 			`"kind":{"type":"string","enum":["expense","income","transfer"]},"text":{"type":"string"},` +
 			`"category":{"type":"string"},"subcategory":{"type":"string"},"merchant":{"type":"string"},` +
-			`"unconfirmed":{"type":"boolean"},"limit":{"type":"integer"}}}`),
+			`"unconfirmed":{"type":"boolean"},"oneOff":{"type":"boolean"},"limit":{"type":"integer"}}}`),
 		ReadOnly: true,
 		Handle:   s.listTransactionsTool,
 	}, {
@@ -231,12 +232,13 @@ func (s *StatementsService) Tools() []coremodel.Tool {
 		Description: "Changes the fields given of the Transaction with id: its note; for a transfer, the " +
 			"otherAccount (empty for none); for an expense or income, its category (which clears its subcategory " +
 			"unless one is given too), subcategory, merchant, essential (null to follow its Subcategory again) and " +
-			"unconfirmed. With teachMerchant, its Merchant also learns its raw text and to usually take its category " +
+			"unconfirmed; and for an expense, oneOff, a One-off the Owner named (it counts in its month but not in the " +
+			"comparisons with the months around it). With teachMerchant, its Merchant also learns its raw text and to usually take its category " +
 			"and subcategory: do it for a correction that should stick, not a one-off. Answers it.",
 		InputSchema: json.RawMessage(`{"type":"object","properties":{"id":{"type":"string"},"note":{"type":"string"},` +
 			`"otherAccount":{"type":"string"},"category":{"type":"string"},"subcategory":{"type":"string"},` +
 			`"merchant":{"type":"string"},"essential":{"type":["boolean","null"]},"unconfirmed":{"type":"boolean"},` +
-			`"teachMerchant":{"type":"boolean"}},"required":["id"]}`),
+			`"oneOff":{"type":"boolean"},"teachMerchant":{"type":"boolean"}},"required":["id"]}`),
 		Handle: s.updateTransactionTool,
 	}, {
 		Name: "money_get_month",
@@ -502,8 +504,14 @@ func (s *StatementsService) checkLine(ctx context.Context, account model.Account
 			}
 		}
 		t.Category, t.SubcategoryID, t.MerchantID = line.Category, line.Subcategory, line.Merchant
-		t.Essential, t.Unconfirmed = line.Essential, line.Unconfirmed
+		if line.OneOff && t.Kind != model.Expense {
+			return t, errors.New("oneOff is for an expense only: income is never a One-off")
+		}
+		t.Essential, t.Unconfirmed, t.OneOff = line.Essential, line.Unconfirmed, line.OneOff
 		return t, nil
+	}
+	if line.OneOff {
+		return t, errors.New("oneOff is for an expense only: a transfer is neither spending nor income")
 	}
 	if line.Category != "" || line.Subcategory != "" || line.Merchant != "" || line.Essential != nil {
 		return t, errors.New("a transfer has no category, subcategory, merchant or essential: it is neither spending nor income")
@@ -597,6 +605,7 @@ func (s *StatementsService) listTransactionsTool(ctx context.Context, arguments 
 		Subcategory string `json:"subcategory"`
 		Merchant    string `json:"merchant"`
 		Unconfirmed *bool  `json:"unconfirmed"`
+		OneOff      *bool  `json:"oneOff"`
 		Limit       int    `json:"limit"`
 	}
 	if err := json.Unmarshal(arguments, &args); err != nil {
@@ -614,7 +623,7 @@ func (s *StatementsService) listTransactionsTool(ctx context.Context, arguments 
 	found, err := s.statements.Transactions(ctx, model.TransactionFilter{
 		AccountID: args.Account, FromMonth: args.FromMonth, ToMonth: args.ToMonth, Kind: model.TransactionKind(args.Kind),
 		Text: strings.TrimSpace(args.Text), Category: args.Category, SubcategoryID: args.Subcategory, MerchantID: args.Merchant,
-		Unconfirmed: args.Unconfirmed, Limit: min(args.Limit, maxTransactionsLimit),
+		Unconfirmed: args.Unconfirmed, OneOff: args.OneOff, Limit: min(args.Limit, maxTransactionsLimit),
 	})
 	if err != nil {
 		return nil, err
@@ -659,12 +668,13 @@ func (s *StatementsService) updateTransactionTool(ctx context.Context, arguments
 		Merchant     *string         `json:"merchant"`
 		Essential    json.RawMessage `json:"essential"`
 		Unconfirmed  *bool           `json:"unconfirmed"`
+		OneOff       *bool           `json:"oneOff"`
 		// TeachMerchant also has its Merchant usually take its Category and
 		// Subcategory, and know its raw text.
 		TeachMerchant bool `json:"teachMerchant"`
 	}
 	if err := json.Unmarshal(arguments, &args); err != nil {
-		return nil, utils.Refusal{Message: "send essential as true, false or null, unconfirmed and teachMerchant as true or false, and the rest as strings"}
+		return nil, utils.Refusal{Message: "send essential as true, false or null, unconfirmed, oneOff and teachMerchant as true or false, and the rest as strings"}
 	}
 	found, err := s.statements.FindTransaction(ctx, args.ID)
 	if errors.Is(err, coreutils.ErrNotFound) {
@@ -693,6 +703,12 @@ func (s *StatementsService) updateTransactionTool(ctx context.Context, arguments
 	}
 	if args.Unconfirmed != nil {
 		t.Unconfirmed = *args.Unconfirmed
+	}
+	if args.OneOff != nil {
+		if *args.OneOff && t.Kind != model.Expense {
+			return nil, utils.Refusal{Message: "oneOff is for an expense only"}
+		}
+		t.OneOff = *args.OneOff
 	}
 	if args.TeachMerchant {
 		if t.MerchantID == "" {

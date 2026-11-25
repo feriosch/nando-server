@@ -48,6 +48,7 @@ Old Statements can be read again from the bucket with `money_get_statement_file`
 - **Category and Subcategory.** `money_list_categories` gives the fixed Categories and their Subcategories. When no Subcategory fits, make one with `money_save_subcategory`, Essential (a need) or Optional (a want), and say so in your reply. Beauty, such as teeth whitening, is its own Category, apart from Personal Care, such as a dental cleaning. A line with no Subcategory counts by its Category's default mark, the settings' `essentialByCategory`; ask the Owner before changing those. When one line differs from its Subcategory or Category, give it its own `essential`.
 - **When you can't tell**, look for the receipt first in the Owner's Gmail, under `Banks/*` and `Payments/*` (such as `Payments/Amazon`, `Payments/Rakuten Pay`, `Payments/Subscriptions`), matching the date and amount, and put what was bought in the line's `note`. Still unclear: save it with your best guess and `unconfirmed` true. Ask about it only when its amount is above the settings' `askAbove` for its currency; below that, the guess stands, Unconfirmed.
 - **Asking.** One short numbered list per Statement, so the Owner can answer "1 gift, 2 Fashion, 3 fine". Pass the numbered Transactions' ids, in order, as the reply's `note`, so the run that gets the answer knows which is which. Save each answer at once with `money_update_transaction`, and set `unconfirmed` false. A correction that should stick next time ("that shop is always groceries") also gets `teachMerchant`; a one-off ("that dinner was a gift") doesn't.
+- **One-offs.** An Expense the Owner names as one that won't repeat within a year, such as a laptop, a course paid at once or a lease renewal fee, gets `oneOff` true, with `money_update_transaction` or in the Statement's line. So does a Refund tied to it, such as a trade-in credit, so it counts net. It still counts in its month, but not in the comparisons with the months around it. Mark one only when the Owner says so, and never a trip: travel is spending worth seeing trend.
 - **Subscriptions.** A charge that repeats at one Merchant, monthly or yearly, such as streaming or an app, is kept with `money_save_subscription`, found from repeated charges and `Payments/Subscriptions` receipts. Update its `lastCharged` and amount when a new charge comes, and set `active` false when the Owner says it's cancelled. Mention a new one, or a price change, in your reply.
 
 ## Notifications from Nando
@@ -59,11 +60,11 @@ Old Statements can be read again from the bucket with `money_get_statement_file`
 
 Read `money_get_month_totals` for the month and the months before it, `money_list_subscriptions`, the settings' `askAbove`, and the month's Unconfirmed lines with `money_list_transactions` (`unconfirmed` true), and write it to fit one screen in Telegram:
 
-1. **Spending** in yen against last month and the 3-month average.
+1. **Spending** in yen against last month and the 3-month average. Its `previous` and `average3` leave One-offs out: compare them with `total` less `oneOff`, and name the month's One-offs apart.
 2. **Essential against Optional**, and what is still unmarked.
 3. **The Categories that moved most**, up or down, not every one.
 4. **Subscriptions**: new ones, price changes, ones `late` (no charge where the card's Statements already reach: maybe cancelled, so ask), and what they cost a month together.
-5. **Worth a look**: one-off large charges, and Optional spending that keeps growing month after month.
+5. **Worth a look**: Optional spending that keeps growing month after month. Ask whether an Expense of at least ¥50,000 or MX$5,000 that is over twice its Category's 3-month average, and isn't a One-off yet, is one; mark it only when the Owner says so.
 6. **Net worth**, its change, each savings and investment Account's Return, and the saving rate. Name the Accounts its `missing` leaves out of net worth.
 7. **Still Unconfirmed**: how many, and the ones above `askAbove` to answer.
 

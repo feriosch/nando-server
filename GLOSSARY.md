@@ -324,6 +324,10 @@ _Avoid_: Store, shop, vendor, payee
 A Transaction saved with Claude's best guess at its Merchant, Subcategory or kind while the Owner's answer is awaited. Nothing waits on it: the Statement is saved whole, and the guess becomes final once the Owner answers.
 _Avoid_: Pending (that is a card's own word), draft, uncategorized
 
+**One-off**:
+An Expense the Owner names as one that won't repeat within a year, such as a laptop, a course paid at once, a lease renewal fee or a large withdrawal, with any Refund tied to it. It counts in its month's spending, but not in the comparisons with the month before or the 3-month average, so the months around it compare on ordinary spending. A trip is never a One-off.
+_Avoid_: Exceptional, outlier, irregular, extraordinary
+
 **Subscription**:
 A charge that repeats, monthly or yearly, at one Merchant, such as streaming or an app. Claude keeps the list from the Transactions and the Owner's receipts, and points out new ones, price changes and ones the Owner may no longer use.
 _Avoid_: Recurring charge, plan, membership

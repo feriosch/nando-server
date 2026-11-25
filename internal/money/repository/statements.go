@@ -132,6 +132,13 @@ func (r statements) Transactions(ctx context.Context, f model.TransactionFilter)
 			lines = append(lines, bson.E{Key: "transaction.unconfirmed", Value: bson.D{{Key: "$ne", Value: true}}})
 		}
 	}
+	if f.OneOff != nil {
+		if *f.OneOff {
+			lines = append(lines, bson.E{Key: "transaction.oneOff", Value: true})
+		} else {
+			lines = append(lines, bson.E{Key: "transaction.oneOff", Value: bson.D{{Key: "$ne", Value: true}}})
+		}
+	}
 	if f.Text != "" {
 		word := bson.Regex{Pattern: regexp.QuoteMeta(f.Text), Options: "i"}
 		lines = append(lines, bson.E{Key: "$or", Value: bson.A{

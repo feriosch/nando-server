@@ -68,6 +68,10 @@ type Transaction struct {
 	// Unconfirmed marks Claude's best guess while the Owner's answer is
 	// awaited.
 	Unconfirmed bool `bson:"unconfirmed,omitempty"`
+	// OneOff marks an Expense that won't repeat within a year, such as a
+	// laptop or a lease renewal fee: it counts in its month, but not in
+	// the comparisons with the months before and after (#241).
+	OneOff bool `bson:"oneOff,omitempty"`
 	// Duplicate marks a late line another Statement of the Account already
 	// counts. It is kept, but left out of every read, so that it can count
 	// instead if that copy goes, with its Statement deleted or sent again
@@ -103,8 +107,10 @@ type TransactionFilter struct {
 	// Text is a word the raw text or note contains, in any case.
 	Text                                string
 	Category, SubcategoryID, MerchantID string
-	// Unconfirmed, when not nil, picks only those that are, or aren't.
+	// Unconfirmed and OneOff, when not nil, pick only those that are, or
+	// aren't.
 	Unconfirmed *bool
+	OneOff      *bool
 	Limit       int
 }
 
@@ -165,6 +171,7 @@ type LineJSON struct {
 	Merchant     string  `json:"merchant"`
 	Essential    *bool   `json:"essential"`
 	Unconfirmed  bool    `json:"unconfirmed"`
+	OneOff       bool    `json:"oneOff"`
 }
 
 // StatementArgsJSON is what money_save_statement is sent.
@@ -198,6 +205,7 @@ type TransactionJSON struct {
 	EssentialOverride *bool  `json:"essentialOverride,omitempty"`
 	Essential         *bool  `json:"essential"`
 	Unconfirmed       bool   `json:"unconfirmed,omitempty"`
+	OneOff            bool   `json:"oneOff,omitempty"`
 	Statement         string `json:"statement,omitempty"`
 	Account           string `json:"account,omitempty"`
 }
